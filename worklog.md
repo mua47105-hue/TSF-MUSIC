@@ -928,3 +928,71 @@ Stage Summary:
 - Remaining user-side note: if a Samsung tablet still shows a small
   window, Settings → Apps → TSF Music → App settings → Aspect ratio →
   "Full screen" (One UI per-app compat setting overrides manifests).
+
+---
+Task ID: 12
+Agent: Super Z (main agent)
+Task: Gauntlet R5 — user reports v3.4.1 STILL shows the half-screen UI on
+two tablets ("UI splitting into half", identical to previous screenshot;
+One UI "Full screen" aspect setting changed nothing). Deep-dive with no
+assumptions and fix it for real.
+
+Work Log:
+- INDEPENDENT FORENSICS on the new upload (upload/pasted_image_1788094785024.png,
+  600x960, pasted AFTER v3.4.1 shipped — the endless-scroll UI in it proves
+  the tablet runs v3.4.1): app UI = content 0-421 + tab bar 422-463 =
+  EXACTLY 464 of 928 window px = 50.0%; void = uniform RGB(10,10,10) =
+  app.json #0A0A0B; taskbar strip 928-955 BELOW the window. VLM eyes-on:
+  Samsung-style tablet TASKBAR + 3-button nav (Recents/Home/Back) — One UI
+  large-screen device; tab bar intact at the half boundary with its
+  insets padding => RN laid out for a half window (not a clipped surface).
+- Rotation test killed the "centered compat letterbox" model (content is
+  edge-anchored in both rotations).
+- AXML GROUND TRUTH: wrote scripts/axml_audit.py (pyaxmlprinter + release
+  downloader) and decoded the COMPILED manifests of every release APK
+  (v3.3.0/v3.4.0/v3.4.1): identical except v3.4.0's policy (already
+  reverted) — all carry screenOrientation="1" (PORTRAIT LOCK),
+  launchMode=singleTask, windowSoftInputMode=adjustResize, targetSdk 34.
+  v3.4.1 (resizable, uncapped) still letterboxing => the aspect/resizable
+  path was never the trigger.
+- ROOT CAUSE (web-verified against Google's device-compatibility-mode
+  doc): "App restricted to portrait orientation is letterboxed on
+  landscape tablet and foldable" — mattes on large screens sit "to one
+  side or the other", painted with the app's own windowBackground (our
+  exact void). Phones = compact-window devices (never letterboxed ->
+  every phone fine); sw600dp+ tablets always letterbox portrait-locked
+  apps (-> both tablets broken on every version since v1). Samsung's
+  per-app aspect setting governs the ASPECT path only -> why it had no
+  effect. Android 16/API 37 will ignore orientation locks on large
+  screens anyway; also confirmed Samsung's new Desktop-mode hosts
+  phone-class apps in half-screen desktop windows (adaptive apps maximize).
+- FIX (v3.4.2): app.json orientation=portrait->default; withWindowPolicy
+  v2 strips android:screenOrientation from every activity + adds explicit
+  supports-screens (large/xlarge/anyDensity=true); iOS keeps portrait via
+  Info.plist UISupportedInterfaceOrientations (behavior unchanged).
+- ADAPTIVE LAYOUT to make orientation freedom safe: new pure helpers
+  src/ui/windowing.ts — browseColumnsFor (4-col Search browse grid at
+  >=720dp, FlatList remounts per column count = numColumns invariant) +
+  playerArtSize (artwork capped at 62% window height, floored 200dp);
+  applied in SearchScreen + PlayerScreen (artWrap centers automatically).
+- TESTS: window_policy_locks rewritten for v2 (12 locks: orientation
+  stripping incl. landscape variants, supports-screens merge, resizable,
+  caps) + new windowing_locks (9 locks). Suite 206 -> 221 pass, tsc clean.
+- DEVICE LAB 3 -> 5 viewports: + tablet-landscape 960x600, desktop-window
+  1280x800; new no-horizontal-overflow assertion; 160/160 checkpoints
+  green, 0 console errors. VLM review of wide-window screenshots: bar at
+  true bottom everywhere, no overflow, no glitches (noted cosmetic shelf
+  density on ultra-wide windows as future polish).
+- Shipped: commit 5bfc013 pushed to main + tag v3.4.2 -> CI runs
+  33325307548 (main) / 33325311303 (tag) in progress. APK deep-verifier
+  prepared (scripts/verify_v342_apk.py; logic sanity-proved against the
+  v3.4.1 APK — it DOES see screenOrientation there).
+
+Stage Summary:
+- The tablet half-screen bug is root-caused to the portrait orientation
+  lock (present since v1) and killed at the manifest level; layout proven
+  adaptive in 5 window shapes incl. landscape + desktop.
+- Same-keystore in-place upgrade; WhatsNew v3.4.2 explains the fix.
+- User-side note: tablets also get instant relief without updating by
+  disabling Samsung Desktop mode if enabled — but v3.4.2 makes the app
+  window-native everywhere regardless.
