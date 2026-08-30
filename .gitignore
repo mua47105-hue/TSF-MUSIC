@@ -21,3 +21,4 @@ scripts/artist_seeds.ts.txt
 # device lab artifacts (regenerate with: bash scripts/lab.sh)
 screenshots/
 .fixture-cache/
+download/*.apk
