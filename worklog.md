@@ -1021,3 +1021,113 @@ Stage Summary:
 - Optional instant relief on tablets even without updating: disable
   Samsung Desktop mode (if enabled) — but v3.4.2 fills the screen
   regardless of that setting.
+
+---
+Task ID: 13
+Agent: Super Z (main agent)
+Task: Gauntlet R6 — user reports v3.4.2 rotation works but the tablet
+half-screen window is STILL there. Deep-dive with zero assumptions
+(fifth round on this bug), find the real mechanism, fix, verify.
+
+Work Log:
+- FRESH PIXEL FORENSICS on the reference screenshot (row/column
+  profiles, band scans): app content 0..447 + 13px pure-black band +
+  ramp -> uniform (10,10,10) matte to y=919 -> taskbar shadow -> One UI
+  TASKBAR (app drawer + Files/Messages/Phone + divider + Chrome/Play +
+  3-button nav at right; VLM-verified). No window shadow, NO rounded
+  corners, no split-screen divider (VLM-verified) -> hard-edge
+  top-anchored OS letterbox, matte = app windowBackground #0A0A0B.
+- THE SHAPE DECODE: app window = 600x448 (+2px rounding) = the LARGEST
+  4:3 RECTANGLE FITTING SCREEN WIDTH (600/(4/3)=450). The R5-era
+  screenshot's "464px" minus the same 13px band = 451. BOTH tablets =
+  a 4:3 aspect-ratio window -> an aspect-ratio compatibility clamp.
+- FULL BINARY AUDIT of shipped v3.4.2 (complete AXML dump, every
+  element/attribute): NO screenOrientation, resizeableActivity=true,
+  no max/minAspectRatio, no android.max_aspect, supports-screens all
+  true, no <layout>, no compatibleWidthLimitDp, targetSdk 34 -> the
+  manifest was NEVER the operative variable; the clamp rides the OS
+  override layer. Theme dump (androguard): no window sizing attrs.
+- CODE AUDIT: src/ has zero frozen Dimensions.get, all
+  useWindowDimensions, zero android-only layout branches -> JS layout
+  innocent (consistent with the RN-web lab filling the viewport).
+- LAB REPO CROSS-CHECK (/tmp/lab): lab.4 had shipped the OPPOSITE fix
+  (resizeableActivity=false + maxAspect 2.4, "split-screen container"
+  theory) — main v3.4.0 carried it and still broke; lab's "field
+  verified full-screen" was almost certainly phone-only.
+- WEB GROUND TRUTH (developer.android.com device-compatibility-mode):
+  Android 14+/One UI 6 has a USER "app aspect ratio" menu with literal
+  3:4 option; OEM override families (OVERRIDE_MIN_ASPECT_RATIO_* incl.
+  4:3 and align-with-split-screen 50%); apps opt out via the official
+  PackageManager PROPERTY_COMPAT_* tags; "min/maxAspectRatio are
+  ignored if resizeableActivity=true" (so a declared max aspect is a
+  free full-bleed signal for Samsung's LEGACY layer, which auto-clamps
+  apps that never declare one). Explains everything: v3.4.0 hit the
+  non-resizable letterbox; v3.4.1/2 sat in the undeclared-max-aspect
+  bucket with a stored user override the Full-screen toggle never
+  neutralized (One UI re-evaluates window policy on cold start only).
+- FIX v3.4.3 (withWindowPolicy v3): maxAspectRatio=2.6 + legacy
+  android.max_aspect meta (2.6 > 22:9 folds 2.444; critic caught 2.4
+  self-clamping Z Flips) + the four PROPERTY_COMPAT opt-outs (user
+  aspect / OEM min-aspect / orientation / resizability overrides) +
+  kept resizable=true + orientation freedom + supports-screens.
+- CRITIC (fresh-context, machine-verified expo serialization itself in
+  /tmp): FIX-FIRST -> P1 fabricated-verification claim (changed to
+  verifier-gated, actually built one), P1 2.4->2.6, P1 Jetpack note
+  (declined with reasoning: platform reads PackageManager properties
+  regardless of app libraries; Samsung inherits AOSP 14 framework),
+  P1 theory ambiguity 4:3-vs-split-align (opt-outs cover BOTH; copy
+  hedged + manual Settings fallback added). P2: CI test gate ADDED
+  (bun test + tsc before prebuild), tautological lock replaced with a
+  real device-ceiling lock, +3 test gaps closed (no-meta branch,
+  all-four hostile rewrite, expo XML round-trip serialization).
+- Suite 224 -> 227 tests (19 W1 locks), tsc clean.
+- Shipped: commit 44f4ac8 pushed to main + tag v3.4.3 -> CI runs
+  33327243496 (main) / 33327244741 (tag) in progress.
+- verify_v343_apk.py prepared and SANITY-PROVEN against the v3.4.2 APK
+  (8/8 fix-specific checks correctly FAIL there; v3.4.2-retained
+  behaviors correctly PASS).
+
+Stage Summary:
+- The half-screen window is root-caused as a 4:3 OS aspect-ratio
+  compatibility clamp (user/OEM override layer, blind to our manifest)
+  and shut out from BOTH override layers (legacy declaration + API-34
+  property opt-outs). Binary verification of the shipped APK pending
+  CI completion; user-side: install over 3.4.2, swipe app from Recents
+  once (cold start re-evaluates policy), manual fallback documented in
+  WhatsNew. Next field round: landscape screenshot would discriminate
+  residual mechanisms if anything survives.
+- Also: SYSTEM_ALERT_WINDOW appears in the binary via Expo's own merge
+  (not app.json) — harmless for windowing, noted for a future cleanup.
+
+---
+Task ID: 13 (final verification)
+Agent: Super Z (main agent)
+
+Work Log:
+- CI #33327243496 (main) + #33327244741 (v3.4.3 tag) both SUCCESS
+  (the new bun-test + tsc gate ran inside both).
+- Release live: https://github.com/mua47105-hue/TSF-MUSIC/releases/tag/v3.4.3
+  (app-release.apk 79.4 MB, versionCode 155 > 151, same keystore ->
+  in-place upgrade over 3.4.x).
+- verify_v343_apk.py on the SHIPPED APK: 14/14 OK — all four
+  PROPERTY_COMPAT opt-outs present with value=false in compiled AXML,
+  maxAspectRatio=2.600000 attr + android.max_aspect=2.600000 meta,
+  resizeableActivity=true, ZERO screenOrientation, no minAspectRatio,
+  supports-screens true, WhatsNew v3_4_3 key in the Hermes bundle.
+  (Verifier initially tripped on AAPT float serialization "2.600000" —
+  regex fixed; sanity re-run still 8/8 detect-absence on v3.4.2.)
+- /tmp/lab clone removed (workspace kept clean).
+
+Stage Summary:
+- v3.4.3 SHIPPED and binary-verified. The tablet half-screen is
+  root-caused as a 4:3 OS aspect-ratio compatibility clamp and shut
+  out of both override layers (legacy Samsung max_aspect path + the
+  Android 14/One UI 6 compat framework via official property opt-outs).
+- User install steps: update over 3.4.2, then SWIPE THE APP FROM
+  RECENTS once (One UI applies window policy on cold start) — WhatsNew
+  3.4.3 says this and carries the manual Settings fallback
+  (Display → Full screen apps → Full screen) if any clamp survives.
+- If a future field round still shows a small window: capture a
+  LANDSCAPE screenshot (4:3 clamp => ~800x600 window with side mattes;
+  split-align override => 480x600; desktop host => floating chrome) —
+  one image discriminates every residual mechanism.

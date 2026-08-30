@@ -76,12 +76,13 @@ def run(apk_path, expect_version='3.4.3'):
         ok = bool(pat.search(xml) or pat_rev.search(xml))
         check(f'property {prop.rsplit(".", 1)[-1]}=false', ok)
 
-    # full-bleed declarations
-    check('android:maxAspectRatio="2.6"', 'android:maxAspectRatio="2.6"' in xml)
+    # full-bleed declarations (AAPT serializes the float as 2.600000)
+    check('android:maxAspectRatio="2.6"',
+          re.search(r'android:maxAspectRatio="2\.6\d*"', xml) is not None)
     check('legacy android.max_aspect meta = 2.6',
-          re.search(r'<meta-data[^>]*android:name="android\.max_aspect"[^>]*android:value="2\.6"', xml)
+          re.search(r'<meta-data[^>]*android:name="android\.max_aspect"[^>]*android:value="2\.6\d*"', xml)
           is not None
-          or re.search(r'<meta-data[^>]*android:value="2\.6"[^>]*android:name="android\.max_aspect"', xml)
+          or re.search(r'<meta-data[^>]*android:value="2\.6\d*"[^>]*android:name="android\.max_aspect"', xml)
           is not None)
 
     # v3.4.2 fix retained
