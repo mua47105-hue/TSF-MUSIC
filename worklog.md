@@ -820,3 +820,32 @@ Stage Summary:
 - Gates: tsc clean · 174/174 tests · live engine probes PASS · device
   lab 48/48 × 2 · CI healthy
 - Ready to ship: commit + tag v3.4.0
+
+---
+Task ID: 10 (final)
+Agent: Super Z (main agent)
+Task: v3.4.0 release verification
+
+Work Log:
+- Pushed main (dd47056) + tag v3.4.0 → CI #43 (main) + #44 (tag) both SUCCESS
+- APK deep-verified (scripts/verify_v34_apk.py): manifest versionName 3.4.0
+  (UTF-16 probe); resizeableActivity present in the compiled manifest
+  (window-policy plugin output); 2.06 MB Hermes bundle with ALL 45 markers —
+  13 Search V2 (regression guard) + 8 SIG rescue + 10 YouTube source
+  (incl. VISIONOS/WEB_REMIX/ANDROID_VR, GenerateIT, signatureCipher,
+  mintPlayerPot) + never-blank/kill-switch strings; webmocks NOT leaked
+  (webmocks/searchFixtures/__TsfMock/SEARCH_EXTRA/ytSearchFixtures all clean)
+- Verifier lesson: Hermes stores short ASCII strings in the small-string
+  table (MUTF-8) and longer/non-ASCII strings as UTF-16LE — the verifier now
+  dual-decodes (v3.3.0's markers happened to all be short-ASCII)
+- Release page live: v3.4.0 with app-release.apk 75.7MB
+  https://github.com/mua47105-hue/TSF-MUSIC/releases/tag/v3.4.0
+- Workspace cleaned: lab repo clone + patch + debug scripts removed
+
+Stage Summary:
+- FINAL SHIP: v3.4.0 live (same keystore → in-place upgrade over 3.3.0/3.2.0)
+- Upgraders see the 3.4.0 What's-new (YouTube source + rescue notes)
+- Device acceptance for Gate G1 (YouTube tap-to-audio on residential IP)
+  remains the user's session — the lab already confirmed it on-device for
+  the same ladder code
+- Reminder: user rotates GitHub token after session
