@@ -849,3 +849,82 @@ Stage Summary:
   remains the user's session — the lab already confirmed it on-device for
   the same ladder code
 - Reminder: user rotates GitHub token after session
+
+---
+Task ID: 11
+Agent: Super Z (main agent)
+Task: Gauntlet R4 — fix the tablet window bug (tab bar lifted mid-screen on
+two tablets, user-reported with screenshot) + add Spotify-style infinite
+scrolling (home + search), verify everything end-to-end, ship v3.4.1
+
+Work Log:
+- PIXEL FORENSICS on the uploaded 600x960 screenshot: app content ends at
+  y=447 (46.6%), tab bar renders y≈432-447, void y=464-929 is uniform
+  RGB(10,10,10) ≈ app.json backgroundColor #0A0A0B (the app's own
+  windowBackground the OS paints the letterbox with), taskbar strip at
+  y=929-954. Conclusion: the app was hosted in a ~48%-height OS
+  compatibility window — the app's own layout was correct inside it.
+- ROOT CAUSE: v3.4.0's withWindowPolicy plugin (resizeableActivity="false"
+  + maxAspectRatio 2.4 + legacy meta) — the textbook trigger for Android
+  12L+/One UI compatibility letterboxing of non-resizable apps on tablets
+  with a taskbar. The lab's original "Samsung split-screen container"
+  diagnosis was wrong; the plugin manufactured the bug it shipped to fix
+  (same ~48% shape as the lab.3 field report).
+- Live probes BEFORE building (scripts/probe_pagination.ts):
+  search.getResults paginates 30 rows/page with 24-30 fresh ids/page;
+  search.getAlbumResults paginates 20/page; NO paged playlist endpoint
+  exists → the endless feed interleaves paged songs + paged album cards.
+- FIX A (window): plugin inverted — resizeableActivity="true" explicit,
+  ALL aspect caps removed, stale v3.4.0 attrs/meta stripped;
+  applyWindowPolicy exported pure for tests (7 locks). Home quick-tile
+  grid + Player artwork switched from frozen module-scope Dimensions.get
+  to useWindowDimensions.
+- FIX B (feeds): new src/api/feed.ts EndlessFeedPager — alternating
+  songs/albums batches, rotating 16-query ladder with per-query deep
+  paging (cursor query+page), cross-batch + prime() dedupe, filterClean,
+  error-vs-dry discipline (network errors never burn the exhaustion
+  budget), honest retry/end contract. HomeScreen renders batches after
+  the fixed shelves (onScroll near-bottom trigger, epoch guard on
+  pull-to-refresh, shelves-settled gate); feed songs play with the full
+  loaded queue. Search appends JioSaavn pages on FlatList onEndReached
+  (mergeUniqueTracks dedupe incl. intra-page, searchHasMore honest stop
+  rule, muted-artist parity, gen-guarded catches, abort-signal riding,
+  live resultsRef mirror).
+- CRITIC ROUND (fresh-context opus subagent, machine-proven): P1 stale
+  page-fetch rejection permanently killed the NEXT query's pagination
+  (catch not gen-guarded) → fixed; P1 first append clobbered LRCLIB
+  lyric verification (stale results closure — deps used results.length)
+  → resultsRef mirror; P2 feed epoch race on pull-to-refresh → epoch
+  ref; P2 network errors burned the 84-query exhaustion budget → error
+  sentinel, no cursor advance; P2 webmock export parity gap
+  (searchAlbumResults missing → SIG-rescue album rung threw on web) →
+  added + L-PARITY lock. Verdict was FIX-FIRST; all fixed + locked.
+- BONUS CRASH FOUND by the new device-lab checkpoints: pre-existing
+  "Changing numColumns on the fly" invariant crash when clearing the
+  search field after results (browse grid numColumns=2 vs results list
+  1, same tree position) — fixed with distinct FlatList keys.
+- DEVICE LAB REBUILT for real scrolling: RN-web ScrollViews ignore
+  mouse.wheel in headless Chromium (proven: pixel-identical screenshots,
+  scrollTop stayed 0; all legacy "scroll" checkpoints had only counted
+  DOM presence). scroll() now sets scrollTop directly on the scroller
+  found via document.elementFromPoint(viewport center).walkUp — also
+  fixed the wrong-scroller bug where hidden-but-mounted Home feed
+  scroll-stealing loaded feed batches during search-tab scrolling.
+- Device lab gains a 3rd device: the tablet's exact 600x960 viewport +
+  5 new checkpoints (tab bar pins to window bottom, endless feed loads,
+  feed rows play, search pagination appends/honest-end/resets).
+- FINAL SWEEP: 93/93 checkpoints × 3 devices (Pixel 7 / iPhone 13 /
+  tablet), ZERO console errors. VLM UI review of tablet screenshots:
+  bar anchored, no void, shelves clean, Spotify-style feed, no glitches.
+- Suite 174 → 206 tests (32 new locks across 4 files), tsc clean.
+- Shipped: afa8481 pushed to main + tag v3.4.1 → CI #46/#47 running.
+
+Stage Summary:
+- The tablet letterbox bug is dead at the manifest level (resizeable,
+  uncapped, locked by tests + pending APK deep-verify); layout adapts to
+  any window; home + search now scroll forever with honest ends.
+- Same-keystore in-place upgrade over 3.4.0 (versionCode = 100 +
+  run_number from CI).
+- Remaining user-side note: if a Samsung tablet still shows a small
+  window, Settings → Apps → TSF Music → App settings → Aspect ratio →
+  "Full screen" (One UI per-app compat setting overrides manifests).
