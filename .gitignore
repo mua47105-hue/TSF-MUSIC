@@ -22,3 +22,4 @@ scripts/artist_seeds.ts.txt
 screenshots/
 .fixture-cache/
 download/*.apk
+download/_apk_audit/

@@ -39,6 +39,7 @@ import { useToast } from '../components/Toast';
 import { colors, fonts, radius } from '../theme';
 import { useDynamicPalette } from '../theme/DynamicThemeProvider';
 import { boostForPlayer } from '../theme/dynamic';
+import { playerArtSize } from '../ui/windowing';
 import type { RootStackParamList } from './navigation';
 
 function fmt(sec: number): string {
@@ -111,10 +112,12 @@ function ProgressBar({
 }
 
 export function PlayerScreen() {
-  // window-reactive artwork (W2): tablets / split-screen / pop-up windows
-  // re-measure instead of freezing the phone-width module constant
-  const { width: winWidth } = useWindowDimensions();
-  const artSize = Math.round(winWidth - 32);
+  // window-reactive artwork (W2 + R5): tablets / split-screen / pop-up /
+  // DeX / landscape windows re-measure instead of freezing the phone-width
+  // module constant. R5: also cap by window HEIGHT so a wide landscape
+  // window can't produce an oversized square (see src/ui/windowing.ts).
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const artSize = playerArtSize(winWidth, winHeight);
   const insets = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const toast = useToast();

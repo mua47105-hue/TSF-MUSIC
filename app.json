@@ -2,8 +2,8 @@
   "expo": {
     "name": "TSF Music",
     "slug": "tsf-music",
-    "version": "3.4.1",
-    "orientation": "portrait",
+    "version": "3.4.2",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0A0A0B",
@@ -34,6 +34,9 @@
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
+        ],
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait"
         ]
       }
     },

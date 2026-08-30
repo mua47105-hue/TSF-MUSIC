@@ -8,6 +8,59 @@ Detailed build history: `worklog.md` (the session log).
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v3.4.2 — 2026-08-31 — The real tablet fix: orientation freedom
+
+v3.4.1 was not enough: two Samsung tablets still rendered the app in a
+half-height window (tab bar mid-screen, dark void below) even with
+`resizeableActivity="true"` and no aspect caps, and the One UI per-app
+"Full screen" aspect setting changed nothing. Fresh forensics on the
+v3.4.1 field screenshot (app UI = EXACTLY 50.0% of the window; void =
+the app's own #0A0A0B windowBackground; taskbar + 3-button nav below)
+plus a decoded-AXML diff of every shipped manifest (v3.3.0 / v3.4.0 /
+v3.4.1 are otherwise identical) isolated the one restriction present in
+every version since v1: `android:screenOrientation="portrait"` on the
+activity. Google's device-compatibility-mode documentation states it
+plainly: "App restricted to portrait orientation is letterboxed on
+landscape tablet and foldable" — mattes fill the unused area, "on large
+screens, to one side or the other", painted with the app's own
+background. Phones are compact-window devices (never letterboxed →
+every phone was fine); sw600dp+ tablets always letterbox
+orientation-locked apps (→ every tablet was broken). Samsung's aspect
+setting controls the aspect-ratio letterbox path only, which is why it
+had no effect.
+
+### Window / orientation (the root fix)
+- **Orientation lock removed** — `app.json` `"orientation": "default"`
+  and the window-policy plugin now strips `android:screenOrientation`
+  from every activity. The app can never again be classified as a
+  portrait-only "phone app" that large screens must compat-host. This
+  also future-proofs against Android 16+/API 37, which ignore
+  orientation locks on sw600dp+ displays anyway. iOS keeps its
+  portrait lock via Info.plist (behavior unchanged; iPad unsupported).
+- **Explicit `<supports-screens>`** declaration (largeScreens /
+  xlargeScreens / anyDensity = true) added by the plugin — the
+  large-screen support declaration Google's checklists ask for.
+- v3.4.1 policy retained: `resizeableActivity="true"`, no
+  maxAspectRatio / android.max_aspect (stale attrs stripped).
+- Locked by the rewritten W1 suite (12 locks) + post-build APK audit
+  (compiled-AXML parse asserts NO screenOrientation, resizable=true).
+
+### Adaptive layout (making orientation freedom safe)
+- New pure helpers `src/ui/windowing.ts` with lock tests:
+  `browseColumnsFor` (Search "Browse all" grid: 4 columns at ≥720dp
+  windows — landscape phones, tablets, DeX/desktop windows; 2 below) and
+  `playerArtSize` (artwork capped at 62% of window height so wide
+  landscape windows can't oversize it; floored at 200dp).
+- SearchScreen: FlatList remounts per column count
+  (`key={`browse-${cols}`}`) — the only safe way to change numColumns
+  (the v3.4.1 "Changing numColumns on the fly" lesson, now also
+  rotation-proof). PlayerScreen: artwork uses the capped size and
+  centers automatically.
+- Device lab grew to 5 viewports: Pixel 7, iPhone 13, portrait tablet,
+  LANDSCAPE tablet (960×600), and a 1280×800 desktop-style window —
+  each running the full walkthrough with tab-bar-pinned-to-window-
+  bottom and no-horizontal-overflow assertions.
+
 ## v3.4.1 — 2026-08-30 — Tablet window fix + endless feeds
 
 Field-reported on two tablets: the bottom tab bar rendered mid-screen

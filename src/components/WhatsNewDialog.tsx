@@ -11,14 +11,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_4_1';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_2';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Fixed the tablet layout — the bottom bar sits at the real bottom of the screen again',
-  'Home now scrolls forever: keep scrolling for endless songs and album shelves',
-  'Search results load more as you scroll — hundreds of songs per search',
+  'Fixed tablets for real: the app no longer locks itself to portrait, so Samsung tablets stop squeezing it into a half-screen window — it now fills the whole screen in any orientation',
+  'Tablets & landscape: Search browse grid widens to 4 columns, player art fits the window',
+  'Home now scrolls forever and Search loads more as you scroll (v3.4.1)',
   'Fixed a crash when clearing the search box after results',
 ];
 

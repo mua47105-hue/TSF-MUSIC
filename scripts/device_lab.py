@@ -2,7 +2,11 @@
 """TSF Music device lab (v3.2) — Playwright walkthrough on Expo web with
 react-native-web, emulating real hardware viewports (no browser chrome).
 
-Devices: Pixel 7 (412x915 @2.625) and iPhone 13 (390x844 @3).
+Devices (v3.4.2, five viewports): Pixel 7 (412x915 @2.625), iPhone 13
+(390x844 @3), portrait tablet (600x960), LANDSCAPE tablet (960x600) and
+a desktop-style window (1280x800) — the last two exist because v3.4.2
+removes the orientation lock (the tablet letterbox root fix), so the UI
+must provably hold in wide/landscape windows, not just portrait ones.
 
 The critical v3.2 regression test lives here: complete onboarding →
 RELOAD → assert onboarding never reappears and Home greets by name
@@ -24,6 +28,14 @@ DEVICES = [
     # (600x960 screenshot, 16:10) — the layout must fill ANY window with
     # the tab bar pinned to the bottom of that window.
     ("tablet", {"viewport": {"width": 600, "height": 960}, "device_scale_factor": 2, "is_mobile": True, "has_touch": True, "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-X200) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}),
+    # v3.4.2 R5: orientation is no longer locked, so the layout must
+    # survive LANDSCAPE tablet windows (the OS will hand us these
+    # whenever the user rotates — and Samsung DeX / desktop windows are
+    # landscape by default).
+    ("tablet-landscape", {"viewport": {"width": 960, "height": 600}, "device_scale_factor": 2, "is_mobile": True, "has_touch": True, "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-X200) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}),
+    # v3.4.2 R5: a wide desktop-style window (Samsung desktop windowing /
+    # DeX defaults). Not mobile-emulated: desktop windows are mouse-first.
+    ("desktop-window", {"viewport": {"width": 1280, "height": 800}, "device_scale_factor": 1, "is_mobile": False, "has_touch": True, "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}),
 ]
 
 results = []
@@ -198,10 +210,12 @@ def run_device(pw, name, cfg):
         page.evaluate(SCROLL_TOP_JS)
         page.wait_for_timeout(600)
 
-        # ── v3.4.1 W3: TAB BAR PINS TO THE BOTTOM OF THE WINDOW ──────
+        # ── v3.4.1 W3 / v3.4.2 R5: TAB BAR PINS TO THE WINDOW BOTTOM ──
         # The field bug: bar rendered mid-screen with a void below (OS
-        # letterbox). In-app, the flex chain must fill the viewport: the
-        # tab bar's bottom edge sits within 70px of the viewport bottom.
+        # letterbox, root-caused in v3.4.2 to the portrait orientation
+        # lock). In-app, the flex chain must fill the viewport: the
+        # tab bar's bottom edge sits within 70px of the viewport bottom
+        # — in EVERY window shape now, including landscape/desktop.
         try:
             bar_bb = page.locator("text=Your Library").last.bounding_box()
             vh = page.viewport_size["height"]
@@ -210,6 +224,16 @@ def run_device(pw, name, cfg):
         except Exception as e:
             log(name, "v341-tabbar-at-window-bottom", False, str(e)[:120])
         shot(page, name, "06b-tabbar-position")
+
+        # v3.4.2 R5: wide windows must not produce horizontal overflow
+        # (content wider than the window = broken adaptive layout).
+        try:
+            overflow_x = page.evaluate(
+                "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+            )
+            log(name, "v342-no-horizontal-overflow", overflow_x <= 1, f"overflowX {overflow_x}px")
+        except Exception as e:
+            log(name, "v342-no-horizontal-overflow", False, str(e)[:120])
 
         # ── v3.4.1 F2: ENDLESS HOME FEED — scroll forever ─────────────
         # Deep scroll: the endless feed must materialize song batches

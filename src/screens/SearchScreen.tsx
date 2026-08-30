@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  useWindowDimensions,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -39,6 +40,7 @@ import { ytSearchMusic, ytAvailable } from '../api/youtube';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
+import { browseColumnsFor } from '../ui/windowing';
 import { planSearch } from '../search/plan';
 import { verifyLyrics, type Candidate } from '../search/verify';
 import { rememberResolve } from '../search/learn';
@@ -102,6 +104,10 @@ function engineDeps(): EngineDeps {
 
 export function SearchScreen() {
   const insets = useSafeAreaInsets();
+  // window-reactive grid math (R5): wide windows (landscape phones,
+  // tablets, DeX/desktop windows) get 4 browse columns, phones keep 2.
+  const { width: winWidth } = useWindowDimensions();
+  const browseCols = browseColumnsFor(winWidth);
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
   const [query, setQuery] = useState('');
@@ -643,10 +649,10 @@ export function SearchScreen() {
 
       {showBrowse ? (
         <FlatList
-          key="browse"
+          key={`browse-${browseCols}`}
           data={GENRES}
           keyExtractor={(g) => g.label}
-          numColumns={2}
+          numColumns={browseCols}
           columnWrapperStyle={styles.genreRow}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
