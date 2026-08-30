@@ -996,3 +996,28 @@ Stage Summary:
 - User-side note: tablets also get instant relief without updating by
   disabling Samsung Desktop mode if enabled — but v3.4.2 makes the app
   window-native everywhere regardless.
+
+---
+Task ID: 12 (final verification)
+Agent: Super Z (main agent)
+
+Work Log:
+- CI #33325307548 (main) + #33325311303 (v3.4.2 tag) both SUCCESS (~9 min).
+- Release live: https://github.com/mua47105-hue/TSF-MUSIC/releases/tag/v3.4.2
+  (app-release.apk 79.4 MB, versionCode 151, same keystore -> in-place
+  upgrade over 3.4.1/3.4.0/3.3.0).
+- scripts/verify_v342_apk.py on the SHIPPED APK: 22/22 OK —
+  NO screenOrientation on ANY activity (root fix binary-proven; the same
+  check DOES fire on the v3.4.1 APK), resizeableActivity=true, no aspect
+  caps, supports-screens large/xlarge/anyDensity=true, versionName 3.4.2,
+  R5 + R4 bundle markers present, zero webmock leaks.
+
+Stage Summary:
+- v3.4.2 SHIPPED and binary-verified. Tablet half-screen bug root-caused
+  (portrait orientation lock present since v1) and eliminated; layout
+  proven adaptive across 5 window shapes (221 tests, 160 lab checkpoints,
+  0 console errors).
+- User installs v3.4.2 over v3.4.1; WhatsNew v3.4.2 explains the fix.
+- Optional instant relief on tablets even without updating: disable
+  Samsung Desktop mode (if enabled) — but v3.4.2 fills the screen
+  regardless of that setting.
