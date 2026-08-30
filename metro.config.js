@@ -25,6 +25,10 @@ const WEB_PATH_REDIRECTS = [
   { suffix: path.join('src', 'api', 'artists.ts'), to: path.join(projectRoot, 'src/webmocks/artists.ts') },
   // SEARCH V2: LRCLIB lyric verification → fixture lyrics (lab parity)
   { suffix: path.join('src', 'api', 'lrclib.ts'), to: path.join(projectRoot, 'src/webmocks/lrclib.ts') },
+  // YOUTUBE SOURCE (v3.4.0): InnerTube ships no CORS headers — a browser
+  // page can never call it live. Fixture-backed webmock keeps the harness
+  // deterministic; the real module is covered by bun suites + live probes.
+  { suffix: path.join('src', 'api', 'youtube.ts'), to: path.join(projectRoot, 'src/webmocks/youtube.ts') },
   // MINDBEAT: the SQLite ledger store has no web build — the in-memory
   // store exports the same createLedgerStore() signature (harness parity).
   { suffix: path.join('src', 'ai', 'core', 'storeSqlite.ts'), to: path.join(projectRoot, 'src/ai/core/storeMemory.ts') },

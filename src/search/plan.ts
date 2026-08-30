@@ -8,7 +8,7 @@
  * artist/title tokens → select lyric windows (idf-distinctive n-grams).
  */
 
-import { normalizeQuery, foldToken, TYPE_WORDS } from './normalize';
+import { normalizeQuery, foldToken, TYPE_WORDS, CONNECTOR_WORDS } from './normalize';
 import { correctToken, type Correction } from './lexicon';
 
 export type QueryKind =
@@ -26,9 +26,16 @@ export interface SearchPlan {
   kind: QueryKind;
   titleTokens: string[];
   artistTokens: string[];
+  /** Connectors stripped from the title side ("tu chaiye OF atif aslam" → of) */
+  connectorTokens: string[];
+  /** Bounded alternative title spellings for cold-start romanization misses
+   *  (SIG M1.3: "tu chaiye" → "tu chahiye"). ≤2, deterministic. */
+  variants: string[];
   windows: string[];
   corrections: Correction[];
   cacheKey: string;
+  /** normalized title-side text (connectors stripped) — S2 title clustering */
+  titleKey: string;
 }
 
 /** Known-artist lexicon assembled from priors + seeds (set at init). */
@@ -129,6 +136,56 @@ function idfish(tok: string): number {
   return 2.2 + Math.min(1.2, (tok.length - 5) * 0.2);
 }
 
+/** Strip connector words from a token list, preserving the rest. */
+export function stripConnectors(tokens: string[]): string[] {
+  return tokens.filter((t) => !CONNECTOR_WORDS.has(t));
+}
+
+/**
+ * SIG M1.3 — bounded romanization variant expansion (cold-start path).
+ * SymSpell cannot correct a song title the lexicon has never seen, so the
+ * high-frequency Hindi orthography classes get a deterministic table:
+ * "chaiye" ↔ "chahiye", "chaaha" ↔ "chaha", "rahaa" ↔ "raha" …
+ * Output is ≤2 alternative TOKEN spellings per unknown token, joined
+ * back into ≤2 whole-query variants. Pure, order-stable.
+ */
+const ORTHO_MAP: Record<string, string[]> = {
+  chaiye: ['chahiye', 'chaahiye'],
+  chahiye: ['chaiye', 'chaahiye'],
+  chaahiye: ['chahiye', 'chaiye'],
+  cahiye: ['chahiye'],
+  chahie: ['chahiye'],
+  chahe: ['chaahiye', 'chahiye'],
+  chaha: ['chaaha'],
+  raha: ['rahaa'],
+  rahaa: ['raha'],
+  ja: ['jaa'],
+  jaa: ['ja'],
+  piya: ['piyaa'],
+  piyaa: ['piya'],
+  de: ['dhe'],
+  sachiya: ['sachiyaa'],
+  hamesa: ['hamesha'],
+  hamesha: ['hamesa'],
+  dilruba: ['dil ruba'],
+};
+
+export function titleVariants(titleTokens: string[]): string[] {
+  if (titleTokens.length === 0 || titleTokens.length > 4) return [];
+  const alts: string[][] = [];
+  let expansions = 0;
+  for (const t of titleTokens) {
+    const mapped = ORTHO_MAP[t];
+    if (mapped && expansions < 2) {
+      expansions += 1;
+      for (const m of mapped) {
+        alts.push(titleTokens.map((x) => (x === t ? m : x)));
+      }
+    }
+  }
+  return alts.slice(0, 2).map((a) => a.join(' '));
+}
+
 /** Lyric mode: pick ≤2 distinctive, non-overlapping 3-grams. */
 function selectWindows(tokens: string[]): string[] {
   if (tokens.length < 3) return [tokens.join(' ')].filter(Boolean);
@@ -174,19 +231,37 @@ export function planSearch(raw: string): SearchPlan {
 
   const kind = classify(tokens, raw);
 
-  // artist/title split for artist_title
+  // artist/title split for artist_title — connectors belong to NEITHER
+  // side (SIG M1.1: "tu chaiye of atif aslam" → title [tu, chaiye],
+  // connectors [of], artist [atif aslam])
   let artistTokens: string[] = [];
   let titleTokens = tokens;
+  let connectorTokens: string[] = [];
   if (kind === 'artist_title' || kind === 'entity_artist') {
     artistTokens = artistTokensIn(tokens);
     if (kind === 'artist_title') {
       const artistWords = new Set(artistTokens.join(' ').split(' '));
-      titleTokens = tokens.filter((t) => !artistWords.has(t));
+      const rest = tokens.filter((t) => !artistWords.has(t));
+      connectorTokens = rest.filter((t) => CONNECTOR_WORDS.has(t));
+      titleTokens = rest.filter((t) => !CONNECTOR_WORDS.has(t));
+    }
+  }
+  if (kind === 'entity_title') {
+    const kept = tokens.filter((t) => !CONNECTOR_WORDS.has(t));
+    if (kept.length > 0) {
+      connectorTokens = tokens.filter((t) => CONNECTOR_WORDS.has(t));
+      titleTokens = kept;
     }
   }
 
+  const variants =
+    kind === 'entity_title' || kind === 'artist_title'
+      ? titleVariants(titleTokens)
+      : [];
+
   const windows = kind === 'lyric_fragment' ? selectWindows(tokens) : [];
 
+  const titleNorm = titleTokens.join(' ');
   return Object.freeze({
     raw,
     normalized,
@@ -194,9 +269,12 @@ export function planSearch(raw: string): SearchPlan {
     kind,
     titleTokens,
     artistTokens,
+    connectorTokens,
+    variants,
     windows,
     corrections,
     cacheKey: `q:${normalized}|k:${kind}`,
+    titleKey: `t:${titleNorm}`,
   });
 }
 

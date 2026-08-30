@@ -198,7 +198,53 @@ def run_device(pw, name, cfg):
         top = page.locator('[data-testid="search-top-result"]').count()
         log(name, "search-top-result", top >= 1)
 
+        # ── v3.4.0 — SIG RESCUE (title-authority gap): "tu chaiye" has only
+        # a sub-floor same-name cover in the catalog; the canonical recording
+        # lives on YouTube → rescue ladder → rank 1 + honest label
+        field.fill("tu chaiye")
+        page.wait_for_timeout(3200)
+        shot(page, name, "11b-search-rescued")
+        rescued_label = page.get_by_text("Found on YouTube · full song, ad-free", exact=False).count()
+        top_is_yt = page.locator('[data-testid="search-top-result"]').count() > 0 and (
+            page.get_by_text("Tu Chahiye", exact=True).count() >= 1
+        )
+        log(name, "v34-sig-rescued-label", rescued_label >= 1, f"label x{rescued_label}")
+        log(name, "v34-sig-rescued-top", top_is_yt, "canonical row present")
+
+        # ── v3.4.0 — SOURCE TOGGLE: Catalog | YouTube chips exist and switch
+        cat_chip = page.locator('[data-testid="source-toggle-catalog"]').count()
+        yt_chip = page.locator('[data-testid="source-toggle-youtube"]').count()
+        log(name, "v34-source-toggle-chips", cat_chip == 1 and yt_chip == 1, f"catalog={cat_chip} youtube={yt_chip}")
+
+        # ── v3.4.0 — YOUTUBE MODE: the YT catalog answers directly
+        page.locator('[data-testid="source-toggle-youtube"]').click()
+        page.wait_for_timeout(2600)
+        shot(page, name, "11c-search-youtube-mode")
+        yt_rows = page.locator('[data-testid="track-row"]').count()
+        yt_song_badge = page.get_by_text("YT Song", exact=True).count()
+        log(name, "v34-youtube-mode-rows", yt_rows >= 2, f"{yt_rows} rows")
+        log(name, "v34-youtube-mode-badge", yt_song_badge >= 1, f"YT Song badges x{yt_song_badge}")
+        page.locator('[data-testid="source-toggle-catalog"]').click()
+        page.wait_for_timeout(900)
+
+        # ── v3.4.0 — play the RESCUED youtube row end-to-end (never-blank path).
+        # play(0) navigates to the full Player screen (pre-existing top-card
+        # behavior) — verify it rendered, then dismiss back to search.
+        page.locator('[data-testid="search-top-result"]').first.click()
+        page.wait_for_timeout(1800)
+        shot(page, name, "11d-rescued-playing")
+        mini = page.locator('[data-testid="mini-player"]').count()
+        log(name, "v34-rescued-plays", mini >= 1, f"mini-player visible={mini}")
+        try:
+            page.locator('[data-testid="player-dismiss"]').first.click(timeout=8000)
+            page.wait_for_timeout(900)
+        except Exception:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(900)
+
         # 08 — play from the Top result card → mini player → full player
+        field.fill("mashooqa")
+        page.wait_for_timeout(2200)
         if page.locator('[data-testid="search-top-result"]').count() > 0:
             page.locator('[data-testid="search-top-result"]').first.click()
             page.wait_for_timeout(1500)

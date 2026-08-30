@@ -17,6 +17,7 @@
 import TrackPlayer, { Event } from 'react-native-track-player';
 import { AppState } from 'react-native';
 import { resolveStreamUrl, refreshStreamUrl } from '../api/saavn';
+import { ytRefreshStream } from '../api/youtube';
 import { getRadio } from '../ai/engine';
 import { getAutoplay } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
@@ -94,7 +95,13 @@ export async function playbackService(): Promise<void> {
       if (idx == null) return;
       const current = await TrackPlayer.getTrack(idx);
       if (!current || current.source === 'itunes') return;
-      const fresh = await refreshStreamUrl(current as unknown as Track);
+      // YOUTUBE SOURCE: re-resolve through the client ladder (module cache
+      // invalidated first). Same contract as saavn recovery: fresh URL →
+      // reload+play, else move on instead of stalling.
+      const fresh =
+        current.source === 'youtube'
+          ? await ytRefreshStream(current as unknown as Track)
+          : await refreshStreamUrl(current as unknown as Track);
       if (fresh) {
         await TrackPlayer.load({ ...current, url: fresh });
         await TrackPlayer.play();

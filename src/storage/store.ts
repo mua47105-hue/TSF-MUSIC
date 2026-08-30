@@ -63,7 +63,12 @@ export async function toggleFavorite(track: Track): Promise<boolean> {
       list.splice(idx, 1);
       nowFavorite = false;
     } else {
-      list.unshift(track);
+      // P2-4: rescued YT rows carry a pre-resolved googlevideo streamUrl
+      // that is IP-bound and expires in ~6 h — persisting it guarantees a
+      // PlaybackError on the next session's replay. Strip it; tap-time
+      // resolution (buildPlayable → ytStreamUrlForTrack) re-resolves.
+      const { streamUrl: _stale, ...persistable } = track as Track & { streamUrl?: string };
+      list.unshift(persistable);
       nowFavorite = true;
     }
     await writeJSON(KEYS.favorites, list.slice(0, 500));

@@ -3,6 +3,72 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v3.4.0 — 2026-08-30 — YouTube source + the title-truth rescue
+
+Ported from the lab line (v3.4.0-lab.1…lab.4, device-verified there) and
+hardened with a full gauntlet round: a fresh-context adversarial critic
+found 2 P0 + 4 P1 + 7 P2 in the ported code — every P0/P1 fixed with
+test locks (tests/ai/search_yt_locks.test.ts, 15 locks; suite 159→173).
+
+### YouTube source
+- **Catalog | YouTube search toggle**: YT Music's catalog answers
+  directly (WEB_REMIX client) — Song rows first, videos only when
+  0 < duration ≤ 15 min (junk/podcast filter), duplicates dropped.
+- **Ad-free full-song playback** via a three-client InnerTube ladder:
+  VISIONOS 1.04 (tokenless, pre-signed URLs — the NewPipe/yt-dlp
+  production class) → WEB_REMIX (BotGuard-attested with PO tokens minted
+  in a hidden 1×1 WebView on the youtube.com origin + signatureCipher
+  decipher fallback) → ANDROID_VR (dying, last resort). Per-client
+  10-min health cooldowns, per-rung diagnostics trail
+  (`ytLastDiagnostics()`), IP-bound URL cache with refresh.
+- **Kill-switch discipline**: 3 consecutive systemic failures soft-disable
+  YouTube for 1 h; per-video UNPLAYABLE never disables the source;
+  search is gated; JioSaavn playback can never be blocked (every YT
+  entry point resolves null within timeouts).
+- **Never-blank player**: a failed YT stream = honest toast → 1.2 s
+  warm-up retry through the PO-token bridge → final honest toast. Never
+  a silent nothing, never a different song than the one tapped.
+
+### Search — the title-truth contract
+- **Rescue ladder** (youtube → itunes → variant → album): when a
+  specific-intent query has no dual-axis match, or a title-only query's
+  organic rows are all sub-250k-plays covers, the engine escalates and
+  paints the verified canonical recording at rank 1 with an honest label
+  ("Found on YouTube · full song, ad-free" / "Found via Apple Music ·
+  30s preview" / "Found under a different spelling" / "Found via its
+  album · full song").
+- **Port-hardening (critic round)**: a successful rescue can never be
+  discarded by the S4 recovery ladder or by cluster-dedupe (both were
+  reachable and fabricated `sigState='rescued'`); the title-only
+  unstreamable fallback is gated on non-systemic walls so iTunes
+  previews answer instead; song-kind rows outrank 6.2M-view lyric
+  videos; honest reasons (`bot-walled`/`network`/`no-audio`) and
+  class-aware kill-switch accounting; search-time connector stripping
+  ("tu chaiye OF atif aslam"); orthographic variant expansion
+  (chaiye ↔ chahiye, byte-identical legacy math when empty — pinned).
+- **parseHumanCount**: "6.2M views" → 6,200,000 (the old parse read 6).
+
+### App shell
+- **Fullscreen window determinism** (config plugin
+  `plugins/withWindowPolicy.js`): `resizeableActivity=false` +
+  `maxAspectRatio=2.4` injected at prebuild — the Samsung split-window
+  half-screen wedge class is impossible now.
+- **Insets-aware tab bar**: height/padding include `insets.bottom`
+  (gesture-nav safe); the mini-player offset mirrors it.
+- What's-New 3.4.0 dialog (new seen-key) doubles as on-device proof of
+  the update.
+
+### Tests & process
+- Suites: search_rescue / search_sig_e2e / youtube (lab) +
+  search_yt_locks (port locks) — 173 tests, 759 expects, all green;
+  `tsc --noEmit` clean.
+- Web screenshot harness: YouTube webmock (InnerTube has no CORS), YT
+  fixtures with ortho folds, SIG-cover fixture for the rescue scenario;
+  device lab 48/48 × 2 devices, zero console errors (12 new v3.4.0
+  checkpoints: rescued label, canonical top row, source toggle,
+  YouTube-mode rows + badges, rescued row plays end-to-end).
+- CI: fail-fast signing-secret preflight (seconds, not 17 minutes).
+
 ## v3.3.0 — 2026-08-30 — Search V2
 
 The search engine rebuild (from the SEARCH-ENGINE-REFACTOR plan; every

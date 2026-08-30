@@ -36,6 +36,8 @@ import TrackPlayer, {
 } from 'react-native-track-player';
 import type { Track } from '../types';
 import { resolveStreamUrl } from '../api/saavn';
+import { ytStreamUrlForTrack, ytLastDiagnostics } from '../api/youtube';
+import { YtPoTokenBridge } from '../api/ytPoToken';
 import { playbackService } from './service';
 import { getRecommendations } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
@@ -252,10 +254,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   async function buildPlayable(tracks: Track[]): Promise<RNTrack[]> {
     const downloads = await getDownloadIndex();
     const byId = new Map(downloads.map((d) => [d.id, d]));
+    // YOUTUBE SOURCE: resolve stream URLs BEFORE queue construction
+    // (RNTP needs a real url per item). Concurrency-limited (4) so a
+    // 25-row YT queue costs ~ceiling(25/4) probes; the module's LRU
+    // makes repeats free. Failures drop the row — never stall the queue.
+    const ytUrls = new Map<string, string | null>();
+    const ytTracks = tracks.filter((t) => t.source === 'youtube');
+    if (ytTracks.length > 0) {
+      let cursor = 0;
+      const CONCURRENCY = 4;
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, ytTracks.length) }, async () => {
+          while (cursor < ytTracks.length) {
+            const t = ytTracks[cursor];
+            cursor += 1;
+            const url = t.streamUrl ?? (await ytStreamUrlForTrack(t).catch(() => null));
+            ytUrls.set(t.id, url);
+          }
+        }),
+      );
+    }
     const playable: RNTrack[] = [];
     for (const t of tracks) {
       const local = byId.get(t.id);
-      const url = local?.localUri || t.localUri || resolveStreamUrl(t);
+      const url =
+        t.source === 'youtube'
+          ? t.streamUrl || ytUrls.get(t.id) || null
+          : local?.localUri || t.localUri || resolveStreamUrl(t);
       if (!url) continue;
       playable.push({
         id: t.id,
@@ -267,6 +292,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         source: t.source,
         saavnId: t.saavnId,
         encryptedUrl: t.encryptedUrl,
+        youtubeId: t.youtubeId,
         previewUrl: t.previewUrl,
         previewOnly: t.previewOnly,
         has320: t.has320,
@@ -293,7 +319,51 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await askNotificationPermission();
       const wantedId = tracks[startIndex]?.id;
       const playable = await buildPlayable(tracks);
-      if (!playable.length || !wantedId) return;
+      if (!playable.length || !wantedId) {
+        // HONEST FAILURE (no more blank player): if the tapped row was a
+        // YouTube row that the ladder could not resolve, say so with the
+        // diagnostics trail instead of silently doing nothing.
+        const wanted = tracks[startIndex];
+        if (wanted?.source === 'youtube') {
+          const trail = ytLastDiagnostics().slice(0, 5).join(' | ');
+          toast.show({
+            message: 'YouTube stream unavailable right now — retrying via secure resolver in a moment',
+            icon: 'alert-outline',
+          });
+          // second chance: the PO-token bridge may need one warm-up round
+          await new Promise((r) => setTimeout(r, 1200));
+          const retry = await buildPlayable(tracks);
+          if (retry.length && retry.some((m) => m.id === wantedId)) {
+            const startAt2 = Math.max(0, retry.findIndex((t) => t.id === wantedId));
+            const mapped2 = retry as unknown as Track[];
+            setQueue(mapped2);
+            originalQueue.current = tracks.filter((t) => mapped2.some((m) => m.id === t.id));
+            await TrackPlayer.reset();
+            await TrackPlayer.add(retry);
+            await TrackPlayer.skip(startAt2);
+            await TrackPlayer.play();
+            return;
+          }
+          // P1-3: the retry promise gets a FINAL honest answer, never silence
+          toast.show({ message: 'That YouTube track is unavailable right now', icon: 'alert-outline' });
+          if (__DEV__) console.warn('[yt] resolve failed:', trail);
+        }
+        return;
+      }
+      // the WANTED row itself dropped (others survived) — never start on a
+      // different song than the user asked for (P2-3: ALL sources, not
+      // just YouTube — a dropped saavn row must not fall through to
+      // startAt=0 and play some other song)
+      if (!playable.some((m) => m.id === wantedId)) {
+        toast.show({
+          message:
+            tracks[startIndex]?.source === 'youtube'
+              ? 'That YouTube track is unavailable right now'
+              : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        return;
+      }
       const startAt = Math.max(0, playable.findIndex((t) => t.id === wantedId));
       const mapped = playable as unknown as Track[];
       setQueue(mapped);
@@ -522,7 +592,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     try {
       await ensureSetup();
       const playable = await buildPlayable([track]);
-      if (!playable.length) return;
+      if (!playable.length) {
+        toast.show({
+          message: track.source === 'youtube' ? 'That YouTube track is unavailable right now' : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        return;
+      }
       const currentIdx = await TrackPlayer.getActiveTrackIndex();
       await TrackPlayer.add(playable, (currentIdx ?? -1) + 1);
       await refreshQueue();
@@ -537,7 +613,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     try {
       await ensureSetup();
       const playable = await buildPlayable([track]);
-      if (!playable.length) return;
+      if (!playable.length) {
+        toast.show({
+          message: track.source === 'youtube' ? 'That YouTube track is unavailable right now' : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        return;
+      }
       await TrackPlayer.add(playable);
       await refreshQueue();
       toast.show({ message: `Added to queue: ${track.title}`, icon: 'add' });
@@ -593,7 +675,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [active, isPlaying, loading, queue, shuffle, smartShuffle, autoplay, repeat, favorites],
   );
 
-  return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
+  return (
+    <PlayerContext.Provider value={value}>
+      {children}
+      {/* hidden BotGuard PO-token minter — the YouTube attested rung */}
+      <YtPoTokenBridge />
+    </PlayerContext.Provider>
+  );
 }
 
 export function usePlayer(): PlayerState {

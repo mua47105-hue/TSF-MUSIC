@@ -26,45 +26,60 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 interface CacheEntry {
   at: number;
   tracks: Track[];
+  /** SIG declaration stored with the final ranked list (§3.1) */
+  sig?: { sigState?: string; partialArtists?: string[] };
 }
 
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<Track[]>>();
 
-function cacheGet(key: string): Track[] | null {
+function cacheGet(key: string): CacheEntry | null {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
     cache.delete(key);
     cache.set(key, hit); // refresh recency
-    return hit.tracks;
+    return hit;
   }
   if (hit) cache.delete(key);
   return null;
 }
 
-function cacheSet(key: string, tracks: Track[]): void {
+function cacheSet(key: string, tracks: Track[], sig?: CacheEntry['sig']): void {
   if (cache.has(key)) cache.delete(key);
-  cache.set(key, { at: Date.now(), tracks });
+  cache.set(key, { at: Date.now(), tracks, sig });
   if (cache.size > CACHE_MAX) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
 }
 
-/** Probe strings for a plan (the §5.2 table). */
+/** Probe strings for a plan (SIG M1.2 rework of the §5.2 table).
+ *  Rules: probes are UNIQUE (raw ≡ normalized wasted a slot in v3.3.0),
+ *  connectors never enter a probe, variant spellings ride the fan-out
+ *  for title/artist_title kinds, and the useless surname-only probe is
+ *  gone. Hard cap 4 — wall time = max probe. */
 export function probesFor(plan: SearchPlan): string[] {
+  const title = plan.titleTokens.join(' ');
   switch (plan.kind) {
-    case 'entity_title':
-      return [plan.normalized];
+    case 'entity_title': {
+      const out = [title || plan.normalized];
+      for (const v of plan.variants) if (!out.includes(v)) out.push(v);
+      const norm = plan.normalized;
+      if (!out.includes(norm)) out.push(norm);
+      return out.slice(0, 4);
+    }
     case 'entity_artist':
       return [`${plan.normalized} songs`, plan.normalized];
     case 'artist_title': {
-      const title = plan.titleTokens.join(' ');
-      const surname = plan.artistTokens[plan.artistTokens.length - 1]?.split(' ').slice(-1)[0] ?? '';
-      const probes = [plan.raw.trim(), plan.normalized];
-      if (title) probes.push(title);
-      if (surname) probes.push(surname);
-      return probes.slice(0, 3);
+      // the highest-signal probe is the CLEAN title (connectors gone —
+      // they hijack natural-language phrases into junk on the provider);
+      // an artist-context probe follows, then spelling variants
+      const out: string[] = [];
+      if (title && !out.includes(title)) out.push(title);
+      const withArtist = plan.artistTokens.length ? `${title} ${plan.artistTokens.join(' ')}`.trim() : '';
+      if (withArtist && !out.includes(withArtist)) out.push(withArtist);
+      for (const v of plan.variants) if (!out.includes(v)) out.push(v);
+      return out.slice(0, 4);
     }
     case 'lyric_fragment':
       return [plan.normalized, ...plan.windows].slice(0, 3);
@@ -79,6 +94,7 @@ export interface RetrievalResult {
   topQueryTrack?: Track;
   cacheHit: boolean;
   probes: string[];
+  sig?: { sigState?: string; partialArtists?: string[] };
 }
 
 /** In-flight dedupe wrapper (exact palette-engine pattern). */
@@ -101,7 +117,7 @@ export async function retrieve(
   const { limit = 30, signal } = opts;
   const cached = cacheGet(plan.cacheKey);
   if (cached) {
-    return { pools: [{ pool: 'cache', tracks: cached }], cacheHit: true, probes: [] };
+    return { pools: [{ pool: 'cache', tracks: cached.tracks }], cacheHit: true, probes: [], sig: cached.sig };
   }
   const existing = inFlight.get(plan.cacheKey);
   if (existing) {
@@ -178,12 +194,15 @@ export async function retrieve(
 }
 
 /** Cache write — called by the orchestrator AFTER rank (stores the
- *  final ranked list so cache hits return exactly what was painted). */
-export function rememberResults(plan: SearchPlan, tracks: Track[]): void {
+ *  final ranked list so cache hits return exactly what was painted,
+ *  SIG declaration included). */
+export function rememberResults(
+  plan: SearchPlan,
+  tracks: Track[],
+  sig?: { sigState?: string; partialArtists?: string[] },
+): void {
   if (tracks.length > 0) {
-    cacheSet(plan.cacheKey, tracks.slice(0, 30));
-    // register the write inside the in-flight map too? No — in-flight is
-    // for concurrent generations of the same key; cache covers repeats.
+    cacheSet(plan.cacheKey, tracks.slice(0, 30), sig);
     void tracks;
   }
 }
@@ -191,4 +210,10 @@ export function rememberResults(plan: SearchPlan, tracks: Track[]): void {
 /** Direct access for tests. */
 export function cacheSize(): number {
   return cache.size;
+}
+
+/** Test/eval hook — drain the result cache + in-flight map between cases. */
+export function clearSearchCaches(): void {
+  cache.clear();
+  inFlight.clear();
 }

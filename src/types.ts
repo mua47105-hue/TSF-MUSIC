@@ -1,4 +1,4 @@
-export type TrackSource = 'saavn' | 'itunes';
+export type TrackSource = 'saavn' | 'itunes' | 'youtube';
 
 export interface Track {
   /** Stable provider id */
@@ -53,6 +53,16 @@ export interface Track {
   explicit?: boolean;
   /** Injected by Smart Shuffle — badges the row with a sparkle */
   isRecommended?: boolean;
+  /** YouTube video id when source === 'youtube' (stream resolve + refresh) */
+  youtubeId?: string;
+  /** Resolved stream URL — set by the YT rescue/resolve path (cache-backed) */
+  streamUrl?: string;
+  /** YouTube entity type — Song rows rank above lyric/cover videos */
+  ytKind?: 'song' | 'video' | 'album';
+  /** True when the row arrived through a SIG rescue rung (truthful labelling) */
+  rescued?: boolean;
+  /** Which rescue rung found it: youtube | itunes | variant | album */
+  rescueRung?: 'youtube' | 'itunes' | 'variant' | 'album';
 }
 
 export interface Collection {
@@ -71,6 +81,11 @@ export interface SearchResult {
   tracks: Track[];
   degraded: boolean;
 }
+
+/** Specific Intent Guarantee state (SEARCH-INTENT-RESCUE-PLAN §3.1).
+ *  The UI must DECLARE which of the four states it is in — never paint
+ *  an artist-matching, title-zero row as "Best match". */
+export type SigState = 'hit' | 'rescued' | 'partial' | 'zero';
 
 export interface Playlist {
   id: string;

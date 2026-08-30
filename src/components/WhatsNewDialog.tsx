@@ -11,15 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_3_0';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Search is now an ENGINE: typo-tolerant (Did you mean…), artist-aware ranking and duplicate releases collapsed',
-  'Search by LYRICS — type a line you remember; matches carry a green Lyric-match chip',
-  'Suggestions as you type — songs, artists and a Best guess from the catalog',
-  'Honest empty results (no more random songs) + searches learn from what you pick',
+  'YouTube section is LIVE — full songs, ad-free playback, junk rows filtered out',
+  'Search now rescues the OFFICIAL song when the catalog only has same-name covers',
+  'Fixed the half-screen UI: the app now always renders full-screen (no more split-window wedges)',
+  'Tap-to-play is faster and never dies silently — a toast tells you if something fails',
 ];
 
 export function WhatsNewDialog() {
@@ -58,7 +58,7 @@ export function WhatsNewDialog() {
             <Ionicons name="sparkles" size={20} color={colors.textOnGreen} />
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
-          <Text style={styles.version}>TSF Music 3.3.0 · Search V2</Text>
+          <Text style={styles.version}>TSF Music 3.4.0 · YouTube + full-screen fix</Text>
           <View style={styles.list}>
             {CHANGES.map((c) => (
               <View key={c} style={styles.row}>

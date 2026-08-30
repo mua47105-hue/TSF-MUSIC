@@ -152,11 +152,107 @@ export const SEARCH_EXTRA: Track[] = [
   },
 ];
 
+/**
+ * SIG RESCUE FIXTURE (v3.4.0 harness): the "tu chaiye" class. JioSaavn's
+ * catalog holds only a deep-niche same-name cover (sub-AUTHORITY_FLOOR),
+ * while the canonical recording lives on YouTube — exactly the
+ * title-authority-gap the rescue ladder exists to close.
+ */
+export const SIG_COVER: Track = {
+  id: 'saavn-spc1',
+  saavnId: 'spc1',
+  title: 'Tu Chaiye',
+  artist: 'SPECRO',
+  artistsFull: ['SPECRO'],
+  album: 'Tu Chaiye - Single',
+  artwork: art.boom,
+  duration: 209,
+  source: 'saavn',
+  previewOnly: false,
+  encryptedUrl: 'mock://spc1',
+  year: 2023,
+  playCount: 56,
+};
+
+/** YOUTUBE SOURCE fixtures (v3.4.0 harness) — the YT Music catalog side. */
+export const YT_TRACKS: Track[] = [
+  {
+    id: 'yt-WTLLym2wzIM',
+    youtubeId: 'WTLLym2wzIM',
+    ytKind: 'song',
+    title: 'Tu Chahiye',
+    artist: 'Pritam, Atif Aslam & Amitabh Bhattacharya',
+    artistsFull: ['Pritam', 'Atif Aslam', 'Amitabh Bhattacharya'],
+    artwork: art.raksha,
+    duration: 231,
+    source: 'youtube',
+    previewOnly: false,
+    year: 2015,
+  },
+  {
+    id: 'yt-sDKLK127GVA',
+    youtubeId: 'sDKLK127GVA',
+    ytKind: 'song',
+    title: 'TU CHAHIYE (Lo-Fi Mix): DJ Moody',
+    artist: 'Salman Khan, Kareena Kapoor Khan | Atif Aslam',
+    artistsFull: ['DJ Moody', 'Atif Aslam'],
+    artwork: art.lofi,
+    duration: 309,
+    source: 'youtube',
+    previewOnly: false,
+    playCount: 188000,
+    year: 2023,
+  },
+  {
+    id: 'yt-kv5z2ROptE',
+    youtubeId: 'kv_5z2ROptE',
+    ytKind: 'video',
+    title: 'Tu Chahiye - Atif Aslam (Lyrics)',
+    artist: 'LYRICAL BAM HINDI',
+    artistsFull: ['LYRICAL BAM HINDI'],
+    artwork: art.trending,
+    duration: 268,
+    source: 'youtube',
+    previewOnly: false,
+    playCount: 6200000,
+    year: 2021,
+  },
+];
+
+/** YT search fixture: title/artist match with the SAME orthographic folds
+ *  the real YT catalog applies (chaiye ↔ chahiye ↔ chaahiye) — an exact
+ *  substring match would miss the canonical row for "tu chaiye" (the real
+ *  InnerTube search is spelling-loose). Songs before videos. */
+const foldOrtho = (s: string): string =>
+  s.toLowerCase().replace(/ch+a+h*i+ye/g, 'chahiye');
+
+export function ytSearchFixtures(query: string, limit: number): Track[] {
+  const q = foldOrtho(query.trim());
+  const matched = YT_TRACKS.filter((t) => {
+    const hay = foldOrtho(`${t.title} ${t.artist}`);
+    return hay.includes(q);
+  });
+  // parity with the real ytSearchMusic: songs before videos
+  const ordered = [...matched.filter((t) => t.ytKind !== 'video'), ...matched.filter((t) => t.ytKind === 'video')];
+  if (ordered.length === 0) {
+    // token fallback so natural-language probes still hit
+    const tokens = q.split(/\s+/).filter((t) => t.length >= 3);
+    if (tokens.length >= 1) {
+      const loose = YT_TRACKS.filter((t) => {
+        const hay = foldOrtho(`${t.title} ${t.artist}`);
+        return tokens.some((tk) => hay.includes(tk));
+      });
+      return [...loose.filter((t) => t.ytKind !== 'video'), ...loose.filter((t) => t.ytKind === 'video')].slice(0, limit);
+    }
+  }
+  return ordered.slice(0, limit);
+}
+
 /** Search results: honest matching — a no-match returns [] (S6 fix);
  *  only genuine title/artist/album hits return rows. */
 export function searchFixtures(query: string, limit: number): Track[] {
   const q = query.trim().toLowerCase();
-  const pool = [...TRACKS, ...SEARCH_EXTRA];
+  const pool = [...TRACKS, ...SEARCH_EXTRA, SIG_COVER];
   const matched = pool.filter(
     (t) =>
       t.title.toLowerCase().includes(q) ||

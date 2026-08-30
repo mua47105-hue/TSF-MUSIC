@@ -87,3 +87,14 @@ export const TYPE_WORDS = new Set([
   'song', 'songs', 'gaana', 'gaane', 'track', 'video', 'mp3', 'mp4',
   'download', 'audio', 'lyrics', 'lyric',
 ]);
+
+/**
+ * Natural-language connectors (SIG M1.1): when a user phrases a request
+ * like "tu chaiye OF atif aslam" the connector is grammar, not part of
+ * the song title — it must never pollute the title probe. Stripped from
+ * titleTokens + all probe strings; kept in `raw` for display.
+ */
+export const CONNECTOR_WORDS = new Set([
+  'of', 'by', 'from', 'ka', 'ki', 'ke', 'se', 'and', 'with', 'feat', 'ft',
+  'saath', 'the', 'a', 'an',
+]);

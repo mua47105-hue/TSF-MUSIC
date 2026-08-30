@@ -261,6 +261,30 @@ export async function getCollectionTracks(collectionId: string): Promise<Track[]
 }
 
 /** Full album tracklist — powers "go to album" from the player. */
+/**
+ * Album search (SIG rescue R2) — the typed album endpoint the app never
+ * used before (research round 4 verified: search.getAlbumResults works
+ * and carries id/title/music for getAlbumTracks).
+ */
+export async function searchAlbumResults(
+  query: string,
+  limit = 5,
+  signal?: AbortSignal,
+): Promise<Array<{ id: string; title: string; music?: string }>> {
+  try {
+    const data = await saavnGet(
+      { __call: 'search.getAlbumResults', q: query, p: '1', n: String(limit) },
+      signal,
+    );
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results
+      .filter((r: any) => r?.id)
+      .map((r: any) => ({ id: String(r.id), title: String(r.title ?? ''), music: r.music }));
+  } catch {
+    return [];
+  }
+}
+
 export async function getAlbumTracks(albumId: string): Promise<Track[]> {
   try {
     const data = await saavnGet({ __call: 'content.getAlbumDetails', albumid: albumId });

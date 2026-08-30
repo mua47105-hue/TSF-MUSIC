@@ -1,11 +1,12 @@
-# TSF Music v3.3 — MINDBEAT
+# TSF Music v3.4 — MINDBEAT + YouTube
 
 **A standalone, cross-platform (Android + iOS) music app with a Spotify-grade
 interface and a learning, on-device intelligence engine.**
 No server. No setup. No account. Install the APK and it works.
 
 Music streams at **320 kbps** straight from the device via direct JioSaavn
-API calls (DES-decrypted on-device) with an iTunes preview fallback —
+API calls (DES-decrypted on-device), with a **full YouTube source**
+(search + ad-free full-song playback) and an iTunes preview fallback —
 React Native talks to the APIs directly, so there are no CORS proxies, no
 backends, nothing to host. Every AI feature runs **100% on the device**:
 no LLM APIs, no analytics, no telemetry — your listening history never
@@ -18,6 +19,28 @@ leaves the phone.
 ---
 
 ## What's inside
+
+### YouTube source — a second catalog (v3.4)
+- **A Catalog | YouTube toggle** in search: YouTube's music catalog
+  answers directly — official Song rows first, videos (≤ 15 min, junk
+  filtered) after
+- **Ad-free full-song playback**: a three-client InnerTube ladder
+  (VISIONOS tokenless → WEB_REMIX attested via a hidden-WebView
+  BotGuard PO-token minter → ANDROID_VR last resort) resolves direct
+  audio URLs — the same technique NewPipe/yt-dlp ship
+- **Kill-switch discipline**: YouTube breakage can never degrade the
+  JioSaavn core — every entry point degrades to honest empty states,
+  toasts, and per-rung diagnostics
+
+### Search that rescues the song you meant (v3.4)
+When the catalog only has same-name covers of the song you typed
+("tu chaiye" → 31 covers, none canonical), the engine escalates a
+**rescue ladder** — YouTube (full song, ad-free) → iTunes (30 s preview,
+truthfully labelled) → variant spellings (chaiye ↔ chahiye) → the album
+route — and paints the verified canonical recording at rank 1 with an
+honest label: *Found on YouTube · full song, ad-free*. Covers never
+displace a verified rescue; a fabricated result state is a test-locked
+bug class.
 
 ### Search V2 — a real search engine (v3.3)
 Search is a full pipeline, not a text field: **S0** query understanding
@@ -186,7 +209,7 @@ GitHub Actions (`.github/workflows/native-android.yml`) on every push to
 artifact. Pushing a `v*` tag publishes a GitHub Release.
 
 ```bash
-git tag v3.3.0 && git push origin v3.3.0   # → release APK in ~15 min
+git tag v3.4.0 && git push origin v3.4.0   # → release APK in ~15 min
 ```
 
 APKs are deep-verified after each release (manifest version probe, Hermes

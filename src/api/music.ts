@@ -12,7 +12,7 @@
  * final promise resolves at max(probes).
  */
 
-import type { SearchResult, Track } from '../types';
+import type { SearchResult, Track, SigState } from '../types';
 import type { SearchPlan } from '../search/plan';
 import { planSearch, correctedQuery, registerArtistLexicon, registerVibeVocab } from '../search/plan';
 import { retrieve, rememberResults } from '../search/retrieve';
@@ -31,6 +31,8 @@ import { searchItunes } from './itunes';
 import { searchSaavn } from './saavn';
 import { searchLyricByFragment } from './lrclib';
 import { buildLexicon, lexiconReady, restoreLexicon, snapshotLexicon, SNAPSHOT_KEY } from '../search/lexicon';
+import { sigUnmet, runRescueLadder, titleAuthorityMissing } from '../search/rescue';
+import { ytSearchMusic } from './youtube';
 
 export interface SearchV2Result extends SearchResult {
   plan: SearchPlan;
@@ -41,6 +43,10 @@ export interface SearchV2Result extends SearchResult {
   latencyMs: number;
   correlationId: string;
   probes?: string[];
+  /** SIG (§3.1): the declared four-state outcome — the UI must show it */
+  sigState?: SigState;
+  /** title-matching pool artists for the S-PARTIAL disambiguation chips */
+  partialArtists?: string[];
 }
 
 /** Deps the engine needs from the host app (mindbeat on-device). */
@@ -181,6 +187,8 @@ export async function searchMusicV2(
       latencyMs: Date.now() - t0,
       probes: [],
       topReason: tracks[0]?.reason,
+      sigState: retrieval.sig?.sigState as SigState | undefined,
+      partialArtists: retrieval.sig?.partialArtists,
       ...base,
     };
   }
@@ -243,10 +251,111 @@ export async function searchMusicV2(
     });
   }
 
+  // ── SIG GATE (M3): a specific-intent query that produced no row
+  //    matching BOTH axes must escalate, never paint artist-only junk
+  //    as "Best match". Rung order: YouTube (full length) → iTunes
+  //    (30 s preview) → variant spellings → album route. Bounded 3 s;
+  //    after-paint (onEarly already fired the organic set).
+  let ranked: RankedRow[] = earlyRanked;
+  let sigState: SigState | undefined;
+  let partialArtists: string[] | undefined;
+  // P0-2 lock: the ladder's verified rows, kept so the paint contract can
+  // re-inject them if clustering unions the rescued row away (an organic
+  // same-title row with a playCount wins the cluster rep over a YT song
+  // row that carries none).
+  let rescueTracks: Track[] | null = null;
+  const artistPlan = plan.kind === 'artist_title';
+  if (artistPlan && !opts.signal?.aborted) {
+    const unmet = sigUnmet(plan, earlyRanked);
+    if (unmet) {
+      const rescue = await runRescueLadder(plan, { signal: opts.signal });
+      if (rescue.tracks.length > 0) {
+        rescueTracks = rescue.tracks;
+        const merged = verifySet(plan, [{ pool: 'rescue', tracks: rescue.tracks }, { pool: 'organic', tracks: toTrackList(earlyRanked) }]);
+        ranked = rankRows(plan, merged.rows, { engagement, artistAffinity: affinity, mutedArtists: muted });
+        sigState = 'rescued';
+      } else {
+        sigState = earlyRanked.some((r) => r.queryMatch >= 0.5) ? 'partial' : 'zero';
+        if (sigState === 'partial') {
+          const seen = new Set<string>();
+          partialArtists = [];
+          for (const r of earlyRanked.filter((x) => x.queryMatch >= 0.5)) {
+            for (const a of r.artistsFull ?? [r.artist]) {
+              const key = a.toLowerCase();
+              if (!seen.has(key)) {
+                seen.add(key);
+                partialArtists.push(a);
+              }
+            }
+          }
+          partialArtists = partialArtists.slice(0, 8);
+        }
+      }
+    } else {
+      sigState = 'hit';
+    }
+  } else if (
+    plan.kind === 'entity_title' &&
+    earlyRanked.length > 0 &&
+    !opts.signal?.aborted
+  ) {
+    // TITLE-ONLY AUTHORITY GAP ("tu chaiye" class): the query is just a
+    // song title, JioSaavn answered with title-matching rows, but every
+    // one of them is a deep-niche cover/remake — the canonical recording
+    // the user means is missing from the catalog. Escalate once via the
+    // rescue ladder; an authoritative row (≥ AUTHORITY_FLOOR plays/views)
+    // paints on top as S-RESCUED. If the ladder finds nothing credible we
+    // keep the organic list silently — title matches ARE honest answers
+    // for a title query, so no false partial/zero is claimed.
+    if (titleAuthorityMissing(earlyRanked)) {
+      const rescue = await runRescueLadder(plan, { signal: opts.signal });
+      if (rescue.tracks.length > 0) {
+        rescueTracks = rescue.tracks;
+        const merged = verifySet(plan, [{ pool: 'rescue', tracks: rescue.tracks }, { pool: 'organic', tracks: toTrackList(earlyRanked) }]);
+        ranked = rankRows(plan, merged.rows, { engagement, artistAffinity: affinity, mutedArtists: muted });
+        sigState = 'rescued';
+      }
+    } else {
+      sigState = 'hit';
+    }
+  }
+
+  // SIG paint contract: the rescued row IS the declared answer — it
+  // paints at rank 1 with the "Best match" reason regardless of what the
+  // organic covers scored (the +0.75 promotion narrows the gap; this
+  // closes it deterministically for both the artist_title and
+  // title-only paths).
+  if (sigState === 'rescued') {
+    let ri = ranked.findIndex((r) => r.rescued);
+    if (ri === -1 && rescueTracks) {
+      // P0-2: clustering dropped the rescued row (organic same-cluster rep
+      // won). Title truth (contract #1) outranks dedupe: re-inject the
+      // ladder's dual-verified rows at the top instead of fabricating a
+      // 'rescued' state over organic covers.
+      const ids = new Set(ranked.map((r) => r.id));
+      const reinjected = rescueTracks
+        .filter((t) => !ids.has(t.id))
+        .map((t) => ({
+          ...t,
+          pool: 'rescue' as const,
+          poolRank: 0,
+          score: 10,
+          artistMatch: 1,
+          queryMatch: 1,
+          reasonCode: 'MATCHES_SEARCH' as const,
+        }));
+      ranked = [...reinjected, ...ranked];
+      ri = reinjected.length > 0 ? 0 : -1;
+    }
+    if (ri > 0) {
+      const [hit] = ranked.splice(ri, 1);
+      ranked = [{ ...hit, reasonCode: 'MATCHES_SEARCH' as const }, ...ranked];
+    }
+  }
+
   // fragment→track cache (§5.6 — lyric plans ONLY, P1-3 fix): inject the
   // remembered pick at rank 1 with its truthful reason. Never overrides
   // the disambiguation override: artist-mismatched memories are skipped.
-  let ranked: RankedRow[] = earlyRanked;
   const remembered: Track | null = resolved;
   if (remembered && plan.kind === 'lyric_fragment') {
     const row = ranked.find((r) => r.id === remembered.id);
@@ -304,18 +413,23 @@ export async function searchMusicV2(
   let relaxedFrom: string | undefined;
   let relaxedQuery: string | undefined;
 
-  // HONEST ZERO (S6 fix): if the provider returned rows but NONE actually
-  // match the query (its fuzzy garbage for gibberish like "zzqqxx"),
-  // treat as zero and fall into recovery — never render unrelated rows
-  // as matches (the old English-lyric→Telugu-songs failure mode).
-  const anyRelevant = ranked.some((r) => r.queryMatch >= 0.34 || r.artistMatch >= 1);
+  // HONEST ZERO (S6 fix + SIG M2.1): if the provider returned rows but NONE
+  // actually match the query, treat as zero and fall into recovery — never
+  // render unrelated rows as matches. SIG M2.1 tightens the old gate:
+  // artistMatch ≥ 1 alone no longer passes (that loophole is exactly what
+  // painted O'Meri Laila as "Best match" for "tu chaiye of atif aslam").
+  const anyRelevant = ranked.some((r) => r.queryMatch >= 0.34);
   if (!anyRelevant && ranked.length > 0) {
     tracks = [];
   }
 
   // ── S4 recovery ladder (thin/zero only — ≤2 RUNGS, 1.5 s total budget;
   //    P1-6 fix: a deadline kills the climb even mid-rung)
-  if (tracks.length < THIN_THRESHOLD && !opts.signal?.aborted) {
+  //    P0-1 lock: NEVER when the SIG rescue succeeded — the rescued row is
+  //    the declared answer and relaxation would replace it with relaxed
+  //    junk that doesn't contain it (fabricating sigState='rescued' over
+  //    an unrelated list). Thin-after-rescue is the honest state.
+  if (tracks.length < THIN_THRESHOLD && !opts.signal?.aborted && sigState !== 'rescued') {
     const deadline = Date.now() + 1500;
     let rungsUsed = 0;
     let rungPlan: SearchPlan = plan;
@@ -345,7 +459,7 @@ export async function searchMusicV2(
   const degraded = tracks.length > 0 && tracks.every((t) => t.source === 'itunes');
   // aborted generations never poison the 10-min cache (P1-7 fix)
   if (!opts.signal?.aborted) {
-    rememberResults(plan, tracks);
+    rememberResults(plan, tracks, { sigState, partialArtists });
   }
 
   const result: SearchV2Result = {
@@ -356,6 +470,8 @@ export async function searchMusicV2(
     relaxedQuery,
     probes: retrieval.probes,
     topReason: tracks[0]?.reason,
+    sigState,
+    partialArtists,
     ...base,
   };
 

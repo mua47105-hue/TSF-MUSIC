@@ -35,6 +35,7 @@ import {
   type EngineDeps,
   type SearchV2Result,
 } from '../api/music';
+import { ytSearchMusic, ytAvailable } from '../api/youtube';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
 import { searchSaavnClean, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
@@ -111,12 +112,20 @@ export function SearchScreen() {
     corrected?: string;
     relaxedQuery?: string;
     lyricLine?: string;
+    sigState?: 'hit' | 'rescued' | 'partial' | 'zero';
+    partialArtists?: string[];
+    /** the plan's title side (connectors stripped) — chip queries build
+     *  from THIS, never from raw query slicing (P2-2) */
+    partialTitle?: string;
+    /** YouTube source cooling down after repeated failures (P1-3 note) */
+    ytUnavailable?: boolean;
   }>({ degraded: false });
   const [loading, setLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [browseArt, setBrowseArt] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
   const [vibe, setVibe] = useState(false); // Keyword | Vibe mode (§9.8)
+  const [source, setSource] = useState<'catalog' | 'youtube'>('catalog');
   const [vibeChips, setVibeChips] = useState<string[]>([]);
   const [suggests, setSuggests] = useState<AutocompleteBundle | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,7 +178,12 @@ export function SearchScreen() {
   }, [query, vibe]);
 
   const runSearch = useCallback(
-    async (q: string) => {
+    // sourceOverride (P2-1): the source toggle passes the NEW source so the
+    // immediate re-search runs against it — the render-time `source` is
+    // still the old one until the setSource re-render lands, which
+    // otherwise painted ~1s of mislabeled results + double ledger events.
+    async (q: string, sourceOverride?: 'catalog' | 'youtube') => {
+      const src = sourceOverride ?? source;
       if (!q.trim()) {
         searchGen.current += 1;
         abortRef.current?.abort();
@@ -190,6 +204,28 @@ export function SearchScreen() {
       setSuggests(null);
       const deps = engineDeps();
       try {
+        if (src === 'youtube') {
+          // YOUTUBE SOURCE (YOUTUBE-INTEGRATION-PLAN §3.1): the YT Music
+          // catalog answers directly — Song rows first, then videos.
+          // Kill-switch honesty (P1-3): a cooling-down source says so
+          // instead of painting a bare "no results".
+          if (!ytAvailable()) {
+            if (gen !== searchGen.current) return;
+            setResults([]);
+            setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: true });
+            setVibeChips([]);
+            return;
+          }
+          const ytr = await ytSearchMusic(q, 25, ctrl.signal);
+          if (gen !== searchGen.current) return;
+          setResults(ytr.tracks);
+          setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: ytr.tracks.length === 0 && !ytAvailable() });
+          setVibeChips([]);
+          void mindbeat.searchQueried(q, ytr.tracks.length);
+          await pushRecentSearch(q);
+          setRecentSearches(await getRecentSearches());
+          return;
+        }
         if (vibe) {
           const r = await vibeSearch(
             { search: (qq, limit) => searchSaavnClean(qq, limit) },
@@ -238,6 +274,9 @@ export function SearchScreen() {
             corrected: res.corrected,
             relaxedQuery: res.relaxedQuery,
             lyricLine: undefined,
+            sigState: res.sigState,
+            partialArtists: res.partialArtists,
+            partialTitle: res.plan.titleTokens.join(' '),
           });
           setVibeChips([]);
           void mindbeat.searchQueriedV2({
@@ -295,7 +334,7 @@ export function SearchScreen() {
         if (gen === searchGen.current) setLoading(false);
       }
     },
-    [vibe],
+    [vibe, source],
   );
 
   useEffect(() => {
@@ -487,6 +526,42 @@ export function SearchScreen() {
         </View>
       ) : null}
 
+      {/* ── Source toggle: Catalog | YouTube (YOUTUBE-INTEGRATION-PLAN §3.1) ── */}
+      {!showBrowse ? (
+        <View style={styles.sourceToggleRow}>
+          {([
+            { key: 'catalog', label: 'Catalog', icon: 'disc-outline' as const },
+            { key: 'youtube', label: 'YouTube', icon: 'logo-youtube' as const },
+          ] as const).map((opt) => {
+            const active = source === opt.key;
+            return (
+              <PressableScale
+                key={opt.key}
+                haptic
+                testID={`source-toggle-${opt.key}`}
+                onPress={() => {
+                  if (active) return;
+                  setSource(opt.key);
+                  // P2-1: search the NEW source immediately, not the stale
+                  // render-time one
+                  if (query.trim()) runSearch(query.trim(), opt.key);
+                }}
+                style={[styles.sourceChip, active && styles.sourceChipActive]}
+              >
+                <Ionicons
+                  name={opt.icon}
+                  size={14}
+                  color={active ? '#101010' : colors.textDim}
+                />
+                <Text style={[styles.sourceChipText, active && styles.sourceChipTextActive]}>
+                  {opt.label}
+                </Text>
+              </PressableScale>
+            );
+          })}
+        </View>
+      ) : null}
+
       {showBrowse ? (
         <FlatList
           data={GENRES}
@@ -630,6 +705,69 @@ export function SearchScreen() {
           contentContainerStyle={{ paddingBottom: 170 }}
           ListHeaderComponent={
             <View>
+              {meta.sigState === 'partial' ? (
+                <View style={styles.sigNote}>
+                  <Text style={styles.sigNoteTitle} numberOfLines={1}>
+                    Songs matching “{query.trim()}”
+                  </Text>
+                  <Text style={styles.sigNoteSub}>
+                    The artist version isn't available on JioSaavn right now
+                  </Text>
+                  {meta.partialArtists && meta.partialArtists.length > 0 ? (
+                    <View style={styles.sigChips}>
+                      {meta.partialArtists.slice(0, 5).map((a) => (
+                        <Pressable
+                          key={a}
+                          style={styles.sigChip}
+                          onPress={() => {
+                            // P2-2: build from the plan's title side — raw
+                            // query slicing only stripped " of " and let
+                            // "... by atif aslam" queries grow unboundedly
+                            const base = meta.partialTitle?.trim() || planSearch(query).titleTokens.join(' ');
+                            const q2 = `${base} ${a}`.trim();
+                            setQuery(q2);
+                            runSearch(q2);
+                          }}
+                        >
+                          <Text style={styles.sigChipText} numberOfLines={1}>
+                            {a}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+              {meta.sigState === 'zero' ? (
+                <Text style={styles.sigRescuedNote}>
+                  Nothing on JioSaavn matches well — try the YouTube tab
+                </Text>
+              ) : null}
+              {meta.ytUnavailable && source === 'youtube' ? (
+                <Text style={styles.sigRescuedNote}>
+                  YouTube is taking a break after repeated failures — try Catalog
+                </Text>
+              ) : null}
+              {meta.sigState === 'rescued' && results[0]?.rescueRung === 'youtube' ? (
+                <Text style={styles.sigRescuedNote}>
+                  Found on YouTube · full song, ad-free
+                </Text>
+              ) : null}
+              {meta.sigState === 'rescued' && results[0]?.rescueRung === 'itunes' ? (
+                <Text style={styles.sigRescuedNote}>
+                  Found via Apple Music · 30s preview
+                </Text>
+              ) : null}
+              {meta.sigState === 'rescued' && results[0]?.rescueRung === 'variant' ? (
+                <Text style={styles.sigRescuedNote}>
+                  Found under a different spelling
+                </Text>
+              ) : null}
+              {meta.sigState === 'rescued' && results[0]?.rescueRung === 'album' ? (
+                <Text style={styles.sigRescuedNote}>
+                  Found via its album · full song
+                </Text>
+              ) : null}
               {meta.degraded ? (
                 <Text style={styles.degradedNote}>
                   Full-length streams unavailable — some results are 30s previews
@@ -667,7 +805,15 @@ export function SearchScreen() {
                       </Text>
                       <View style={styles.topCardMetaRow}>
                         <View style={styles.topCardType}>
-                          <Text style={styles.topCardTypeText}>Song</Text>
+                          <Text style={styles.topCardTypeText}>
+                            {top.source === 'youtube'
+                              ? top.ytKind === 'video'
+                                ? 'YT Video'
+                                : 'YT Song'
+                              : top.source === 'itunes'
+                                ? 'Preview'
+                                : 'Song'}
+                          </Text>
                         </View>
                         <Text style={styles.topCardArtist} numberOfLines={1}>
                           {top.artist}
@@ -962,5 +1108,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
+  },
+  // ── source toggle (Catalog | YouTube) ──
+  sourceToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: radius.full,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  sourceChipActive: {
+    backgroundColor: colors.accentBright,
+  },
+  sourceChipText: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontFamily: fonts.semibold,
+  },
+  sourceChipTextActive: {
+    color: '#101010',
+  },
+  // ── SIG states (§3.1) ──
+  sigNote: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+  },
+  sigNoteTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontFamily: fonts.semibold,
+  },
+  sigNoteSub: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    marginTop: 2,
+  },
+  sigChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  sigChip: {
+    paddingHorizontal: 10,
+    height: 26,
+    borderRadius: radius.full,
+    backgroundColor: '#2a2a2a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sigChipText: {
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: fonts.medium,
+  },
+  sigRescuedNote: {
+    color: colors.accentBright,
+    fontSize: 12,
+    fontFamily: fonts.medium,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
   },
 });

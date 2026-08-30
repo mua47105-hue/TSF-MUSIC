@@ -175,19 +175,28 @@ export function TrackMenu({
                 label="Add to playlist"
                 onPress={() => setPicking(true)}
               />
-              <Action
-                icon={downloaded ? 'checkmark-circle' : 'arrow-down-circle-outline'}
-                label={downloaded ? 'Downloaded' : 'Download'}
-                dim={downloaded}
-                onPress={() => {
-                  if (downloaded) {
+              {track.source === 'youtube' ? (
+                <Action
+                  icon="cloud-offline-outline"
+                  label="YouTube streams only"
+                  dim
+                  onPress={onClose}
+                />
+              ) : (
+                <Action
+                  icon={downloaded ? 'checkmark-circle' : 'arrow-down-circle-outline'}
+                  label={downloaded ? 'Downloaded' : 'Download'}
+                  dim={downloaded}
+                  onPress={() => {
+                    if (downloaded) {
+                      onClose();
+                      return;
+                    }
+                    void onDownload();
                     onClose();
-                    return;
-                  }
-                  void onDownload();
-                  onClose();
-                }}
-              />
+                  }}
+                />
+              )}
             </>
           ) : creating ? (
             <>

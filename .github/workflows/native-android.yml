@@ -85,6 +85,41 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # ── preflight: validate the signing secrets NOW. A broken/missing
+      #    secret otherwise surfaces only inside :app:packageRelease —
+      #    after ~17 minutes of building (seen on run #1: empty secret
+      #    ⇒ 0-byte keystore ⇒ "Tag number over 30 is not supported").
+      - name: Preflight signing secrets (fail fast in seconds, not after the build)
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for v in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Secret ${v} is NOT set (or empty) on this repo — Settings → Secrets and variables → Actions"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 1 ] && exit 1
+          KS=android/app/tsf-release.keystore
+          if [ ! -s "$KS" ]; then
+            echo "::error::$KS is empty or missing — ANDROID_KEYSTORE_BASE64 is not set or does not decode to a keystore"
+            exit 1
+          fi
+          if ! keytool -list -storetype PKCS12 -keystore "$KS" -storepass "$ANDROID_KEYSTORE_PASSWORD" > /tmp/ks-list.txt 2>&1; then
+            echo "::error::Keystore does not open with ANDROID_KEYSTORE_PASSWORD (wrong password or corrupt file):"
+            tail -3 /tmp/ks-list.txt
+            exit 1
+          fi
+          if ! grep -q "^${ANDROID_KEY_ALIAS}," /tmp/ks-list.txt; then
+            echo "::error::Alias '${ANDROID_KEY_ALIAS}' not found in keystore. Keystore entries:"
+            grep -E "^[^,]+," /tmp/ks-list.txt | head -5
+            exit 1
+          fi
+          echo "Preflight OK: keystore opens and alias '${ANDROID_KEY_ALIAS}' is present"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false

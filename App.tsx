@@ -46,7 +46,9 @@ const Tab = createBottomTabNavigator<TabParamList>();
 /**
  * Tabs — authentic Spotify Android shell: full-width pure-black bottom bar
  * (4 tabs incl. Premium), content on #121212, mini player card floating
- * above the bar.
+ * above the bar. Bar height is insets-aware so gesture-nav devices (and
+ * any future edge-to-edge mode) get the labels lifted clear of the system
+ * nav area instead of colliding with it.
  */
 function TabsScreen() {
   const insets = useSafeAreaInsets();
@@ -63,8 +65,8 @@ function TabsScreen() {
             backgroundColor: colors.bgDeep, // Spotify: pure black bar
             borderTopWidth: 0,
             elevation: 0,
-            height: 58,
-            paddingBottom: 6,
+            height: 58 + insets.bottom,
+            paddingBottom: 6 + insets.bottom,
             paddingTop: 4,
           },
           tabBarLabelStyle: styles.tabLabel,
@@ -92,7 +94,8 @@ function TabsScreen() {
           options={{ tabBarLabel: 'Premium' }}
         />
       </Tab.Navigator>
-      {/* Spotify mini player: rounded #282828 card floating above the bar */}
+      {/* Spotify mini player: rounded #282828 card floating above the bar
+          (offset mirrors the insets-aware bar height above) */}
       <View style={[styles.miniWrap, { bottom: 58 + insets.bottom + 6 }]}>
         <MiniPlayer />
       </View>

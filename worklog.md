@@ -681,3 +681,142 @@ Stage Summary:
 - Upgraders see the 3.3.0 What's-new (Search V2 notes); fresh installs
   get What's-new → onboarding → Search V2
 - Reminder: user rotates GitHub token after session
+
+---
+Task ID: 8
+Agent: adversarial-critic
+Task: v3.4.0 port review
+
+Work Log:
+- Fresh-context adversarial review of the uncommitted v3.4.0 lab line
+  (rescue ladder, YouTube source, PO-token bridge, never-blank player,
+  window policy). Read all new/modified files; ran tsc (clean), full
+  suite (159/159), and 6 scratch verification tests in /tmp against the
+  real engine, plus LIVE network probes of the InnerTube client.
+- P0-1 (PROVEN, /tmp test): a SUCCESSFUL rescue can be discarded by the
+  S4 recovery ladder — THIN_THRESHOLD=3 means a rescued list shorter than
+  3 rows (the flagship "song missing from catalog" case!) is replaced
+  wholesale by relaxed junk; sigState stays 'rescued' with no rescued row
+  (music.ts tracks replacement at the S4 block; paint contract runs
+  BEFORE it). Cache then serves the fabricated state for 10 min.
+- P0-2 (PROVEN): verifySet clustering can drop the rescued row (same
+  clusterKey + surname overlap, organic playCount beats the song-kind
+  YT row's undefined) → paint contract findIndex === -1 no-ops →
+  sigState='rescued' fabricated over an organic cover list.
+- P1 (PROVEN, 1:1 assembly replication + e2e): the signatureCipher
+  decipher is DEAD CODE — fnMatch[0] already contains `a=a.split("")`
+  and fnSrc.slice(1) re-includes it with no separator → new Function
+  throws SyntaxError on EVERY invocation → WEB_REMIX ciphered formats
+  never resolve ("OK but 0 direct audio urls" in trail). The attested
+  PO-token playback rung can never decipher; YT playback rests entirely
+  on VISIONOS. Also: helper-object regex matches the param (`a.split(`)
+  not the helper.
+- P1 (PROVEN): title-only YT fallback paints a streamless rescued row
+  (labeled "full song, ad-free") when the player endpoint is bot-walled
+  while search is healthy — the itunes rung never runs, so a playable
+  30s preview is passed over for a guaranteed-unplayable row; tap-time
+  resolution fails on the same network (toast + 1.2s retry + silence).
+- P1: kill-switch gaps — ytSearchMusic NOT gated by ytAvailable
+  (contradicts the module's own "gates every entry point"); one tap on a
+  25-row YT list on a bot-walled network trips the 1h disable; the
+  "retrying via secure resolver" toast's retry fails with NO final
+  honest state; per-video UNPLAYABLE counts toward the global kill.
+- P1: test suite does not lock the ported bars — variant/album rungs,
+  AUTHORITY_FLOOR, ladder order, entity_title rescue (the "tu chaiye"
+  headline), decipher, PO-token bridge, buildPlayable/never-blank, and
+  the window-policy plugin are all deletable with 159/159 still green.
+- P2s: source-toggle stale closure (catalog results flash under the
+  active YouTube chip ~0.7-1.5s, double search/ledger event);
+  partialArtists chip only strips ' of ' (by/from/with phrasings append
+  artists, query grows per tap); playQueue non-YT wanted-row fall-through
+  starts row 0 (comment claims never); favorites persist stale YT
+  streamUrl (blind reuse → guaranteed error→refresh cycle on replay);
+  'zero'/'hit' sigStates render no explanation ('zero' can coexist with
+  painted qm∈[0.34,0.5) rows); hero card labels video rows "YT Song";
+  app.json still 3.3.0/versionCode 1 vs package.json 3.4.0-lab.4.
+- Verified solid: v3.3.0 suite intact (zero-regression: empty variants ⇒
+  acceptableTitleTokens ≡ titleQueryTokens); live YT search works from
+  sandbox (canonical row parsed, lo-fi junk correctly demoted by
+  bestFirst); worker pool concurrency-4 correct; mixed saavn+YT queues;
+  service.ts PlaybackError → ytRefreshStream wiring; downloads/radio/
+  mindbeat/library seams all handle YT rows without crash; web harness
+  unaffected (webview 14 web fallback is an inert text component);
+  withWindowPolicy manifest mutation shape correct; deadline/signal
+  propagation correct; ladder never throws (live dead-network run
+  attempted youtube→itunes in order and degraded honestly).
+- No files modified; all proofs live in /tmp/critic/*.test.ts.
+
+Stage Summary:
+- Verdict: FIX-FIRST (2 P0 + 4 P1 + 7 P2). The two P0s are the
+  orchestration seams the lab missed: the rescue result is not protected
+  from (a) thin-set recovery replacement and (b) cluster-representative
+  displacement, and both fabricate sigState='rescued'. The decipher being
+  100% dead code means the PO-token bridge adds nothing to playback
+  today. Fix P0s + gate the title-only fallback + add the missing bar
+  locks, then re-run the gauntlet before shipping 3.4.0.
+
+---
+Task ID: 9
+Agent: Super Z (main agent)
+Task: Port lab v3.4.0 (lab.1→lab.4) into main repo via the gauntlet loop, verify everything, ship v3.4.0
+
+Work Log:
+- Cloned TSF-MUSIC-LAB @ v3.4.0-lab.4 (fork point = main HEAD 18e23aa —
+  clean patch), applied the full lab diff (28 files, +3050 lines) to main
+- Gauntlet CRITIC round (fresh-context opus subagent): 2 P0 + 4 P1 + 7 P2,
+  all machine-proven (scratch tests against the real engine + live probes):
+  • P0-1 a successful rescue was discarded by the S4 recovery ladder on
+    thin sets (relaxed junk replaced the verified answer, sigState
+    'rescued' fabricated over it) → S4 now skips on rescue (locked)
+  • P0-2 cluster-dedupe could drop the rescued row (organic same-title
+    rep with playCount beats metric-less YT song row) → paint contract
+    re-injects the ladder's verified rows at rank 1 (locked)
+  • P1-1 decipherer was dead code (fnMatch[0]+fnSrc.slice(1) assembly =
+    SyntaxError every time; helper regex matched the param not the object)
+    → full-source-span assembly + param-aware helper scan (locked)
+  • P1-2 title-only fallback painted an unplayable YT row on walled
+    networks and skipped playable iTunes previews → gated on systemic
+    verdicts only (locked)
+  • P1-3 kill-switch gaps: search ungated, dishonest toast lifecycle,
+    per-video UNPLAYABLE tripping the global switch, offline =
+    'bot-walled' → gated search + honest notes, final toast after
+    warm-up retry, class-aware failure accounting (walls count, video
+    verdicts don't, all-cooldown walls persist), honest reasons
+    (locked ×4)
+  • P2s: source-toggle stale closure, partialArtists chip query
+    pollution, playQueue fall-through playing row 0, stale streamUrl
+    persisted in favorites, zero-state note, YT Video badge, version
+    metadata drift — all fixed
+- NEW LOCKS: tests/ai/search_yt_locks.test.ts (15 locks incl. ladder
+  order, authority floor, the song-vs-6.2M-lyric-video pick, the
+  headline 'tu chaiye' e2e) — suite 159 → 174 tests / 763 expects
+- Found + fixed TWO harness-side issues the lab never hit:
+  • react-native-webview's web fallback rendered a VISIBLE error banner
+    ("does not support this platform") whose container ate pointer
+    events → YtPoTokenBridge returns null on web (IS_WEB guard)
+  • bestFirst's popularity key let a 6.2M-view UGC lyric video displace
+    the canonical SONG row → song-kind now outranks video-kind
+- Web harness: youtube webmock (InnerTube has no CORS) + YT fixtures
+  with ortho folds + SIG_COVER fixture; metro redirect; device lab
+  extended with 12 v3.4.0 checkpoints → 48/48 × 2 devices, ZERO console
+  errors (was 34/44 with failures on first run — fixed iteratively)
+- LIVE probes (scripts/live_probe_v34.ts, real APIs from this sandbox):
+  'tu chaiye' → sigState=rescued, rank 1 = canonical Tu Chahiye (Pritam
+  & Atif Aslam) via iTunes (DC bot-wall correctly detected → P1-2 fix
+  fired live); 'tu chaiye of atif aslam' → rescued; YT search parses 10
+  tracks + 3 albums in 468ms; player ladder honestly reports
+  LOGIN_REQUIRED on all 3 clients from DC (device/residential is G1)
+- UI verification (VLM on screenshots): rescued label renders, canonical
+  top card with YT Song badge, YouTube mode list correct, rescued row
+  plays end-to-end (full player, artwork, controls) — nothing broken
+- Docs: README v3.4 sections (YouTube source + title-truth rescue),
+  CHANGELOG v3.4.0, gauntlet bars R3 section, lab planning docs moved to
+  docs/ with context header; versions 3.4.0 (package.json + app.json);
+  CI signing preflight verified healthy via GitHub API (runs #39-42 OK)
+
+Stage Summary:
+- Main repo now = lab v3.4.0 + 15 regression locks + port-hardening the
+  lab line never had; every critic finding fixed with a test
+- Gates: tsc clean · 174/174 tests · live engine probes PASS · device
+  lab 48/48 × 2 · CI healthy
+- Ready to ship: commit + tag v3.4.0
