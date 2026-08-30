@@ -2,7 +2,7 @@
   "expo": {
     "name": "TSF Music",
     "slug": "tsf-music",
-    "version": "3.4.0",
+    "version": "3.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

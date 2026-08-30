@@ -14,13 +14,16 @@
  * filtered; every editorial shelf renders through collectionIsClean.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
+  ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,7 +38,10 @@ import {
   getCollectionTracks,
   getHomepageFeed,
   getTrending,
+  searchAlbumCollections,
+  searchSaavn,
 } from '../api/saavn';
+import { EndlessFeedPager, type FeedBatch } from '../api/feed';
 import { ARTIST_SEEDS, lookupArtistPhoto, type ArtistInfo } from '../api/artists';
 import { getBecauseYouListened, getDailyMixes } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
@@ -51,6 +57,7 @@ import {
 } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
 import { QuickTile, Shelf, ShelfCard } from '../components/Shelf';
+import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
 import { ShelfSkeleton } from '../components/ShelfSkeleton';
 import { PressableScale } from '../components/PressableScale';
@@ -63,6 +70,9 @@ const POPULAR_ARTIST_COUNT = 10;
 
 export function HomeScreen() {
   const insets = useSafeAreaInsets();
+  // window-reactive grid math (W2): tablets / split-screen / pop-up windows
+  // re-measure instead of freezing the boot-time module constant
+  const { width: winWidth } = useWindowDimensions();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
   const [chip, setChip] = useState<Chip>('all');
@@ -81,6 +91,20 @@ export function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
   const [userName, setUserName] = useState('');
+
+  // ── Endless feed state (F2) ───────────────────────────────────────
+  const [feedBatches, setFeedBatches] = useState<FeedBatch[]>([]);
+  const [feedState, setFeedState] = useState<'idle' | 'loading' | 'retry' | 'exhausted'>('idle');
+  const pagerRef = useRef<EndlessFeedPager | null>(null);
+  const feedSongsRef = useRef<Track[]>([]); // one long queue across batches (F3)
+  const feedBusyRef = useRef(false);
+  // CRITIC P2-1 fix: pull-to-refresh epoch — a batch fetched by the OLD
+  // pager must never append into the freshly-reset feed.
+  const feedEpochRef = useRef(0);
+  // CRITIC P2-4 fix: the feed only starts after the fixed shelves settled
+  // (trending loaded or failed) so prime() sees them and the feed never
+  // duplicates rows the shelves are about to render.
+  const feedPrimedRef = useRef(false);
 
   const play = useCallback(
     (tracks: Track[], index: number) => {
@@ -227,6 +251,10 @@ export function HomeScreen() {
         if (!trend.length && !chartList.length) setOffline(true);
       } catch {
         setOffline(true);
+      } finally {
+        // F2/P2-4: shelves settled (success OR failure) — the endless feed
+        // may now start, primed against whatever the shelves actually show.
+        feedPrimedRef.current = true;
       }
     },
     [loadFeed, loadPopularArtists],
@@ -235,6 +263,87 @@ export function HomeScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // ── Endless feed (F2) — Spotify's scroll-forever tail ───────────────
+  /** Distance from the bottom (px) that triggers prefetching the next batch. */
+  const FEED_TRIGGER_PX = 600;
+
+  const resetFeed = useCallback(() => {
+    feedEpochRef.current += 1; // in-flight old-pager batches are void now
+    pagerRef.current = null;
+    feedSongsRef.current = [];
+    feedBusyRef.current = false;
+    feedPrimedRef.current = false; // load() re-primes after trending settles
+    setFeedBatches([]);
+    setFeedState('idle');
+  }, []);
+
+  const ensurePager = useCallback((): EndlessFeedPager => {
+    if (!pagerRef.current) {
+      pagerRef.current = new EndlessFeedPager({
+        searchSongs: (q, page, signal) => searchSaavn(q, 30, signal, page),
+        searchAlbums: (q, page, signal) => searchAlbumCollections(q, page, 20, signal),
+      });
+      // never repeat rows the fixed shelves above already show
+      pagerRef.current.prime({
+        songs: trending ?? undefined,
+        albums: [...newAlbums, ...featured, ...charts],
+      });
+    }
+    return pagerRef.current;
+  }, [trending, newAlbums, featured, charts]);
+
+  const loadFeedMore = useCallback(async () => {
+    // CRITIC P2-2 fix: after a failure round, only the explicit retry row
+    // resumes the feed — auto-scroll must not churn the ladder while the
+    // network is down.
+    if (feedBusyRef.current || feedState === 'retry' || feedState === 'exhausted') return;
+    // CRITIC P2-4 fix: wait for the fixed shelves to settle first
+    if (!feedPrimedRef.current) return;
+    const pager = ensurePager();
+    if (pager.isExhausted) return;
+    const epoch = feedEpochRef.current;
+    feedBusyRef.current = true;
+    setFeedState('loading');
+    try {
+      const batch = await pager.next();
+      if (epoch !== feedEpochRef.current) return; // refresh reset the feed
+      if (batch === null) {
+        setFeedState('exhausted');
+      } else if (batch.kind === 'retry') {
+        setFeedState('retry');
+      } else {
+        if (batch.kind === 'songs') {
+          feedSongsRef.current = [...feedSongsRef.current, ...batch.songs];
+        }
+        setFeedBatches((prev) => [...prev, batch]);
+        setFeedState('idle');
+      }
+    } catch {
+      if (epoch === feedEpochRef.current) setFeedState('retry');
+    } finally {
+      feedBusyRef.current = false;
+    }
+  }, [ensurePager, feedState]);
+
+  const retryFeed = useCallback(() => {
+    if (feedState !== 'retry') return;
+    setFeedState('idle');
+    void loadFeedMore();
+  }, [feedState, loadFeedMore]);
+
+  /** Play an endless-feed song with ALL loaded feed songs as the queue (F3). */
+  const playFeedSong = useCallback(
+    (track: Track) => {
+      const queue = feedSongsRef.current;
+      const idx = queue.findIndex((t) => t.id === track.id);
+      if (queue.length) {
+        playQueue(queue, Math.max(0, idx), 'home_feed');
+        nav.navigate('Player');
+      }
+    },
+    [playQueue, nav],
+  );
 
   // First name → "Made for {name}". AsyncStorage read first (instant — the
   // kv copy can lag behind the ledger opening on cold start), then kv, then
@@ -260,6 +369,20 @@ export function HomeScreen() {
   const hasMixes = !!mixes && mixes.length > 0;
   const loading = mixes === null && trending === null;
   const showAI = chip !== 'music'; // AI surfaces under All + AI chips
+
+  // ── Endless feed scroll trigger (F2) ─────────────────────────────
+  const onFeedScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // never prefetch while the skeleton is up (content height is a lie)
+      if (loading) return;
+      const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+      if (contentSize.height === 0) return;
+      const distanceFromBottom =
+        contentSize.height - (layoutMeasurement.height + contentOffset.y);
+      if (distanceFromBottom < FEED_TRIGGER_PX) void loadFeedMore();
+    },
+    [loading, loadFeedMore],
+  );
 
   /* Spotify's 8-tile shortcut grid: pinned first (Liked Songs), then
    * mixes, trending, recents, and the AI tile filling slot 8. */
@@ -338,11 +461,14 @@ export function HomeScreen() {
       <ScrollView
         contentContainerStyle={{ paddingBottom: 190 }}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={64}
+        onScroll={onFeedScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
+              resetFeed();
               load(true).finally(() => setRefreshing(false));
             }}
             tintColor={colors.accentBright}
@@ -396,7 +522,7 @@ export function HomeScreen() {
                 seed={t.seed}
                 icon={t.icon}
                 liked={t.liked}
-                width={quickTileWidth()}
+                width={quickTileWidth(winWidth)}
                 onPress={t.onPress}
               />
             ))}
@@ -611,6 +737,54 @@ export function HomeScreen() {
               </Shelf>
             ) : null}
 
+            {/* ── Endless feed (F2) — keep scrolling, keep finding music ── */}
+            {feedBatches.map((batch, bi) =>
+              batch.kind === 'songs' ? (
+                <View
+                  key={`feed-songs-${bi}`}
+                  style={styles.feedSection}
+                  testID="endless-feed-songs"
+                >
+                  <Text style={styles.feedHeader}>{batch.title}</Text>
+                  {batch.songs.map((t) => (
+                    <TrackRow
+                      key={t.id}
+                      track={t}
+                      onPress={() => playFeedSong(t)}
+                    />
+                  ))}
+                </View>
+              ) : batch.kind === 'albums' ? (
+                <Shelf key={`feed-albums-${bi}`} title={batch.title}>
+                  {batch.albums.map((c) => (
+                    <ShelfCard
+                      key={c.id}
+                      title={c.title}
+                      subtitle={c.subtitle}
+                      artwork={c.artwork}
+                      seed={`feed-album-${c.id}`}
+                      size={150}
+                      onPress={() => nav.navigate('Collection', { collection: c })}
+                    />
+                  ))}
+                </Shelf>
+              ) : null,
+            )}
+            {feedState === 'loading' ? (
+              <ActivityIndicator color={colors.accentBright} style={styles.feedSpinner} />
+            ) : null}
+            {feedState === 'retry' ? (
+              <PressableScale haptic style={styles.feedRetry} onPress={retryFeed}>
+                <Ionicons name="refresh" size={15} color={colors.textDim} />
+                <Text style={styles.feedRetryText}>Couldn't load more — tap to retry</Text>
+              </PressableScale>
+            ) : null}
+            {feedState === 'exhausted' ? (
+              <Text style={styles.feedEnd} testID="endless-feed-end">
+                You've reached the end
+              </Text>
+            ) : null}
+
             {!hasMixes && recents.length === 0 && (!trending || trending.length === 0) ? (
               <EmptyHome onGoAI={() => nav.navigate('AI')} />
             ) : null}
@@ -627,13 +801,12 @@ export function HomeScreen() {
   );
 }
 
-// Screen width is fixed per device; approximated via Dimensions at module
-// scope for the grid math without re-render churn.
-const globalWidth = Dimensions.get('window').width;
-
-function quickTileWidth(): number {
+// Quick-tile grid math is window-reactive: the two-column width is computed
+// per render from the CURRENT window width (W2 — tablets, split-screen,
+// pop-up and foldable posture changes all re-measure live).
+function quickTileWidth(winWidth: number): number {
   // two columns with 8px gutters inside 16px screen padding
-  return Math.floor((globalWidth - 32 - 8) / 2);
+  return Math.floor((winWidth - 32 - 8) / 2);
 }
 
 /** Artist radio card — circular photo + name (Spotify artist-card style). */
@@ -791,4 +964,30 @@ const styles = StyleSheet.create({
   footerDivider: { alignItems: 'center', paddingTop: spacing.xl + 8, gap: 12 },
   footerRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#3d3d3d', width: '72%' },
   footerText: { color: colors.textFaint, fontSize: 12, fontFamily: fonts.medium, paddingBottom: 4 },
+  // ── endless feed (F2) ────────────────────────────────────────────────
+  feedSection: { paddingHorizontal: spacing.lg, marginTop: 6 },
+  feedHeader: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    letterSpacing: -0.3,
+    marginBottom: 10,
+  },
+  feedSpinner: { marginVertical: 26 },
+  feedRetry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 18,
+  },
+  feedRetryText: { color: colors.textDim, fontSize: 13, fontFamily: fonts.medium },
+  feedEnd: {
+    color: colors.textFaint,
+    fontSize: 13,
+    fontFamily: fonts.medium,
+    textAlign: 'center',
+    paddingVertical: 22,
+  },
 });

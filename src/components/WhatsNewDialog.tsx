@@ -11,15 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_4_0';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_1';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'YouTube section is LIVE — full songs, ad-free playback, junk rows filtered out',
-  'Search now rescues the OFFICIAL song when the catalog only has same-name covers',
-  'Fixed the half-screen UI: the app now always renders full-screen (no more split-window wedges)',
-  'Tap-to-play is faster and never dies silently — a toast tells you if something fails',
+  'Fixed the tablet layout — the bottom bar sits at the real bottom of the screen again',
+  'Home now scrolls forever: keep scrolling for endless songs and album shelves',
+  'Search results load more as you scroll — hundreds of songs per search',
+  'Fixed a crash when clearing the search box after results',
 ];
 
 export function WhatsNewDialog() {
@@ -58,7 +58,7 @@ export function WhatsNewDialog() {
             <Ionicons name="sparkles" size={20} color={colors.textOnGreen} />
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
-          <Text style={styles.version}>TSF Music 3.4.0 · YouTube + full-screen fix</Text>
+          <Text style={styles.version}>TSF Music 3.4.1 · Tablet + endless feed</Text>
           <View style={styles.list}>
             {CHANGES.map((c) => (
               <View key={c} style={styles.row}>

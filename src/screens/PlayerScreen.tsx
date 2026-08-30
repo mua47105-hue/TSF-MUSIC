@@ -13,7 +13,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Dimensions,
   Modal,
   PanResponder,
   Pressable,
@@ -21,6 +20,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -111,6 +111,10 @@ function ProgressBar({
 }
 
 export function PlayerScreen() {
+  // window-reactive artwork (W2): tablets / split-screen / pop-up windows
+  // re-measure instead of freezing the phone-width module constant
+  const { width: winWidth } = useWindowDimensions();
+  const artSize = Math.round(winWidth - 32);
   const insets = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const toast = useToast();
@@ -473,8 +477,6 @@ function QueueChip({
     </PressableScale>
   );
 }
-
-const artSize = Math.round(Dimensions.get('window').width - 32);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },

@@ -3,6 +3,70 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+# Changelog
+
+All notable releases of TSF Music. Dates are UTC.
+Detailed build history: `worklog.md` (the session log).
+
+## v3.4.1 — 2026-08-30 — Tablet window fix + endless feeds
+
+Field-reported on two tablets: the bottom tab bar rendered mid-screen
+(~46% height) with a giant dark void below — the app was hosted in an
+OS compatibility window. Pixel forensics on the uploaded screenshot
+(600x960, content ends 46.6%, uniform RGB(10,10,10) ≈ the app's own
+#0A0A0B windowBackground letterbox fill) proved the trigger:
+`resizeableActivity="false"` (shipped in v3.4.0's window-policy plugin)
+is the textbook cause of Android 12L+/One UI compatibility letterboxing
+on tablets with a taskbar. This round inverts the policy and adds the
+Spotify-style endless scrolling the user asked for.
+
+### Window / layout
+- **`resizeableActivity="true"` explicitly, ALL aspect-ratio caps
+  removed** (no `maxAspectRatio`, no legacy `android.max_aspect`) — the
+  system never has an excuse to compat-host the app again. The plugin
+  also strips any stale v3.4.0 attributes. Locked by
+  tests/ai/window_policy_locks.test.ts (7 locks) + APK deep-verify.
+- **Window-reactive layout**: HomeScreen's quick-tile grid and
+  PlayerScreen's artwork re-measure via `useWindowDimensions` (were
+  frozen module-scope `Dimensions.get` constants — stale on resize,
+  split-screen, foldables).
+- **Fixed a latent crash**: clearing the search field after results
+  threw RN's "Changing numColumns on the fly" invariant (browse grid is
+  2-column, results list is 1-column, same tree position). Both
+  FlatLists now carry distinct keys.
+
+### Endless feeds
+- **Home scrolls forever** (src/api/feed.ts `EndlessFeedPager`): after
+  the fixed shelves, alternating paged song batches (rotating 16-query
+  ladder, per-query deep paging — verified live: JioSaavn serves 30
+  rows/page, 93%+ fresh) and paged album-card shelves, deduped across
+  batches and against the shelves, safety-filtered. Honest retry row on
+  network failure (never burns the ladder budget), honest end marker.
+  Tapping a feed song plays the full loaded feed as the queue.
+- **Search results paginate**: scrolling near the end appends JioSaavn
+  page 2, 3, … (dedupe + muted-artist parity with the engine), stopping
+  honestly on empty/<25%-fresh pages. The Search V2 engine's page-1
+  ranking is untouched (progressive paint, rescue ladder, lyric
+  verification all unchanged).
+
+### Gauntlet R4 discipline
+- Live pagination probes before building (30 rows/page, 24-30 fresh
+  per page; no paged playlist endpoint exists — songs+albums feed).
+- Fresh-context adversarial critic: 2 P1 (stale page-fetch rejection
+  killing the next query's pagination; first append clobbering LRCLIB
+  lyric verification via a stale results closure) + 3 P2 (feed epoch
+  race on pull-to-refresh; network errors burning the exhaustion
+  budget; webmock export-parity gap breaking the rescue album rung on
+  web) — all fixed with locks (tests/ai/r4_critic_locks.test.ts).
+- Device lab rebuilt for real scrolling: RN-web ScrollViews ignore
+  mouse.wheel in headless Chromium — the lab now drives scrollTop
+  directly on the scroller under the viewport center (elementFromPoint).
+  Full sweep: **93/93 checkpoints × 3 devices** (Pixel 7, iPhone 13,
+  and the tablet's exact 600x960 viewport) with ZERO console errors —
+  including tab-bar-pins-to-window-bottom, endless-feed-loads, feed
+  rows play, search pagination appends/honest-end/resets.
+- Suite: 174 → **206 tests** (+32 locks), tsc clean.
+
 ## v3.4.0 — 2026-08-30 — YouTube source + the title-truth rescue
 
 Ported from the lab line (v3.4.0-lab.1…lab.4, device-verified there) and

@@ -38,7 +38,7 @@ import {
 import { ytSearchMusic, ytAvailable } from '../api/youtube';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
-import { searchSaavnClean, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
+import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
 import { planSearch } from '../search/plan';
 import { verifyLyrics, type Candidate } from '../search/verify';
 import { rememberResolve } from '../search/learn';
@@ -121,6 +121,19 @@ export function SearchScreen() {
     ytUnavailable?: boolean;
   }>({ degraded: false });
   const [loading, setLoading] = useState(false);
+  // ── infinite results pagination (F1) ─────────────────────────────
+  const pageRef = useRef(1); // last appended page (page 1 = the engine set)
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [endNote, setEndNote] = useState<string | null>(null);
+  // CRITIC P1-2 fix: live mirror of results — loadMoreResults must merge
+  // from the CURRENT rows (LRCLIB verification flag+reorder runs after the
+  // engine set lands; a stale closure would strip lyricMatch chips and
+  // revert the verified-float-to-top reorder on the first append).
+  const resultsRef = useRef<Track[]>([]);
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [browseArt, setBrowseArt] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
@@ -177,6 +190,62 @@ export function SearchScreen() {
     };
   }, [query, vibe]);
 
+  /** Reset pagination for a fresh query (called at the top of every run). */
+  const resetPagination = useCallback(() => {
+    pageRef.current = 1;
+    setHasMore(true);
+    setEndNote(null);
+    setLoadingMore(false);
+  }, []);
+
+  /**
+   * Infinite scroll (F1): catalog keyword searches append JioSaavn page
+   * p+1 as the user approaches the end. Rows are deduped by id, muted
+   * artists are honored (engine parity), the top-result card never moves,
+   * and the feed stops HONESTLY (empty / <25% fresh page → end marker).
+   * YouTube + vibe modes never paginate (bounded result sets).
+   */
+  const loadMoreResults = useCallback(async () => {
+    if (loadingMore || !hasMore || loading || resultsRef.current.length === 0) return;
+    if (vibe || source !== 'catalog') return;
+    const q = query.trim();
+    if (!q) return;
+    const gen = searchGen.current;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      // CRITIC P1-1 fix: ride the ACTIVE search's abort signal — a stale
+      // page fetch must die with the query that started it, not reject
+      // later and poison the NEXT query's pagination state.
+      const page = await searchSaavn(q, 30, abortRef.current?.signal, nextPage);
+      if (gen !== searchGen.current) return; // stale — new query won
+      const muted = engineDeps().mutedArtists?.() ?? new Set<string>();
+      const allowed = page.filter(
+        (t) =>
+          !(t.artistsFull ?? []).some((a) => muted.has(a.toLowerCase())) &&
+          !muted.has(t.artist.toLowerCase()),
+      );
+      const before = resultsRef.current.length;
+      const merged = mergeUniqueTracks(resultsRef.current, allowed);
+      const fresh = merged.length - before;
+      pageRef.current = nextPage;
+      resultsRef.current = merged; // keep the mirror in sync immediately
+      setResults(merged);
+      if (!searchHasMore(page.length, fresh)) {
+        setHasMore(false);
+        setEndNote('End of results');
+      }
+    } catch {
+      // CRITIC P1-1 fix: a REJECTED page fetch for a query the user has
+      // already left must never disable pagination on the live query.
+      if (gen !== searchGen.current) return;
+      setHasMore(false);
+      setEndNote("Couldn't load more — check your connection");
+    } finally {
+      if (gen === searchGen.current) setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, loading, vibe, source, query]);
+
   const runSearch = useCallback(
     // sourceOverride (P2-1): the source toggle passes the NEW source so the
     // immediate re-search runs against it — the render-time `source` is
@@ -193,6 +262,7 @@ export function SearchScreen() {
         setVibeChips([]);
         setSearched(false);
         setSuggests(null);
+        resetPagination();
         return;
       }
       const gen = ++searchGen.current;
@@ -202,6 +272,7 @@ export function SearchScreen() {
       setLoading(true);
       setSearched(true);
       setSuggests(null);
+      resetPagination();
       const deps = engineDeps();
       try {
         if (src === 'youtube') {
@@ -214,6 +285,8 @@ export function SearchScreen() {
             setResults([]);
             setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: true });
             setVibeChips([]);
+            setHasMore(false);
+            setEndNote(null);
             return;
           }
           const ytr = await ytSearchMusic(q, 25, ctrl.signal);
@@ -221,6 +294,9 @@ export function SearchScreen() {
           setResults(ytr.tracks);
           setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: ytr.tracks.length === 0 && !ytAvailable() });
           setVibeChips([]);
+          // YouTube mode never paginates — honest end marker instead
+          setHasMore(false);
+          setEndNote(ytr.tracks.length ? "That's everything YouTube found" : null);
           void mindbeat.searchQueried(q, ytr.tracks.length);
           await pushRecentSearch(q);
           setRecentSearches(await getRecentSearches());
@@ -235,6 +311,9 @@ export function SearchScreen() {
           if (gen !== searchGen.current) return;
           setResults(r.tracks);
           setMeta({ degraded: false });
+          // vibe sets are AI-bounded — no pagination
+          setHasMore(false);
+          setEndNote(null);
           setVibeChips([
             ...r.intent.moods.slice(0, 2),
             ...r.intent.languages.slice(0, 1),
@@ -564,6 +643,7 @@ export function SearchScreen() {
 
       {showBrowse ? (
         <FlatList
+          key="browse"
           data={GENRES}
           keyExtractor={(g) => g.label}
           numColumns={2}
@@ -691,6 +771,7 @@ export function SearchScreen() {
         </View>
       ) : (
         <FlatList
+          key="results"
           data={rest}
           keyExtractor={(t) => t.id}
           renderItem={({ item, index }) => (
@@ -702,6 +783,21 @@ export function SearchScreen() {
           )}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          onEndReachedThreshold={0.4}
+          onEndReached={() => {
+            void loadMoreResults();
+          }}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.loadMoreFooter} testID="search-loading-more">
+                <ActivityIndicator size="small" color={colors.accentBright} />
+              </View>
+            ) : endNote && results.length > 0 ? (
+              <Text style={styles.endNote} testID="search-end-note">
+                {endNote}
+              </Text>
+            ) : null
+          }
           contentContainerStyle={{ paddingBottom: 170 }}
           ListHeaderComponent={
             <View>
@@ -1099,6 +1195,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
   },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
+  // ── infinite results footer (F1) ─────────────────────────────────────
+  loadMoreFooter: { paddingVertical: 22, alignItems: 'center' },
+  endNote: {
+    color: colors.textFaint,
+    fontSize: 13,
+    fontFamily: fonts.medium,
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
   noResults: { color: colors.text, fontSize: 18, fontWeight: '700', fontFamily: fonts.bold },
   noResultsSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   degradedNote: {

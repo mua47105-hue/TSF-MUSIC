@@ -123,6 +123,14 @@ Your picks seed the taste profile immediately.
   Because you listened → New releases → Featured playlists → charts
   — JioSaavn's editorial feed keeps the screen populated from the very
   first session
+- **Endless scrolling (v3.4.1)**: Home keeps loading forever after the
+  fixed shelves (alternating paged song lists and album shelves,
+  deduped, safety-filtered), and search results append JioSaavn pages
+  as you scroll — with honest "end of results" markers, never a dead
+  spinner
+- **Tablet-correct windows (v3.4.1)**: fully resizeable, no aspect-ratio
+  caps — the bottom bar sits at the real bottom of ANY window (phones,
+  tablets, split-screen, pop-up), and the layout re-measures live
 - Search: Spotify's Top-result hero card over a Songs list, 18-category
   Browse grid, recent searches, Keyword|Vibe toggle
 - Library: playlists / artists / albums / downloaded filters, list⇄grid

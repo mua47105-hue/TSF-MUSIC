@@ -20,6 +20,10 @@ SHOT_DIR = os.environ.get("TSF_SHOTS", "/home/z/my-project/screenshots")
 DEVICES = [
     ("pixel7", {"viewport": {"width": 412, "height": 915}, "device_scale_factor": 2.625, "is_mobile": True, "has_touch": True, "user_agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"}),
     ("iphone13", {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 3, "is_mobile": True, "has_touch": True, "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"}),
+    # v3.4.1 W2/W3: the tablet viewport from the user's field report
+    # (600x960 screenshot, 16:10) — the layout must fill ANY window with
+    # the tab bar pinned to the bottom of that window.
+    ("tablet", {"viewport": {"width": 600, "height": 960}, "device_scale_factor": 2, "is_mobile": True, "has_touch": True, "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-X200) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}),
 ]
 
 results = []
@@ -39,9 +43,46 @@ def shot(page, device, name):
     return path
 
 
+# RN-web ScrollViews do not respond to mouse.wheel in headless Chromium
+# (proven by scripts/probe_scroll.py: scrollTop stays 0). Direct scrollTop
+# assignment + a scroll event makes react-native-web fire onScroll /
+# onEndReached, which is what the feed triggers listen to.
+# NOTE: tab screens stay mounted and stacked (the home feed's ScrollView
+# can be taller than the search list while INACTIVE underneath it), and a
+# bounding-rect visibility check can't tell them apart. Instead: take the
+# topmost element at the viewport CENTER (document.elementFromPoint) and
+# walk up to ITS scrollable ancestor — exactly the scroller a user's
+# wheel/finger would move.
+SCROLL_JS = """(dy) => {
+    const cx = innerWidth / 2, cy = innerHeight / 2;
+    let el = document.elementFromPoint(cx, cy);
+    while (el && el !== document.body && el !== document.documentElement) {
+        const s = getComputedStyle(el);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll')
+            && el.scrollHeight > el.clientHeight + 10) {
+            el.scrollTop = Math.min(el.scrollTop + dy, el.scrollHeight);
+            el.dispatchEvent(new Event('scroll'));
+            return true;
+        }
+        el = el.parentElement;
+    }
+    return false;
+}"""
+
+SCROLL_TOP_JS = """() => {
+    [...document.querySelectorAll('div')].forEach(d => {
+        const s = getComputedStyle(d);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && d.scrollTop > 0) {
+            d.scrollTop = 0;
+            d.dispatchEvent(new Event('scroll'));
+        }
+    });
+    window.scrollTo(0, 0);
+}"""
+
 def scroll(page, dy, times=1):
     for _ in range(times):
-        page.mouse.wheel(0, dy)
+        page.evaluate(SCROLL_JS, dy)
         page.wait_for_timeout(260)
 
 
@@ -154,7 +195,54 @@ def run_device(pw, name, cfg):
         shelves = page.get_by_text("New releases", exact=False).count() + page.get_by_text("Featured playlists", exact=False).count()
         log(name, "home-deep-shelves", shelves >= 1, f"editorial shelves x{shelves}")
         # back to top
-        page.evaluate("window.scrollTo(0,0)")
+        page.evaluate(SCROLL_TOP_JS)
+        page.wait_for_timeout(600)
+
+        # ── v3.4.1 W3: TAB BAR PINS TO THE BOTTOM OF THE WINDOW ──────
+        # The field bug: bar rendered mid-screen with a void below (OS
+        # letterbox). In-app, the flex chain must fill the viewport: the
+        # tab bar's bottom edge sits within 70px of the viewport bottom.
+        try:
+            bar_bb = page.locator("text=Your Library").last.bounding_box()
+            vh = page.viewport_size["height"]
+            bar_bottom_dist = (vh - (bar_bb["y"] + bar_bb["height"])) if bar_bb else 9999
+            log(name, "v341-tabbar-at-window-bottom", bar_bottom_dist < 70, f"bottom gap {bar_bottom_dist:.0f}px of {vh}px viewport")
+        except Exception as e:
+            log(name, "v341-tabbar-at-window-bottom", False, str(e)[:120])
+        shot(page, name, "06b-tabbar-position")
+
+        # ── v3.4.1 F2: ENDLESS HOME FEED — scroll forever ─────────────
+        # Deep scroll: the endless feed must materialize song batches
+        # (endless-feed-songs sections) as the user approaches the bottom.
+        feed_sections = 0
+        for burst in range(6):
+            scroll(page, 2200, 3)
+            page.wait_for_timeout(1400)
+            feed_sections = page.locator('[data-testid="endless-feed-songs"]').count()
+            if feed_sections >= 2:
+                break
+        shot(page, name, "09b-endless-feed")
+        log(name, "v341-endless-feed-batches", feed_sections >= 1, f"{feed_sections} song sections loaded")
+        feed_rows = page.locator('[data-testid="endless-feed-songs"] [data-testid="track-row"]').count()
+        log(name, "v341-endless-feed-rows", feed_rows >= 6, f"{feed_rows} playable rows")
+
+        # ── v3.4.1 F3: a feed row PLAYS with the full loaded queue ────
+        if feed_rows > 0:
+            page.locator('[data-testid="endless-feed-songs"] [data-testid="track-row"]').first.click()
+            page.wait_for_timeout(1800)
+            mini = page.locator('[data-testid="mini-player"]').count()
+            log(name, "v341-endless-feed-plays", mini >= 1, f"mini-player visible={mini}")
+            try:
+                page.locator('[data-testid="player-dismiss"]').first.click(timeout=8000)
+                page.wait_for_timeout(800)
+            except Exception:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(800)
+        else:
+            log(name, "v341-endless-feed-plays", False, "no feed rows to tap")
+
+        # back to top for the search phase
+        page.evaluate(SCROLL_TOP_JS)
         page.wait_for_timeout(600)
 
         # 07 — search: browse grid + top result
@@ -197,6 +285,32 @@ def run_device(pw, name, cfg):
         shot(page, name, "11-search-results")
         top = page.locator('[data-testid="search-top-result"]').count()
         log(name, "search-top-result", top >= 1)
+
+        # ── v3.4.1 F1: INFINITE SEARCH RESULTS — page 2+ appends ─────
+        # Scroll the results list to the bottom: pagination must append
+        # page-2 rows (webmock serves synthetic pages 2-3, then an empty
+        # page 4 → the honest end marker).
+        rows_before = page.locator('[data-testid="track-row"]').count()
+        for burst in range(8):
+            scroll(page, 1800, 3)
+            page.wait_for_timeout(900)
+            end_note = page.locator('[data-testid="search-end-note"]').count()
+            if end_note >= 1:
+                break
+        rows_after = page.locator('[data-testid="track-row"]').count()
+        end_note = page.locator('[data-testid="search-end-note"]').count()
+        shot(page, name, "11a-search-paginated")
+        log(name, "v341-search-pagination-appends", rows_after > rows_before, f"{rows_before} -> {rows_after} rows")
+        log(name, "v341-search-pagination-honest-end", end_note >= 1, f"end-note={end_note}")
+        # fresh search resets pagination (no stale end-note on a new query).
+        # NOTE: re-filling the SAME string is a React no-op (state dedupe) —
+        # clear first, then retype, to model a genuine new search.
+        field.fill("")
+        page.wait_for_timeout(1200)
+        field.fill("mashooqa")
+        page.wait_for_timeout(2600)
+        stale_note = page.locator('[data-testid="search-end-note"]').count()
+        log(name, "v341-search-pagination-resets", stale_note == 0, f"stale end-note={stale_note}")
 
         # ── v3.4.0 — SIG RESCUE (title-authority gap): "tu chaiye" has only
         # a sub-floor same-name cover in the catalog; the canonical recording
@@ -288,8 +402,13 @@ def run_device(pw, name, cfg):
 
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
+    # TSF_DEVICES: comma-separated device names (default: all) — lets a
+    # sandbox run one device per invocation when background processes
+    # can't outlive a single session.
+    wanted = os.environ.get("TSF_DEVICES")
+    selected = DEVICES if not wanted else [d for d in DEVICES if d[0] in wanted.split(",")]
     with sync_playwright() as pw:
-        for name, cfg in DEVICES:
+        for name, cfg in selected:
             run_device(pw, name, cfg)
     report = {
         "total": len(results),

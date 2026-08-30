@@ -23,9 +23,120 @@ export async function refreshStreamUrl(track: Track): Promise<string | null> {
   return track.encryptedUrl ?? track.previewUrl ?? null;
 }
 
-export async function searchSaavn(query: string, limit = 30): Promise<Track[]> {
+/** Parity stub — artists.ts has its own web redirect, but the mock must
+ *  export the full real-module surface (L-PARITY lock). */
+export async function saavnGet(): Promise<any> {
+  return {};
+}
+
+export async function searchSaavn(
+  query: string,
+  limit = 30,
+  _signal?: AbortSignal,
+  page = 1,
+): Promise<Track[]> {
   await new Promise((r) => setTimeout(r, 150));
-  return searchFixtures(query, limit);
+  // browse/feed queries (the endless-home-feed ladder + genre cards)
+  // return a realistic full page — on the real provider these broad
+  // queries always answer. Junk queries ("zzqqxx") still honestly fail.
+  if (isBrowseQuery(query)) return browsePage(query, page, limit);
+  // page 1 = the real fixture rows; pages 2+ = deterministic synthetic
+  // rows unique per (query, page) so pagination UI is fully exercisable;
+  // pages beyond PAGE_DEPTH come back empty (honest end in the harness)
+  if (page <= 1) return searchFixtures(query, limit);
+  if (page > PAGE_DEPTH) return [];
+  return syntheticPage(query, page, limit);
+}
+
+/** Mirrors src/api/feed.ts SONG_QUERIES (kept in sync for the harness). */
+const BROWSE_QUERIES = new Set([
+  'top songs',
+  'arijit singh',
+  'punjabi hits',
+  'romantic songs',
+  'bollywood 2024',
+  'party songs',
+  'atif aslam',
+  'sad songs',
+  'dance hits',
+  'kishore kumar',
+  'lofi songs',
+  'workout music',
+  'shreya ghoshal',
+  'sufi songs',
+  'english hits',
+  'a r rahman',
+]);
+
+function isBrowseQuery(q: string): boolean {
+  return BROWSE_QUERIES.has(q.trim().toLowerCase());
+}
+
+/** Browse pages: fixture rows first, padded with synthetic picks; 3 pages deep. */
+function browsePage(query: string, page: number, limit: number): Track[] {
+  if (page > 3) return [];
+  const base = searchFixtures(query, limit);
+  const pad = Math.max(0, 14 - base.length);
+  const extras: Track[] = Array.from({ length: pad }, (_, i) => ({
+    id: `saavn-feed-${page}-${slug(query)}-${i}`,
+    title: `${titleSeed(query)} Pick ${page}.${i + 1}`,
+    artist: PAGE_ARTISTS[(page + i) % PAGE_ARTISTS.length],
+    duration: 170 + ((page * 29 + i * 11) % 110),
+    source: 'saavn' as const,
+    artwork: art.trending,
+    previewOnly: false,
+  } satisfies Track));
+  return [...base, ...extras].slice(0, limit);
+}
+
+const PAGE_DEPTH = 3;
+const PAGE_ARTISTS = [
+  'Arijit Singh',
+  'Shreya Ghoshal',
+  'Diljit Dosanjh',
+  'Atif Aslam',
+  'Pritam',
+  'A. R. Rahman',
+];
+
+/** Deterministic synthetic rows unique per (query, page). */
+function syntheticPage(query: string, page: number, limit: number): Track[] {
+  return Array.from({ length: Math.min(limit, 30) }, (_, i) => ({
+    id: `saavn-page-${page}-${slug(query)}-${i}`,
+    title: `${titleSeed(query)} — Page ${page}, Track ${i + 1}`,
+    artist: PAGE_ARTISTS[(page + i) % PAGE_ARTISTS.length],
+    duration: 180 + ((page * 31 + i * 7) % 120),
+    source: 'saavn' as const,
+    artwork: art.trending,
+    previewOnly: false,
+  } satisfies Track));
+}
+
+function slug(q: string): string {
+  return q.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
+function titleSeed(q: string): string {
+  const clean = q.trim();
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+/** Mirrors src/api/saavn.ts (kept in sync for the web harness). */
+export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
+  const seen = new Set(prev.map((t) => t.id));
+  const fresh: Track[] = [];
+  for (const t of next) {
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    fresh.push(t);
+  }
+  return fresh.length ? [...prev, ...fresh] : prev;
+}
+
+/** Mirrors src/api/saavn.ts. */
+export function searchHasMore(received: number, fresh: number): boolean {
+  if (received <= 0) return false;
+  return fresh >= Math.ceil(received / 4);
 }
 
 export async function searchSaavnRaw(query: string, limit = 30): Promise<Track[]> {
@@ -34,6 +145,41 @@ export async function searchSaavnRaw(query: string, limit = 30): Promise<Track[]
 
 export async function searchSaavnClean(query: string, limit = 30): Promise<Track[]> {
   return filterClean(await searchSaavn(query, limit));
+}
+
+/** Paged album fixtures for the endless home feed (web harness). */
+export async function searchAlbumCollections(
+  query: string,
+  page: number,
+  limit = 20,
+): Promise<Collection[]> {
+  await new Promise((r) => setTimeout(r, 120));
+  if (page > 3) return [];
+  return Array.from({ length: Math.min(limit, 8) }, (_, i) => ({
+    id: `album-page-${page}-${slug(query)}-${i}`,
+    title: `${titleSeed(query)} Albums Vol. ${page}.${i + 1}`,
+    subtitle: PAGE_ARTISTS[(page + i) % PAGE_ARTISTS.length],
+    artwork: [art.cocktail2, art.dhurandhar, art.awarapan, art.boom, art.meera, art.hanuman][(page + i) % 6],
+    kind: 'album' as const,
+  }));
+}
+
+/**
+ * CRITIC P2-3 fix: the SIG-rescue album rung (src/search/rescue.ts) calls
+ * this on web through the metro redirect — a missing export made the whole
+ * rung throw. Fixture-backed, matching the real signature.
+ */
+export async function searchAlbumResults(
+  query: string,
+  limit = 5,
+): Promise<Array<{ id: string; title: string; music?: string }>> {
+  await new Promise((r) => setTimeout(r, 120));
+  const hits = await searchAlbumCollections(query, 1, limit);
+  return hits.slice(0, limit).map((c) => ({
+    id: c.id,
+    title: c.title,
+    music: c.subtitle,
+  }));
 }
 
 export async function getCharts(): Promise<Collection[]> {

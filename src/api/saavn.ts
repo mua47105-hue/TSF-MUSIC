@@ -176,18 +176,46 @@ export async function searchSaavn(
   query: string,
   limit = 30,
   signal?: AbortSignal,
+  page = 1,
 ): Promise<Track[]> {
   const data = await saavnGet(
     {
       __call: 'search.getResults',
       q: query,
-      p: '1',
+      p: String(page),
       n: String(limit),
     },
     signal,
   );
   const results = Array.isArray(data?.results) ? data.results : [];
   return results.map(mapSaavnSong).filter(Boolean) as Track[];
+}
+
+/**
+ * Merge a fetched page into an existing result list, dropping rows whose
+ * id is already present — including duplicates that arrive INSIDE one
+ * page (JioSaavn pages overlap ~7%). Order-preserving, allocation-free
+ * when nothing is new. Pure — unit-tested (F1).
+ */
+export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
+  const seen = new Set(prev.map((t) => t.id));
+  const fresh: Track[] = [];
+  for (const t of next) {
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    fresh.push(t);
+  }
+  return fresh.length ? [...prev, ...fresh] : prev;
+}
+
+/**
+ * Search pagination stop rule (F1): stop when a page comes back empty,
+ * or when under a quarter of its rows are new (the provider is echoing
+ * the same tail back). Pure — unit-tested.
+ */
+export function searchHasMore(received: number, fresh: number): boolean {
+  if (received <= 0) return false;
+  return fresh >= Math.ceil(received / 4);
 }
 
 /** Search that keeps explicit items (user intent) — used by the Search tab. */
@@ -270,16 +298,51 @@ export async function searchAlbumResults(
   query: string,
   limit = 5,
   signal?: AbortSignal,
+  page = 1,
 ): Promise<Array<{ id: string; title: string; music?: string }>> {
   try {
     const data = await saavnGet(
-      { __call: 'search.getAlbumResults', q: query, p: '1', n: String(limit) },
+      { __call: 'search.getAlbumResults', q: query, p: String(page), n: String(limit) },
       signal,
     );
     const results = Array.isArray(data?.results) ? data.results : [];
     return results
       .filter((r: any) => r?.id)
       .map((r: any) => ({ id: String(r.id), title: String(r.title ?? ''), music: r.music }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Paged album search mapped to tappable Collection cards (F2 — endless
+ * home feed). Rows carry id/title/subtitle(artists)/image/song_count.
+ */
+export async function searchAlbumCollections(
+  query: string,
+  page: number,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<Collection[]> {
+  try {
+    const data = await saavnGet(
+      { __call: 'search.getAlbumResults', q: query, p: String(page), n: String(limit) },
+      signal,
+    );
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results
+      .filter((r: any) => r?.id && r?.title)
+      .map(
+        (r: any): Collection => ({
+          id: String(r.id),
+          title: decodeEntities(String(r.title)),
+          subtitle: r.subtitle ? decodeEntities(String(r.subtitle)) : 'Album',
+          artwork: art500(r.image ?? ''),
+          trackCount: r.song_count ? Number(r.song_count) || undefined : undefined,
+          kind: 'album' as const,
+        }),
+      )
+      .filter((c: Collection) => collectionIsClean(c));
   } catch {
     return [];
   }

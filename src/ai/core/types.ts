@@ -43,7 +43,8 @@ export type SourceSurface =
   | 'ai_playlist'
   | 'liked'
   | 'album'
-  | 'artist_page';
+  | 'artist_page'
+  | 'home_feed';
 
 export interface LedgerEvent<P = Record<string, unknown>> {
   /** Monotonic id (timestamp + counter — ULID-equivalent without deps). */
