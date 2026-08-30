@@ -11,15 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_4_2';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_3';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Fixed tablets for real: the app no longer locks itself to portrait, so Samsung tablets stop squeezing it into a half-screen window — it now fills the whole screen in any orientation',
-  'Tablets & landscape: Search browse grid widens to 4 columns, player art fits the window',
-  'Home now scrolls forever and Search loads more as you scroll (v3.4.1)',
-  'Fixed a crash when clearing the search box after results',
+  'Tablet half-screen fix: the system was forcing a phone-shaped window on tablets — the app now officially declares itself full-screen and opts out of every aspect-ratio override',
+  'Important: after updating, fully close the app once (swipe it from Recents, or restart the tablet) so the system applies the new window policy',
+  'If it still opens small: Settings → Display → Full screen apps (or Apps → TSF Music → Aspect ratio) → set Full screen, then reopen the app',
+  'Rotation, endless Home feed and Search scroll from 3.4.1/3.4.2 all stay',
 ];
 
 export function WhatsNewDialog() {
@@ -58,7 +58,7 @@ export function WhatsNewDialog() {
             <Ionicons name="sparkles" size={20} color={colors.textOnGreen} />
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
-          <Text style={styles.version}>TSF Music 3.4.1 · Tablet + endless feed</Text>
+          <Text style={styles.version}>TSF Music 3.4.3 · True full-screen tablets</Text>
           <View style={styles.list}>
             {CHANGES.map((c) => (
               <View key={c} style={styles.row}>

@@ -3,10 +3,48 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
-# Changelog
+## v3.4.3 — 2026-08-31 — The real tablet fix, part 2: aspect-clamp immunity
 
-All notable releases of TSF Music. Dates are UTC.
-Detailed build history: `worklog.md` (the session log).
+v3.4.2's orientation freedom worked (rotation unlocked, field-verified)
+but the half-screen window survived on both tablets. R6 forensics
+finally decoded the window SHAPE: 600×450 — the largest **4:3-ratio**
+rectangle that fits the screen width (600 ÷ 4/3 = 450; every field
+screenshot matches once the 13px matte band is subtracted). A 4:3
+window is an **aspect-ratio compatibility clamp** applied by the OS
+override layer, not by anything the manifest declared:
+
+- Android 14+/One UI 6 ships a user "app aspect ratio" menu whose
+  options include literal **3:4**; Samsung's legacy layer also
+  auto-applies phone-aspect (4:3) clamps to apps that never declare
+  max aspect — exactly our v3.4.1/v3.4.2 state.
+- v3.4.0 (resizeableActivity=false) hit the non-resizable letterbox;
+  every later clean manifest still fell into the undeclared-max-aspect
+  bucket. The user's "Full screen" toggle never helped because One UI
+  re-evaluates window policy only on cold start and kept re-applying
+  the stored override.
+
+The fix (withWindowPolicy v3) declares the app full-bleed to BOTH
+layers: `maxAspectRatio=2.6` + legacy `android.max_aspect` meta
+(ignored by stock Android while resizeable=true — decisive for
+Samsung's legacy clamp; 2.6 clears every real display incl. 22:9
+folds), plus the four official **PROPERTY_COMPAT_*** opt-outs on
+`<application>` (user aspect ratio, OEM min-aspect, orientation,
+resizability overrides) so the Android 14+/One UI 6 compat framework
+can never clamp the app again — the app even disappears from the
+device aspect-ratio menu.
+
+- `plugins/withWindowPolicy.js` v3 (19 W1 locks, incl. idempotent
+  upserts, hostile-value rewrites, and an expo XML serialization
+  round-trip lock).
+- CI now gates every build on the full test suite + typecheck (a red
+  lock can never reach an APK).
+- WhatsNew 3.4.3 hedges on certainty: it asks the user to fully close
+  the app once after updating (One UI applies window policy on cold
+  start) and carries the manual Settings fallback if any clamp
+  survives.
+- APK deep-verifier gates this release: property tags + max-aspect
+  declarations binary-proven in the shipped manifest (see
+  `scripts/verify_v343_apk.py`). Same-keystore in-place upgrade.
 
 ## v3.4.2 — 2026-08-31 — The real tablet fix: orientation freedom
 

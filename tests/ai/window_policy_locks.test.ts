@@ -1,37 +1,46 @@
 /**
- * W1 WINDOW-POLICY LOCKS (gauntlet R5, v3.4.2).
+ * W1 WINDOW-POLICY LOCKS (gauntlet R6, v3.4.3).
  *
- * The full bug history being locked (three rounds of field evidence):
+ * The full bug history being locked (four rounds of field evidence):
  *
- *  - v3.4.0 shipped `resizeableActivity="false"` + `maxAspectRatio="2.4"`
- *    + legacy `android.max_aspect` — a manufactured letterbox trigger
- *    (reverted in v3.4.1).
- *  - v3.4.1 (resizable, uncapped) STILL letterboxed on two Samsung
- *    tablets, and the One UI per-app "Full screen" aspect setting
- *    changed nothing → the trigger was never the aspect path.
- *  - v3.4.2 forensics (field screenshot = EXACTLY 50% window; decoded
- *    AXML manifest diff v3.3.0/v3.4.0/v3.4.1 identical apart from the
- *    v3.4.0 policy) isolated the constant since v1:
- *    `android:screenOrientation="portrait"` — per Google's
- *    device-compatibility-mode doc, portrait-restricted apps are
- *    letterboxed on large screens (mattes to one side, painted with the
- *    app's own windowBackground — the exact void in every field shot).
+ *  - v3.4.0 shipped `resizeableActivity="false"` + maxAspectRatio 2.4
+ *    + legacy `android.max_aspect` — a manufactured non-resizable
+ *    letterbox trigger (reverted in v3.4.1).
+ *  - v3.4.1 (resizable, uncapped) STILL clamped on two Samsung tablets;
+ *    the One UI per-app "Full screen" aspect toggle changed nothing.
+ *  - v3.4.2 stripped `android:screenOrientation` (rotation freedom —
+ *    field-verified working) but the half-window survived: R6 forensics
+ *    measured the app window at EXACTLY 600x450 = the largest 4:3
+ *    rectangle fitting screen width (600/(4/3)=450; every prior field
+ *    screenshot matches once the 13px matte-shadow band is subtracted).
+ *    A 4:3 window is an ASPECT-RATIO compatibility clamp applied by the
+ *    OS override layer — Android 14+/One UI 6 user "app aspect ratio"
+ *    menu (options include literal 3:4) and Samsung's legacy auto
+ *    phone-aspect clamp for apps that never declare max aspect.
+ *  - v3.4.3 therefore DECLARES modern full-bleed max aspect (2.4 attr +
+ *    legacy meta — ignored by stock while resizable=true, decisive for
+ *    Samsung's legacy layer) and opts out of the whole compat override
+ *    framework via the four official PROPERTY_COMPAT_* manifest
+ *    properties, so no user/OEM aspect or orientation override can ever
+ *    clamp the app again.
  *
- * These locks prove the compiled manifest can never carry ANY of the
- * three restriction families again: orientation lock, non-resizable,
- * aspect caps. If anyone reverts the plugin (or re-locks orientation in
- * app.json), the suite fails before the APK can ship.
+ * These locks prove the compiled manifest can never carry an
+ * orientation lock, non-resizability, or an aspect RESTRICTION — and
+ * MUST carry the full-bleed declaration + override opt-outs.
  */
 import { describe, expect, test } from 'bun:test';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const plugin = require('../../plugins/withWindowPolicy');
 const applyWindowPolicy = plugin.applyWindowPolicy as (m: any) => any;
+const COMPAT_PROPERTIES = plugin.COMPAT_PROPERTIES as string[];
+const MAX_ASPECT = plugin.MAX_ASPECT as string;
 
 function freshManifest(opts: {
   applicationAttrs?: Record<string, string>;
   activities?: Array<Record<string, any>>;
   existingSupportsScreens?: Array<Record<string, any>>;
+  existingProperties?: Array<Record<string, any>>;
 } = {}) {
   return {
     manifest: {
@@ -44,9 +53,10 @@ function freshManifest(opts: {
             ...(opts.applicationAttrs ?? {}),
           },
           'meta-data': [
-            { $: { 'android:name': 'android.max_aspect', 'android:value': '2.4' } },
+            { $: { 'android:name': 'android.max_aspect', 'android:value': '1.86' } },
             { $: { 'android:name': 'expo.modules.updates.EXPO_UPDATE_URL', 'android:value': 'https://x' } },
           ],
+          ...(opts.existingProperties ? { property: opts.existingProperties } : {}),
           activity: opts.activities ?? [
             {
               $: {
@@ -63,7 +73,12 @@ function freshManifest(opts: {
   };
 }
 
-describe('W1 — window policy (v3.4.2: orientation freedom)', () => {
+function propNames(m: any): string[] {
+  const arr = m.manifest.application[0].property ?? [];
+  return arr.map((p: any) => p?.$?.['android:name']);
+}
+
+describe('W1 — window policy (v3.4.3: aspect-clamp immunity)', () => {
   test('the plugin exports the app plugin function itself', () => {
     expect(typeof plugin).toBe('function');
   });
@@ -78,36 +93,108 @@ describe('W1 — window policy (v3.4.2: orientation freedom)', () => {
     expect(m.manifest.application[0].$['android:resizeableActivity']).toBe('true');
   });
 
-  test('stale v3.4.0 maxAspectRatio attr is stripped', () => {
-    const m = applyWindowPolicy(freshManifest({ applicationAttrs: { 'android:maxAspectRatio': '2.4' } }));
-    expect(m.manifest.application[0].$['android:maxAspectRatio']).toBeUndefined();
-  });
+  // ── full-bleed aspect DECLARATION (legacy Samsung layer) ───────────
 
-  test('stale minAspectRatio attr is also stripped', () => {
-    const m = applyWindowPolicy(freshManifest({ applicationAttrs: { 'android:minAspectRatio': '1.0' } }));
-    expect(m.manifest.application[0].$['android:minAspectRatio']).toBeUndefined();
-  });
-
-  test('stale legacy android.max_aspect meta-data is stripped; other meta-data survives', () => {
-    const m = applyWindowPolicy(freshManifest());
-    const names = m.manifest.application[0]['meta-data'].map(
-      (x: any) => x.$['android:name'],
-    );
-    expect(names).not.toContain('android.max_aspect');
-    expect(names).toContain('expo.modules.updates.EXPO_UPDATE_URL');
-  });
-
-  test('no aspect-ratio cap of ANY value survives the transform', () => {
+  test('maxAspectRatio is declared 2.6 — full-bleed on every real display', () => {
     const m = applyWindowPolicy(
       freshManifest({ applicationAttrs: { 'android:maxAspectRatio': '1.8' } }),
     );
-    expect(JSON.stringify(m)).not.toContain('maxAspectRatio');
-    expect(JSON.stringify(m)).not.toContain('android.max_aspect');
+    expect(m.manifest.application[0].$['android:maxAspectRatio']).toBe('2.6');
   });
 
-  // ── THE ROOT FIX: orientation freedom ─────────────────────────────
+  test('declared max aspect EXCEEDS the tallest real display ratio (Z Flip 22:9 = 2.444)', () => {
+    // Samsung's legacy layer honors declared max aspect as a REAL clamp —
+    // a value below the device ratio would letterbox the app onto itself.
+    // Tall phones: 21:9 = 2.333; Samsung Z Flip 3/4/5 main: 22:9 = 2.444.
+    const TALLEST_REAL_DISPLAY_RATIO = 2.444;
+    expect(parseFloat(MAX_ASPECT)).toBeGreaterThan(TALLEST_REAL_DISPLAY_RATIO);
+    // and stays a sane, industry-standard magnitude (not infinity-cargo)
+    expect(parseFloat(MAX_ASPECT)).toBeLessThan(3.0);
+  });
 
-  test('screenOrientation="portrait" is stripped from activities (the v1→v3.4.1 root cause)', () => {
+  test('legacy android.max_aspect meta is upserted to 2.6 (stale 1.86 rewritten, not duplicated)', () => {
+    const m = applyWindowPolicy(freshManifest());
+    const metas = m.manifest.application[0]['meta-data'];
+    const maxAspects = metas.filter((x: any) => x.$['android:name'] === 'android.max_aspect');
+    expect(maxAspects.length).toBe(1);
+    expect(maxAspects[0].$['android:value']).toBe('2.6');
+    // unrelated meta survives untouched
+    expect(metas.some((x: any) => x.$['android:name'] === 'expo.modules.updates.EXPO_UPDATE_URL')).toBe(true);
+  });
+
+  test('a manifest with NO meta-data array still gains the max_aspect entry (create branch)', () => {
+    const m = applyWindowPolicy(freshManifest());
+    delete m.manifest.application[0]['meta-data'];
+    const out = applyWindowPolicy(m);
+    const metas = out.manifest.application[0]['meta-data'];
+    expect(Array.isArray(metas)).toBe(true);
+    const maxAspects = metas.filter((x: any) => x.$['android:name'] === 'android.max_aspect');
+    expect(maxAspects.length).toBe(1);
+    expect(maxAspects[0].$['android:value']).toBe('2.6');
+  });
+
+  test('minAspectRatio (a RESTRICTION) is always stripped', () => {
+    const m = applyWindowPolicy(freshManifest({ applicationAttrs: { 'android:minAspectRatio': '1.0' } }));
+    expect(m.manifest.application[0].$['android:minAspectRatio']).toBeUndefined();
+    expect(JSON.stringify(m)).not.toContain('minAspectRatio');
+  });
+
+  // ── compat-framework opt-outs (Android 14+/One UI 6) ──────────────
+
+  test('all four PROPERTY_COMPAT opt-outs are present and false', () => {
+    const m = applyWindowPolicy(freshManifest());
+    const names = propNames(m);
+    for (const name of COMPAT_PROPERTIES) {
+      expect(names).toContain(name);
+      const p = m.manifest.application[0].property.find(
+        (x: any) => x.$['android:name'] === name,
+      );
+      expect(p.$['android:value']).toBe('false');
+    }
+  });
+
+  test('opt-out list includes the USER aspect override by its exact official name', () => {
+    // the 3:4 user menu is the field-verified clamp path — lock the name
+    expect(COMPAT_PROPERTIES).toContain(
+      'android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE',
+    );
+    expect(COMPAT_PROPERTIES).toContain(
+      'android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE',
+    );
+    expect(COMPAT_PROPERTIES).toContain(
+      'android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE',
+    );
+    expect(COMPAT_PROPERTIES).toContain(
+      'android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES',
+    );
+  });
+
+  test('properties are upserted idempotently — no duplicates on double apply', () => {
+    const once = applyWindowPolicy(freshManifest());
+    const twice = applyWindowPolicy(once);
+    const names = propNames(twice);
+    const unique = new Set(names);
+    expect(names.length).toBe(unique.size);
+    expect(names.length).toBe(COMPAT_PROPERTIES.length);
+  });
+
+  test('a hostile pre-existing true value for ANY opt-out is rewritten to false', () => {
+    const m = applyWindowPolicy(
+      freshManifest({
+        existingProperties: COMPAT_PROPERTIES.map((name) => ({
+          $: { 'android:name': name, 'android:value': 'true' },
+        })),
+      }),
+    );
+    for (const p of m.manifest.application[0].property) {
+      expect(p.$['android:value']).toBe('false');
+    }
+    expect(m.manifest.application[0].property.length).toBe(COMPAT_PROPERTIES.length);
+  });
+
+  // ── orientation freedom (v3.4.2, field-verified) ───────────────────
+
+  test('screenOrientation="portrait" is stripped from activities', () => {
     const m = applyWindowPolicy(freshManifest());
     const acts = m.manifest.application[0].activity;
     for (const a of acts) {
@@ -170,5 +257,42 @@ describe('W1 — window policy (v3.4.2: orientation freedom)', () => {
   test('missing application node is a no-op (never throws)', () => {
     const weird = { manifest: {} };
     expect(applyWindowPolicy(weird)).toBe(weird);
+  });
+
+  // ── serialization round-trip: expo's OWN manifest reader/writer must
+  //    preserve the <property> elements (the failure class that would
+  //    silently kill this fix on an expo upgrade) ─────────────────────
+
+  test('property + max-aspect declarations survive expo\'s XML write/read round-trip', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { readAndroidManifestAsync, writeAndroidManifestAsync } = require('@expo/config-plugins/build/android/Manifest');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'w1-rt-'));
+    const file = path.join(dir, 'AndroidManifest.xml');
+    fs.writeFileSync(file, '<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.tsf.music">\n  <application android:name=".MainApplication">\n    <activity android:name=".MainActivity" android:screenOrientation="portrait"/>\n  </application>\n</manifest>\n');
+    try {
+      const parsed = await readAndroidManifestAsync(file);
+      applyWindowPolicy(parsed);
+      await writeAndroidManifestAsync(file, parsed);
+      const xml = fs.readFileSync(file, 'utf8');
+      for (const name of COMPAT_PROPERTIES) {
+        expect(xml).toContain(name);
+      }
+      expect(xml).toContain('android:name="android.max_aspect"');
+      expect(xml).toContain('android:value="2.6"');
+      expect(xml).toContain('android:maxAspectRatio="2.6"');
+      expect(xml).not.toContain('screenOrientation="portrait"');
+      // and re-parsing yields the same property set (stable structure)
+      const reparsed = await readAndroidManifestAsync(file);
+      const props = (reparsed.manifest.application[0].property ?? []).map(
+        (p: any) => p.$['android:name'],
+      );
+      expect(props.length).toBe(COMPAT_PROPERTIES.length);
+      expect(new Set(props).size).toBe(COMPAT_PROPERTIES.length);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

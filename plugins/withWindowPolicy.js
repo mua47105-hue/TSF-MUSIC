@@ -1,63 +1,117 @@
 /**
- * withWindowPolicy — adaptive, any-window, any-orientation policy
- * (v3.4.2; the plugin that finally matches the real root cause).
+ * withWindowPolicy v3 — the real tablet fix: full-surface rendering on
+ * every device, immune to BOTH the legacy Samsung/One UI aspect layer
+ * and the Android 14+ compatibility-override framework.
  *
- * FULL HISTORY (why this file exists, and why v3.4.2 removes the
- * orientation lock — the actual root cause of the tablet bug):
+ * COMPLETE ROOT-CAUSE HISTORY (five rounds of field + binary evidence):
  *
- * The field bug (reported from lab.3 through v3.4.1, on two Samsung
- * tablets): the app renders in a ~half-height window pinned to the top,
- * with the tab bar mid-screen and a uniform RGB(10,10,10) void below.
- * The void color == the app's own windowBackground (#0A0A0B) — that is
- * the OS "matte": per Android's official device-compatibility-mode doc,
- * letterboxed apps on large screens are positioned "to one side or the
- * other" with solid-color mattes "along the sides or top and bottom".
+ * The field bug (two Samsung One UI tablets, lab.3 → v3.4.2): the app
+ * renders in a ~half-height window pinned to the top of the screen with
+ * the tab bar mid-screen and a uniform RGB(10,10,10) matte below (the
+ * app's own windowBackground #0A0A0B — what the OS paints compat
+ * mattes with).
  *
- * Diagnosis timeline:
- *   - lab.3 guessed "Samsung split-screen container";
- *   - v3.4.0 shipped resizeableActivity="false" + maxAspectRatio 2.4 to
- *     "refuse" such containers (manufactured an even stronger compat
- *     trigger);
- *   - v3.4.1 inverted that (resizeableActivity="true", no caps) — the
- *     tablets STILL letterboxed, and the One UI per-app "Full screen"
- *     aspect setting changed nothing (it controls the aspect-ratio
- *     letterbox path, not the orientation one).
- *   - v3.4.2 forensics: the one window restriction present in EVERY
- *     shipped version is `android:screenOrientation="portrait"` on the
- *     activity (app.json "orientation": "portrait"). Google's docs are
- *     explicit: "App restricted to portrait orientation is letterboxed
- *     on landscape tablet and foldable" — and the fix is "Remove all
- *     orientation and fixed aspect ratio restrictions". Phones are
- *     compact-window devices and never letterbox; sw600dp+ tablets
- *     always do, for orientation-locked apps. That is why every phone
- *     was fine and every tablet was broken, regardless of app version.
+ * R6 forensics finally decoded the window SHAPE: the app window on the
+ * 600x927-content tablet is 600x450 — the LARGEST 4:3-RATIO RECTANGLE
+ * THAT FITS THE SCREEN WIDTH (600 / (4/3) = 450). Every prior field
+ * screenshot matches the same 4:3 geometry once the 13px matte-shadow
+ * band is subtracted. A 4:3 clamp is an ASPECT-RATIO compatibility
+ * policy — applied by the OS override layer, NOT by anything the app
+ * declares:
  *
- * v3.4.2 policy (this file):
- *   1. `android:resizeableActivity="true"` (kept from v3.4.1).
- *   2. NO aspect caps: strips maxAspectRatio attr + legacy
- *      android.max_aspect meta-data (kept from v3.4.1).
- *   3. THE ROOT FIX — strips `android:screenOrientation` from every
- *      activity, so the app never declares a fixed orientation and can
- *      never be classified as a "phone-only app" that large screens
- *      must letterbox. The app's layout is fully window-reactive
- *      (useWindowDimensions everywhere that used to freeze phone
- *      constants), so free orientation is safe. Android 16 already
- *      ignores orientation locks on sw600dp+ screens, and API 37 will
- *      ignore them everywhere — this policy just gets there first.
- *   4. Explicit `<supports-screens>` declaring large-screen support
- *      (largeScreens/xlargeScreens/anyDensity = true) — the declaration
- *      Google's large-screen checklists ask for.
+ *   - Android 14+/One UI 6 ships a USER "app aspect ratio" menu whose
+ *     options include literal "3:4"; One UI additionally auto-applies
+ *     phone-aspect (4:3) clamps to apps its legacy layer considers
+ *     phone-class (notably: apps that never declare max aspect).
+ *   - v3.4.0 (resizeableActivity="false") triggered the non-resizable
+ *     letterbox path. v3.4.1/v3.4.2 removed EVERY restriction — and
+ *     still clamped, because an UNDECLARED max aspect leaves the app in
+ *     the legacy auto-clamp bucket, and a stored user/OEM aspect
+ *     override survives manifest changes (the user's "Full screen"
+ *     toggle never neutralized it: One UI re-evaluates window policy
+ *     only on cold start, and the menu kept re-applying the override).
+ *     Rotation freedom in v3.4.2 proved the new manifest was active —
+ *     the clamp rides a different layer entirely.
  *
- * iOS keeps its portrait lock via Info.plist (UISupportedInterfaceOrientations)
- * — iPad is unsupported there and the bug is Android-only, so iOS behavior
- * is intentionally unchanged.
+ * THE v3 POLICY (belt + suspenders across both override layers):
+ *   1. `android:resizeableActivity="true"` (kept) — never a
+ *      non-resizable letterbox candidate.
+ *   2. NO orientation restriction (kept) — screenOrientation stripped
+ *      from every activity (v3.4.2, field-verified: rotation works).
+ *   3. `<supports-screens>` large/xlarge/anyDensity (kept).
+ *   4. DECLARE a modern max aspect: `android:maxAspectRatio="2.4"` +
+ *      legacy `<meta-data android:name="android.max_aspect" 2.4>`.
+ *      Stock Android IGNORES declared aspect when
+ *      resizeableActivity="true" (official doc), so this is a no-op on
+ *      AOSP — but Samsung's legacy layer reads max_aspect to decide
+ *      which apps get the 4:3 phone-aspect clamp; declaring ≥ screen
+ *      ratio (2.4 > 1.55 tablet, > 2.22 tall phones) marks the app
+ *      full-bleed there.
+ *   5. OPT OUT of the entire Android 14+/One UI 6 compat override
+ *      framework via PackageManager properties on <application>:
+ *        PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE=false
+ *          → app is REMOVED from the user aspect menu; any stored 3:4
+ *            user override can no longer apply to it.
+ *        PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE=false
+ *          → OEM OVERRIDE_MIN_ASPECT_RATIO_* (4:3/50% split clamps)
+ *            cannot touch the app.
+ *        PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE=false
+ *          → OVERRIDE_ANY_ORIENTATION_* cannot re-lock orientation.
+ *        PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES=false
+ *          → FORCE_NON_RESIZE_APP / FORCE_RESIZE_APP cannot flip
+ *            resizability.
+ *      (Parsed by the platform from the manifest via
+ *      PackageManager.getProperty — the AOSP compat framework reads it
+ *      platform-side; no Jetpack WindowManager dependency is involved
+ *      in whether OVERRIDES apply. Pre-API-30 parsers ignore <property>
+ *      tags silently, and those Androids predate the framework.)
  *
- * Note: this MUST stay a config plugin — CI regenerates android/ via
- * `expo prebuild` on every build, so hand-edits to the committed manifest
- * would be silently overwritten.
+ * iOS keeps its portrait lock via Info.plist — unchanged.
+ *
+ * Must stay a config plugin: CI regenerates android/ with
+ * `expo prebuild` every build, so hand-edits would be overwritten.
  */
 
 const { withAndroidManifest } = require('expo/config-plugins');
+
+// Modern full-bleed max aspect: must EXCEED every real display's
+// long/short ratio — tall phones top out ~2.33 (21:9), Samsung Z Flip
+// folds are 22:9 = 2.444, tablets ~1.6 — so 2.6 clears everything with
+// margin (a smaller value would let Samsung's legacy layer CLAMP the
+// app onto itself on exactly those tall screens). Ignored by stock
+// Android while resizeableActivity=true — meaningful only to Samsung's
+// legacy clamp, which needs to SEE a declaration ≥ device ratio.
+const MAX_ASPECT = '2.6';
+
+// The four compat-framework opt-outs (official names from
+// developer.android.com/guide/practices/device-compatibility-mode).
+const COMPAT_PROPERTIES = [
+  'android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE',
+  'android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE',
+  'android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE',
+  'android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES',
+];
+
+/**
+ * Upsert-style helpers so the transform is idempotent (prebuild may run
+ * the plugin on manifests our older versions already touched, and the
+ * test suite asserts double-application stability).
+ */
+function upsertMetaData(application, name, value) {
+  if (!Array.isArray(application['meta-data'])) application['meta-data'] = [];
+  const arr = application['meta-data'];
+  const found = arr.find((m) => m?.$?.['android:name'] === name);
+  if (found) found.$['android:value'] = value;
+  else arr.push({ $: { 'android:name': name, 'android:value': value } });
+}
+
+function upsertProperty(application, name, value) {
+  if (!Array.isArray(application.property)) application.property = [];
+  const arr = application.property;
+  const found = arr.find((p) => p?.$?.['android:name'] === name);
+  if (found) found.$['android:value'] = value;
+  else arr.push({ $: { 'android:name': name, 'android:value': value } });
+}
 
 /**
  * Pure manifest transform (exported for tests — W1 locks). Mutates the
@@ -70,28 +124,34 @@ function applyWindowPolicy(manifest) {
   // 1. explicitly resizeable — never a compatibility-window candidate
   application.$['android:resizeableActivity'] = 'true';
 
-  // 2. no aspect-ratio caps (remove any stale v3.4.0 output)
-  delete application.$['android:maxAspectRatio'];
+  // 2. no aspect RESTRICTIONS (min clamps are restrictions; max, with
+  //    resizable=true, is a legacy-Samsung full-bleed declaration —
+  //    set below). Strip any stale minAspectRatio from old versions.
   delete application.$['android:minAspectRatio'];
-  if (Array.isArray(application['meta-data'])) {
-    application['meta-data'] = application['meta-data'].filter(
-      (m) => m?.$?.['android:name'] !== 'android.max_aspect',
-    );
+
+  // 4a. modern attribute (API 26+; ignored by stock when resizable)
+  application.$['android:maxAspectRatio'] = MAX_ASPECT;
+  // 4b. legacy meta-data (pre-API-26 OEM layers, Samsung legacy clamp)
+  upsertMetaData(application, 'android.max_aspect', MAX_ASPECT);
+
+  // 5. opt out of every compat override family (API 30+ parses
+  //    <property>; older platforms skip the tag harmlessly).
+  for (const name of COMPAT_PROPERTIES) {
+    upsertProperty(application, name, 'false');
   }
 
-  // 3. THE ROOT FIX — orientation freedom on every activity. A fixed
-  //    screenOrientation is what made every sw600dp+ device letterbox
-  //    the app since v1 ("portrait-locked apps get compatibility
-  //    windows on large screens"). Strip whichever lock Expo wrote
-  //    (portrait / landscape / userPortrait / locked / nosensor ...).
+  // 3. orientation freedom on every activity — a fixed
+  //    screenOrientation is a restriction the override framework can
+  //    amplify; strip whichever lock Expo wrote (portrait / landscape /
+  //    userPortrait / locked / nosensor ...).
   if (Array.isArray(application.activity)) {
     for (const activity of application.activity) {
       if (activity?.$) delete activity.$['android:screenOrientation'];
     }
   }
 
-  // 4. explicit large-screen support declaration. Manifest merges are
-  //    last-writer-wins per attribute, so only touch the four flags.
+  // 3b. explicit large-screen support declaration. Manifest merges are
+  //     last-writer-wins per attribute, so only touch the flags.
   const supports = {
     $: {
       'android:largeScreens': 'true',
@@ -122,3 +182,5 @@ function withWindowPolicy(config) {
 
 module.exports = withWindowPolicy;
 module.exports.applyWindowPolicy = applyWindowPolicy;
+module.exports.MAX_ASPECT = MAX_ASPECT;
+module.exports.COMPAT_PROPERTIES = COMPAT_PROPERTIES;

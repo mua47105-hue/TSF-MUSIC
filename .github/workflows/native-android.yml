@@ -42,6 +42,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # ── quality gate: the full suite (window-policy locks, feed/search
+      #    pagination locks, AI locks, ...) must pass BEFORE any native
+      #    build work — a red lock must never reach an APK ──────────────
+      - name: Test suite + typecheck gate
+        run: |
+          bun test
+          bunx tsc --noEmit
+
       # ── versioning: versionCode = 100 + run number (jumps past the old
       #    Capacitor builds so Android accepts it as an upgrade) ──────────
       - name: Stamp version
