@@ -1349,3 +1349,42 @@ Stage Summary:
 - The R8 gauntlet loop is WON (3 rounds, builder vs fresh-context
   critic, every verdict machine-verified). Next: v3.4.5 version bump,
   commit, tag, CI build, APK binary verification, release.
+
+---
+Task ID: 18 (v3.4.5 ship + binary verification)
+Agent: Super Z (main agent)
+
+Task: Ship the R8 release and binary-verify the shipped APK.
+
+Work Log:
+- Ship kit committed (f01c0a3): WhatsNewDialog v3_4_5 entry ("real
+  songs, deep results, zero repeats" — every 3.4.4 upgrader sees the
+  four fixes once) + scripts/verify_v345_apk.py. Initial tag push was
+  pre-ship-kit; re-tagged (concurrency cancelled the stale runs).
+- CI #63 (main) + #64 (tag v3.4.5) both SUCCESS — the 288-test + tsc
+  gate ran inside the build.
+- verify_v345_apk.py on the SHIPPED APK: 19/19 OK — versionName 3.4.5,
+  versionCode 165 (>160, in-place upgrade over 3.4.4), all four R8
+  fixes binary-verified (FeedSongRow/FeedAlbumShelf memo'd feed rows,
+  SONGS_FILTER_PARAMS constant, ytSearchMusicMore + YtAppendController,
+  reconcileRecordings + countTwins), R7 half-screen belts retained,
+  window policy intact, WhatsNew v3_4_5 present.
+- Marker discipline (learned mid-verify): "endless-feed-song" testID
+  and the end-note string are NOT discriminators (both shipped in
+  v3.4.4's ScrollView feed); the strong markers are OUR component /
+  function / constant names (Hermes keeps them in the string table)
+  plus the SONGS_FILTER_PARAMS literal. One note literal lives in a
+  UTF-16 region of the bundle — the verifier checks both encodings.
+- Sanity re-run on the shipped v3.4.4 APK: all 6 R8 markers correctly
+  FAIL — the discriminators are real.
+- Release live: https://github.com/mua47105-hue/TSF-MUSIC/releases/
+  tag/v3.4.5 (app-release.apk 79.4 MB, same keystore → installs over
+  3.4.4 in place). Local copies: download/v3.4.5-app-release.apk +
+  v3.4.4-app-release.apk (sanity).
+
+Stage Summary:
+- v3.4.5 SHIPPED and binary-verified. All four field reports are
+  closed at three levels: live-probed (root cause), behaviorally
+  locked (288 tests), and binary-verified in the shipped APK
+  (19/19 + sanity). Gauntlet loop: 3 rounds, R1 FIX-FIRST →
+  R2 FIX-FIRST (caught the builder's own regressions) → R3 SHIP.

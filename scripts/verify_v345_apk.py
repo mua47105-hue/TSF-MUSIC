@@ -91,10 +91,13 @@ def verify(apk_path):
     check("YtPoTokenBridge still in bundle (YouTube source intact)", "YtPoTokenBridge" in h or "ytPoToken" in h)
 
     # ── 2b. THE R8 FIXES — hermes markers ───────────────────────────────
-    # P1: the windowed home feed (memo'd rows carry the testID)
+    # P1: the windowed home feed — the memo'd row WRAPPER components
+    # (FeedSongRow/FeedAlbumShelf) only exist in the R8 rewrite; the
+    # "endless-feed-song" testID alone is NOT a discriminator (the old
+    # ScrollView feed carried the same testID — sanity-proven on 3.4.4)
     check(
-        "R8-P1 windowed feed rows in bundle (endless-feed-song testID)",
-        "endless-feed-song" in h,
+        "R8-P1 windowed feed rows in bundle (FeedSongRow + FeedAlbumShelf)",
+        "FeedSongRow" in h and "FeedAlbumShelf" in h,
     )
     # P2: the songs-filter catalog search (the pinned params constant —
     # a unique string, minification-safe)
@@ -102,16 +105,28 @@ def verify(apk_path):
         "R8-P2 songs-filter search wired (SONGS_FILTER_PARAMS constant)",
         "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D" in h,
     )
-    # P3: continuation pagination — the honest end note only exists in
-    # the R8 walk (v3.4.4's YouTube search had no pagination at all)
+    # P3: continuation pagination — ytSearchMusicMore + the extracted
+    # YtAppendController only exist in the R8 walk (v3.4.4's YouTube
+    # search had no pagination; the end-note string itself is not a
+    # discriminator — sanity-proven on 3.4.4)
     check(
-        "R8-P3 continuation walk wired (honest end note string)",
-        "That\'s everything YouTube found" in h,
+        "R8-P3 continuation walk wired (ytSearchMusicMore + YtAppendController)",
+        "ytSearchMusicMore" in h and "YtAppendController" in h,
     )
-    # P4: recording identity — the reconciliation + twin markers
+    # P4: recording identity — the reconciliation function names
+    # (Hermes keeps function names in the string table; the retry-note
+    # literal itself lives in a UTF-16 region of the bundle)
     check(
-        "R8-P4 credit-set reconciliation in bundle (marker strings)",
-        "Couldn\'t load more — check your connection" in h and "tsf.whatsNew.v3_4_5" in h,
+        "R8-P4 credit-set reconciliation in bundle (reconcileRecordings + countTwins)",
+        "reconcileRecordings" in h and "countTwins" in h,
+    )
+    with zipfile.ZipFile(apk_path) as z:
+        bundle = next(n for n in z.namelist() if re.match(r"assets/index\.android\.bundle$", n))
+        raw = z.read(bundle)
+    check(
+        "R8-P4 transport-retry note in bundle (UTF-16 string region)",
+        raw.find("Couldn\'t load more — check your connection".encode()) >= 0
+        or raw.find("Couldn\'t load more — check your connection".encode("utf-16-le")) >= 0,
     )
 
     # ── 3. retained window policy (v3.4.3, cheap re-check) ──────────────
@@ -154,9 +169,11 @@ def main():
         print(f"SANITY (must FAIL on): {cands[-1]}\n")
         h = hermes_strings(cands[-1])
         r8_checks = {
-            "R8-P1 windowed feed testID (endless-feed-song)": "endless-feed-song" in h,
+            "R8-P1 memo'd feed rows (FeedSongRow/FeedAlbumShelf)": "FeedSongRow" in h or "FeedAlbumShelf" in h,
             "R8-P2 songs-filter params constant": "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D" in h,
-            "R8-P3 honest end note": "That\'s everything YouTube found" in h,
+            "R8-P3 continuation walk (ytSearchMusicMore)": "ytSearchMusicMore" in h or "YtAppendController" in h,
+            "R8-P4 reconcileRecordings fn name": "reconcileRecordings" in h,
+            "R8-P4 countTwins fn name": "countTwins" in h,
             "WhatsNew v3_4_5": "tsf.whatsNew.v3_4_5" in h,
         }
         bad = [k for k, v in r8_checks.items() if v]
