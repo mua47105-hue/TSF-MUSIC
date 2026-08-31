@@ -19,7 +19,7 @@
  *   L-E2E   the headline "tu chaiye" title-only rescue end-to-end
  */
 
-import { describe, expect, test, beforeAll, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, test, beforeAll, beforeEach, afterEach, afterAll, mock } from 'bun:test';
 
 mock.module('react-native', () => ({
   AppState: { addEventListener: () => ({ remove: () => undefined }) },
@@ -204,11 +204,23 @@ beforeAll(() => {
   registerArtistLexicon(['Atif Aslam', 'Arijit Singh', 'Pritam', 'A.R. Rahman']);
 });
 
+// R7 suite hygiene: entering this file, the YT fetch seam may carry an
+// EARLIER file's stub (youtube.test.ts leaves a player-URL-only router) —
+// the engine's YT calls would silently bypass this file's installFetch and
+// the rescue locks degraded to "partial" depending on file order. Reset
+// the seam per test; restore the pristine global fetch on the way out.
+const PRISTINE_FETCH = globalThis.fetch;
+
 beforeEach(() => {
   clearSearchCaches();
   clearYtCaches();
   resetYtKillSwitch();
+  setYtFetch(null);
   (globalThis as any).fetch = ((() => Promise.resolve(new Response('{}', { status: 200 }))) as unknown) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = PRISTINE_FETCH;
 });
 
 afterEach(() => {

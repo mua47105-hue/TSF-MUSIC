@@ -25,7 +25,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { AppState, PermissionsAndroid, Platform } from 'react-native';
+import { AppState, PermissionsAndroid, Platform, StyleSheet, View } from 'react-native';
 import TrackPlayer, {
   Capability,
   RepeatMode,
@@ -678,8 +678,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   return (
     <PlayerContext.Provider value={value}>
       {children}
-      {/* hidden BotGuard PO-token minter — the YouTube attested rung */}
-      <YtPoTokenBridge />
+      {/* hidden BotGuard PO-token minter — the YouTube attested rung.
+
+          R7 HOST WRAPPER — the v3.4.0–v3.4.3 half-screen bug: the bridge's
+          WebView library renders its own container View, and whatever that
+          container's style ends up being (v14: flex:1 IN-FLOW unless the
+          caller passes containerStyle), an in-flow sibling under the app
+          root splits the screen 50/50 in Yoga. Hosting the bridge inside
+          an absolute, sub-pixel, touch-transparent View makes that entire
+          failure class structurally impossible — for ANY webview version
+          or future refactor of the bridge. */}
+      <View style={styles.poTokenHost} pointerEvents="none">
+        <YtPoTokenBridge />
+      </View>
     </PlayerContext.Provider>
   );
 }
@@ -689,3 +700,17 @@ export function usePlayer(): PlayerState {
   if (!ctx) throw new Error('usePlayer outside PlayerProvider');
   return ctx;
 }
+
+const styles = StyleSheet.create({
+  /** Absolute, sub-pixel, touch-transparent host for the hidden PO-token
+   *  WebView — see the R7 comment at the mount site. Out-of-flow by
+   *  construction: it can never take part in the app's flex layout. */
+  poTokenHost: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    top: 0,
+    left: 0,
+    opacity: 0.01,
+  },
+});

@@ -11,15 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_4_3';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_4';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Tablet half-screen fix: the system was forcing a phone-shaped window on tablets — the app now officially declares itself full-screen and opts out of every aspect-ratio override',
-  'Important: after updating, fully close the app once (swipe it from Recents, or restart the tablet) so the system applies the new window policy',
-  'If it still opens small: Settings → Display → Full screen apps (or Apps → TSF Music → Aspect ratio) → set Full screen, then reopen the app',
-  'Rotation, endless Home feed and Search scroll from 3.4.1/3.4.2 all stay',
+  'Real half-screen fix: the invisible YouTube helper view was silently claiming the bottom half of the screen — it is now locked out at two levels, so the app fills the whole display on every phone and tablet, portrait and landscape',
+  'No settings changes and no extra steps needed this time — just install and open the app',
+  'The bottom bar (Home / Search / Your Library / Premium) sits at the very bottom of the screen again, right where it belongs',
+  'Rotation, endless Home feed and Search scroll all stay',
 ];
 
 export function WhatsNewDialog() {
@@ -58,7 +58,7 @@ export function WhatsNewDialog() {
             <Ionicons name="sparkles" size={20} color={colors.textOnGreen} />
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
-          <Text style={styles.version}>TSF Music 3.4.3 · True full-screen tablets</Text>
+          <Text style={styles.version}>TSF Music 3.4.4 · True full-screen everywhere</Text>
           <View style={styles.list}>
             {CHANGES.map((c) => (
               <View key={c} style={styles.row}>

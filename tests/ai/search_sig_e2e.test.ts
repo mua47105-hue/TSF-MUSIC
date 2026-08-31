@@ -8,7 +8,7 @@
  * (never wrong "Best match") when neither provider can satisfy intent.
  */
 
-import { describe, expect, test, beforeAll, beforeEach, mock } from 'bun:test';
+import { describe, expect, test, beforeAll, beforeEach, afterAll, mock } from 'bun:test';
 
 mock.module('react-native', () => ({
   AppState: { addEventListener: () => ({ remove: () => undefined }) },
@@ -24,7 +24,7 @@ mock.module('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-import { resetYtKillSwitch, clearYtCaches } from '../../src/api/youtube';
+import { resetYtKillSwitch, clearYtCaches, setYtFetch } from '../../src/api/youtube';
 import { clearSearchCaches } from '../../src/search/retrieve';
 
 const JUNK_RESULTS = {
@@ -157,9 +157,22 @@ async function engine() {
   return await import('../../src/api/music');
 }
 
+// R7 suite hygiene: this file drives the YT module through the DEFAULT
+// fetch seam (installFetch replaces globalThis.fetch). An earlier file's
+// leftover setYtFetch stub (youtube.test.ts) used to hijack every YT call
+// here — the rescue ladder died and "rescued" degraded to "partial"
+// depending on file order. Enter on the pristine seam, restore the
+// pristine global fetch on the way out (installFetch never restores it).
+const PRISTINE_FETCH = globalThis.fetch;
+
 beforeAll(() => {
+  setYtFetch(null);
   resetYtKillSwitch();
   clearYtCaches();
+});
+
+afterAll(() => {
+  globalThis.fetch = PRISTINE_FETCH;
 });
 
 beforeEach(() => {

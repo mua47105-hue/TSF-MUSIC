@@ -283,7 +283,29 @@ export function YtPoTokenBridge(): JSX.Element | null {
     <WebView
       ref={ref}
       source={{ html: PAGE_HTML, baseUrl: 'https://www.youtube.com' }}
-      style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}
+      // R7 LAYOUT CONTRACT — the v3.4.0–v3.4.3 half-screen bug.
+      // react-native-webview v14 renders
+      //   <View style={[{flex:1,overflow:'hidden'}, containerStyle]}>
+      //     <NativeWebView style={[{flex:1},{backgroundColor:'#fff'}, style]}/>
+      //   </View>
+      // — `style` lands ONLY on the inner native WebView. The OUTER wrapper
+      // is sized by `containerStyle` and DEFAULTS TO flex:1 IN-FLOW. This
+      // bridge used to carry position:absolute on `style` alone, leaving a
+      // flex:1 transparent wrapper as a sibling of the entire app under
+      // SafeAreaProvider's flex:1 View — Yoga split the screen 50/50 on
+      // every Android device (app top half, bottom nav mid-screen, void
+      // below). BOTH levels must be out-of-flow: containerStyle here, plus
+      // the absolute host View in PlayerProvider (poTokenHost) as the
+      // second, library-version-proof belt.
+      style={{ flex: 1, backgroundColor: 'transparent' }}
+      containerStyle={{
+        position: 'absolute',
+        width: 1,
+        height: 1,
+        top: 0,
+        left: 0,
+        opacity: 0.01,
+      }}
       originWhitelist={['*']}
       javaScriptEnabled
       domStorageEnabled

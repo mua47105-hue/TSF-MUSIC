@@ -5,7 +5,7 @@
  * mirror the live InnerTube shapes captured in research/youtube/.
  */
 
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import type { Track } from '../../src/types';
 import {
   setYtFetch,
@@ -17,6 +17,14 @@ import {
   resetYtKillSwitch,
   clearYtCaches,
 } from '../../src/api/youtube';
+
+// R7 suite hygiene: the injected fetch seam is process-global module state.
+// This file's LAST per-test stub (a player-URL-only router) used to leak
+// into every LATER test file in the same `bun test` run — search_sig_e2e /
+// search_yt_locks rescue tests silently hit it, got empty YT search bodies,
+// and failed as "partial" instead of "rescued" (order-dependent red).
+// Restore the default seam (routes to global fetch) when this file ends.
+afterAll(() => setYtFetch(null));
 
 // ── fixtures (shape = real InnerTube responses, minimal) ──
 
