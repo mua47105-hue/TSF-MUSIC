@@ -11,15 +11,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { PressableScale } from './PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v3_4_4';
+const SEEN_KEY = 'tsf.whatsNew.v3_4_5';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Real half-screen fix: the invisible YouTube helper view was silently claiming the bottom half of the screen — it is now locked out at two levels, so the app fills the whole display on every phone and tablet, portrait and landscape',
-  'No settings changes and no extra steps needed this time — just install and open the app',
-  'The bottom bar (Home / Search / Your Library / Premium) sits at the very bottom of the screen again, right where it belongs',
-  'Rotation, endless Home feed and Search scroll all stay',
+  'YouTube search now finds the REAL song: the official recording comes first (no more lo-fi or cover versions winning) and results go 40+ deep with page after page as you scroll',
+  'Home scrolls deep without lagging: the feed now renders in a windowed list, so hundreds of rows below stay smooth',
+  'No more repeats in Top Songs and Trending: the same song listed under different albums or credit orders is now recognized and shown once',
+  'Search keeps loading more even after a network blip instead of claiming that was everything',
 ];
 
 export function WhatsNewDialog() {
@@ -58,7 +58,7 @@ export function WhatsNewDialog() {
             <Ionicons name="sparkles" size={20} color={colors.textOnGreen} />
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
-          <Text style={styles.version}>TSF Music 3.4.4 · True full-screen everywhere</Text>
+          <Text style={styles.version}>TSF Music 3.4.5 · Real songs, deep results, zero repeats</Text>
           <View style={styles.list}>
             {CHANGES.map((c) => (
               <View key={c} style={styles.row}>
