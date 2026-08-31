@@ -146,9 +146,9 @@ export async function ytSearchMusicMore(
   continuation: string,
   limit = 30,
   _signal?: AbortSignal,
-): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number }> {
+): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number; error?: boolean }> {
   const t0 = Date.now();
-  if (!ytAvailable()) return { tracks: [], latencyMs: 0 };
+  if (!ytAvailable()) return { tracks: [], latencyMs: 0, error: true };
   await new Promise((r) => setTimeout(r, 200));
   const m = /^cont:(.*):(\d+)$/.exec(continuation);
   if (!m) return { tracks: [], latencyMs: Date.now() - t0 };

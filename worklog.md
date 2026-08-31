@@ -1242,3 +1242,110 @@ Stage Summary:
   User action: update over 3.4.3 and just open the app — no settings
   changes, no cold-start rituals. One field screenshot (portrait home
   screen) closes the loop definitively.
+
+---
+Task ID: 16 (R8 completion: residual dedup gap + eager top-up, pre-ship)
+Agent: Super Z (main agent)
+
+Task: Finish the R8 round (4 field reports: home lag, lo-fi-first
+YouTube results, 6-8 result volume, Top Songs Zalima x5-6), close the
+residual dedup gap found by live probing, and prepare the ship.
+
+Work Log:
+- Situational: commit 7e503c7 (post-v3.4.4) already carries the bulk
+  R8 work (FlatList home rewrite, YT search v2 songs-filter primary,
+  continuation pagination, recordingKey dedup) but was never released —
+  the user's field report tested v3.4.4 WITHOUT these. Suite 261 pass,
+  tsc clean at that commit.
+- Live probes re-run at HEAD: YT search v2 confirmed good (official
+  song rank #1 for tu chaiye/tum hi ho/kesariya/apna bana le, 19-20
+  first page + 20 page 2); probe's canonical bar had a false FAIL
+  (compared raw query vs title, ignoring YouTube's own correction) —
+  fixed to compare correctedTo ?? q.
+- RESIDUAL GAP found by live probe of JioSaavn: same recording
+  re-listed with a RE-ORDERED or TRUNCATED credit list ("Tum Hi Ho |
+  Arijit Singh, Mithoon" vs "Tum Hi Ho | Mithoon, Arijit Singh";
+  "Labon Ko | KK, Pritam, Sayeed" vs "Labon Ko | Pritam, KK") carries
+  different primary-artist keys → survived key-dedup → the exact
+  "same song twice" pattern the user reported. 5/5 clusters in
+  today's 'top songs' pages were this class; disjoint-credit rows
+  (genuinely different songs) were correctly distinct.
+- P4b implemented (src/api/recording.ts): creditSetOf / titleKeyOf /
+  sameCredits (nested-set test) / reconcileRecordings (order-preserving
+  title-bucket reconciliation, idempotent). Wired into: dedupeRecordings
+  (saavn), mergeUniqueTracks, EndlessFeedPager (per-title bucket ledger
+  + prime() registers buckets), ytSearchMusic merged loop, and
+  getTrending (was NOT deduped at all — chart collections re-list too).
+- R8-P3 eager top-up (SearchScreen): shared single-flighted
+  appendYtPage(gen, {silent}) — first page paints immediately; when
+  page 1 < 20 rows and a continuation exists, page 2 walks in the
+  background (~2 full catalog pages on screen before any scroll).
+  resultsRef synced explicitly pre-top-up (instant-mock race).
+- Tests: r8_locks +11 P4b locks (credit-flip collapse, truncated
+  re-credit, disjoint survival, version-word protection, empty-credit
+  safety, idempotence, pager cross-batch + prime() bucket, mergeUnique
+  page-2 re-credit, eager top-up source contract). Suite 273 pass,
+  tsc clean. Live probes: 'top songs' clusters 5 → 0 remaining;
+  'tum hi ho' flip collapsed; disjoint-credit rows survive.
+
+Stage Summary:
+- R8 is now complete on all four bars. Next: gauntlet critic round
+  (fresh context), then v3.4.5 version bump + CI ship + binary
+  verification.
+
+---
+Task ID: 17 (gauntlet rounds 2-3 + ship prep for the R8 release)
+Agent: Super Z (main agent)
+
+Task: Close the gauntlet loop on the R8 diff (4 field reports), then
+prepare and ship v3.4.5.
+
+Work Log:
+- Gauntlet round 1 (critic, fresh context, machine-verified): verdict
+  FIX-FIRST. P1-1 ytSearchMusicMore never rejects → a network blip
+  painted "That's everything YouTube found" and permanently killed the
+  token; P1-2 headline changes had zero behavioral locks (the nested
+  YT lock was vacuous) + a comment citing tests that didn't exist;
+  P2-3 the nested credit-set rule over-collapsed 3 adversarial
+  classes; P2-4 getTrending's >=5 gate measured pre-dedup rows;
+  P2-5 live P3 bar flaky at 19-vs-20.
+- Fixes: error:true flag on transport failure (caller keeps token +
+  hasMore → retryable, webmocks parity); singleton guard in
+  sameCredits (lone credit must be the primary of the larger row);
+  getTrending gates post-dedup; probe P3 bar = first page >=15 +
+  continuation + total(p1+p2)>=35; behavioral locks added (nested YT
+  collapse, Kar Gayi Chull adversarial, transport error, getTrending);
+  comment fixed.
+- Gauntlet round 2: verdict FIX-FIRST again — caught MY fix's
+  regressions: NEW-6 the singleton guard un-collapsed the live
+  "Humnava Mere" pair (lyricist-first fuller-credit re-list, same
+  recording, play counters 137,044,726 vs 137,044,723); NEW-7 my
+  nested-credit lock was VACUOUS (both rows keyed the same — only
+  proven by replaying fixtures through the real parse); NEW-9 the
+  top-up/single-flight logic was still grep-only.
+- Fixes: countTwins (play counters both >=100,000 and delta <= 1000
+  → same recording's global counter — collapses the Humnava class,
+  floor added round 3 after the critic found small-counter noise);
+  the vacuous lock re-pointed at a genuinely different-key pair;
+  the whole append state machine EXTRACTED to src/search/ytAppend.ts
+  (YtAppendController, ports-injected) — 6 behavioral locks
+  (single-flight, honest end, transport-retry, stale-gen swallow,
+  busy-spinner, NEW-7 gen-keyed single-flight so a new query never
+  queues behind a doomed walk); round-3 also: stale retry note
+  cleared on productive append.
+- Gauntlet round 3: verdict SHIP. All round-2 P1s machine-proven
+  fixed (live Humnava gone: 'top songs' clusters 5 → 0); controller
+  extraction verified sound incl. real ytSearchMusicMore trace;
+  residuals = P2 superset-drop class (0 live occurrences in 238
+  scanned rows) + P3 nits. The two cheap residuals (countTwins
+  small-counter floor, gen-keyed single-flight) were still applied
+  post-verdict with locks (288 pass total).
+- Final gates: bun test 288/288 (twice, both 2-file orders), tsc
+  clean, live YT probe ALL BARS PASS (39-40 deep per query, official
+  song rank 1 everywhere), live Zalima probe: top songs 0 same-title
+  clusters, disjoint-credit survivors only.
+
+Stage Summary:
+- The R8 gauntlet loop is WON (3 rounds, builder vs fresh-context
+  critic, every verdict machine-verified). Next: v3.4.5 version bump,
+  commit, tag, CI build, APK binary verification, release.

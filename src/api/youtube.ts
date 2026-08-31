@@ -22,7 +22,7 @@
  */
 
 import type { Track } from '../types';
-import { recordingKey } from './recording';
+import { recordingKey, reconcileRecordings } from './recording';
 
 // ── client registry (ONE place to update when YouTube rotates shapes) ──
 // Refreshed 2026-02 against the OSS playback ecosystem (yt-dlp PO-Token-Guide
@@ -616,8 +616,15 @@ export async function ytSearchMusic(query: string, limit = 30, signal?: AbortSig
     seenKeys.add(key);
     merged.push(t);
   }
+  // R8-P4b: catalog rows re-credit the same recording with a nested
+  // credit list — "Kesariya | Arijit Singh, Pritam" vs "Kesariya |
+  // Pritam, Arijit Singh, Amitabh Bhattacharya" (composer-first).
+  // Nested-set reconciliation absorbs multi-artist flips/truncations;
+  // singleton-vs-larger pairs collapse only when the lone artist leads
+  // the larger row (the featured-artist guard — see recording.ts).
+  const reconciled = reconcileRecordings(merged);
 
-  const tracks = merged.slice(0, limit);
+  const tracks = reconciled.slice(0, limit);
   // CRITIC P1-1: the continuation belongs to the SONGS SHELF, not to the
   // post-dedup merged length — key-dedup legitimately trims merged below
   // 20 ("tum hi ho" collapsed 2 catalog re-lists → 19 rows with a live
@@ -638,20 +645,23 @@ export async function ytSearchMusic(query: string, limit = 30, signal?: AbortSig
 
 /** Page 2+ of a songs-filter search — the continuation the first call
  *  returned. Returns fresh rows (id + recording deduped within the page)
- *  and the next continuation when the catalog goes deeper. */
+ *  and the next continuation when the catalog goes deeper. `error: true`
+ *  marks a TRANSPORT failure (the caller keeps its token and retries —
+ *  a network blip is not end-of-catalog, R8 gauntlet P1-1). */
 export async function ytSearchMusicMore(
   continuation: string,
   limit = 30,
   signal?: AbortSignal,
-): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number }> {
+): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number; error?: boolean }> {
   const t0 = Date.now();
-  if (!ytAvailable()) return { tracks: [], latencyMs: 0 };
+  if (!ytAvailable()) return { tracks: [], latencyMs: 0, error: true };
   const remix = YT_CLIENTS.find((c) => c.name === 'WEB_REMIX')!;
   let data: any;
   try {
     data = await innertube('search', remix, { continuation }, signal);
   } catch {
-    return { tracks: [], latencyMs: Date.now() - t0 };
+    // transport failure — the CALLER's token stays valid; report, don't lie
+    return { tracks: [], latencyMs: Date.now() - t0, error: true };
   }
   // continuation responses omit the tabbed wrapper — rows sit directly
   // in continuationItems; the walker handles both shapes.

@@ -10,7 +10,7 @@
 import CryptoJS from 'crypto-js';
 import type { Collection, Track } from '../types';
 import { filterClean, isClean } from '../safety';
-import { recordingKey } from './recording';
+import { recordingKey, reconcileRecordings } from './recording';
 
 const API = 'https://www.jiosaavn.com/api.php';
 const DES_KEY = CryptoJS.enc.Utf8.parse('38346591');
@@ -197,29 +197,31 @@ export async function searchSaavn(
 }
 
 /** Collapse rows that share a recording key (normalized title + primary
- *  artist), keeping first occurrence and the input order. Pure — locked
- *  in tests/ai/search_paging_locks + feed_pager. */
+ *  artist), keeping first occurrence and the input order — then the
+ *  R8-P4b reconciliation pass collapses same-title rows whose CREDIT
+ *  SETS nest (the re-ordered/truncated re-credit re-lists). Pure —
+ *  locked in tests/ai/search_paging_locks + feed_pager + r8_locks. */
 export function dedupeRecordings(tracks: Track[]): Track[] {
   const seenIds = new Set<string>();
   const seenKeys = new Set<string>();
-  const out: Track[] = [];
+  const keyPass: Track[] = [];
   for (const t of tracks) {
     if (seenIds.has(t.id)) continue;
     const key = recordingKey(t);
     if (seenKeys.has(key)) continue;
     seenIds.add(t.id);
     seenKeys.add(key);
-    out.push(t);
+    keyPass.push(t);
   }
-  return out;
+  return reconcileRecordings(keyPass);
 }
 
 /**
  * Merge a fetched page into an existing result list, dropping rows whose
  * id is already present — including duplicates that arrive INSIDE one
  * page (JioSaavn pages overlap ~7%) — and rows that are the SAME
- * RECORDING under a different id (compilation re-lists, R8-P4).
- * Order-preserving, allocation-free when nothing is new. Pure —
+ * RECORDING under a different id or a re-ordered credit list
+ * (compilation re-lists, R8-P4/P4b). Order-preserving. Pure —
  * unit-tested (F1).
  */
 export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
@@ -234,7 +236,12 @@ export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
     seenKeys.add(key);
     fresh.push(t);
   }
-  return fresh.length ? [...prev, ...fresh] : prev;
+  if (!fresh.length) return prev;
+  // P4b: a page-2 row can re-credit a KEPT row ("Tum Hi Ho | Mithoon,
+  // Arijit" after "… | Arijit, Mithoon") — reconcile the whole merged
+  // list (prev is already reconciled → only prev-vs-fresh and
+  // intra-fresh pairs can drop; idempotent).
+  return reconcileRecordings([...prev, ...fresh]);
 }
 
 /**
@@ -406,13 +413,16 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
   return pool.slice(0, limit);
 }
 
-/** Trending songs for home — always safety-filtered. */
+/** Trending songs for home — always safety-filtered, always deduped
+ *  (chart collections re-list the same recording too, R8-P4/P4b).
+ *  The ≥5 gate measures POST-dedup rows (gauntlet P2-4: a degenerate
+ *  chart of 5 re-lists must not pass and render a 2-row shelf). */
 export async function getTrending(limit = 14): Promise<Track[]> {
   const charts = await getCharts();
   for (const chart of charts) {
     try {
       const tracks = await getCollectionTracks(chart.id);
-      const clean = filterClean(tracks);
+      const clean = dedupeRecordings(filterClean(tracks));
       if (clean.length >= 5) return clean.slice(0, limit);
     } catch {
       /* try next chart */

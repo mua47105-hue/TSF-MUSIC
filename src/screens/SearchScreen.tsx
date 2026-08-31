@@ -37,6 +37,7 @@ import {
   type SearchV2Result,
 } from '../api/music';
 import { ytSearchMusic, ytSearchMusicMore, ytAvailable } from '../api/youtube';
+import { YtAppendController, YT_END_NOTE } from '../search/ytAppend';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
@@ -209,6 +210,38 @@ export function SearchScreen() {
     setLoadingMore(false);
   }, []);
 
+  /** R8-P3 append: the single-flighted continuation walk (page 2+ of
+   *  YouTube Music's catalog list), shared by the scroll hook and the
+   *  eager top-up. The state machine lives in YtAppendController
+   *  (src/search/ytAppend.ts — behaviorally locked); the ports below
+   *  are stable refs/setters so the controller instance is created once. */
+  const ytAppendRef = useRef<YtAppendController | null>(null);
+  if (!ytAppendRef.current) {
+    ytAppendRef.current = new YtAppendController({
+      fetchMore: (cont, signal) => ytSearchMusicMore(cont, 30, signal),
+      getCont: () => ytContRef.current,
+      setCont: (c) => {
+        ytContRef.current = c;
+      },
+      getRows: () => resultsRef.current,
+      publishRows: (rows) => {
+        resultsRef.current = rows;
+        setResults(rows);
+      },
+      publishState: (s) => {
+        setHasMore(s.hasMore);
+        setEndNote(s.endNote);
+      },
+      isCurrentGen: (gen) => gen === searchGen.current,
+      getSignal: () => abortRef.current?.signal,
+      setBusy: setLoadingMore,
+    });
+  }
+  const appendYtPage = useCallback(
+    (gen: number, opts?: { silent?: boolean }) => ytAppendRef.current!.append(gen, opts),
+    [],
+  );
+
   /**
    * Infinite scroll (F1): catalog keyword searches append JioSaavn page
    * p+1 as the user approaches the end. Rows are deduped by id AND
@@ -223,39 +256,14 @@ export function SearchScreen() {
     if (source === 'youtube') {
       // R8-P3: YouTube deep-list pagination — continuation of the
       // songs-filter catalog (fresh rows only, id + recording deduped).
-      const cont = ytContRef.current;
-      if (!cont) {
+      if (!ytContRef.current) {
         setHasMore(false);
-        setEndNote("That's everything YouTube found");
+        setEndNote(YT_END_NOTE);
         return;
       }
       const q = query.trim();
       if (!q) return;
-      const gen = searchGen.current;
-      setLoadingMore(true);
-      try {
-        const more = await ytSearchMusicMore(cont, 30, abortRef.current?.signal);
-        if (gen !== searchGen.current) return; // stale — new query won
-        if (more.tracks.length) {
-          const merged = mergeUniqueTracks(resultsRef.current, more.tracks);
-          resultsRef.current = merged;
-          setResults(merged);
-        }
-        ytContRef.current = more.continuation ?? null;
-        if (more.continuation) {
-          setHasMore(true);
-        } else {
-          setHasMore(false);
-          setEndNote("That's everything YouTube found");
-        }
-      } catch {
-        if (gen === searchGen.current) {
-          setHasMore(false);
-          setEndNote("Couldn't load more — check your connection");
-        }
-      } finally {
-        if (gen === searchGen.current) setLoadingMore(false);
-      }
+      void appendYtPage(searchGen.current);
       return;
     }
     if (source !== 'catalog') return;
@@ -295,7 +303,7 @@ export function SearchScreen() {
     } finally {
       if (gen === searchGen.current) setLoadingMore(false);
     }
-  }, [loadingMore, hasMore, loading, vibe, source, query]);
+  }, [loadingMore, hasMore, loading, vibe, source, query, appendYtPage]);
 
   const runSearch = useCallback(
     // sourceOverride (P2-1): the source toggle passes the NEW source so the
@@ -355,6 +363,19 @@ export function SearchScreen() {
           ytContRef.current = ytr.continuation ?? null;
           setHasMore(!!ytr.continuation);
           setEndNote(null);
+          // R8-P3 eager top-up: a fuzzy query's first page can land just
+          // under a full shelf page (19 of 20 after catalog-entity dedup).
+          // The user asked for a BIG list — paint immediately, then walk
+          // one continuation page in the background so ~2 pages sit on
+          // screen before any scrolling. Silent: no footer spinner flash.
+          // resultsRef sync is explicit: the mirror effect runs on next
+          // commit, and a near-instant continuation (warm cache / very
+          // fast network) can merge before that commit — merging against
+          // a stale mirror would REPLACE the page-1 rows with page 2.
+          if (ytr.continuation && ytr.tracks.length < 20) {
+            resultsRef.current = ytr.tracks;
+            void appendYtPage(gen, { silent: true });
+          }
           void mindbeat.searchQueried(q, ytr.tracks.length);
           await pushRecentSearch(q);
           setRecentSearches(await getRecentSearches());

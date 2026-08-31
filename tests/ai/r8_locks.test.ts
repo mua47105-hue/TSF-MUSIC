@@ -12,15 +12,18 @@
  *   P4  "Top Songs" shelves repeat one song 5-6 times (Zalima)
  *         → recording-level dedup (normalized title + primary artist)
  *            in the feed pager, searchSaavn pages, and mergeUniqueTracks
+ *         + P4b: re-ordered/truncated CREDIT re-lists collapse by
+ *            nested credit-set reconciliation (live-probed residual gap)
  */
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { Track } from '../../src/types';
-import { recordingKey } from '../../src/api/recording';
-import { dedupeRecordings, mergeUniqueTracks } from '../../src/api/saavn';
+import { recordingKey, reconcileRecordings } from '../../src/api/recording';
+import { dedupeRecordings, mergeUniqueTracks, getTrending } from '../../src/api/saavn';
 import { EndlessFeedPager, type FeedFetchers } from '../../src/api/feed';
+import { YtAppendController, type YtAppendPage } from '../../src/search/ytAppend';
 import {
   setYtFetch,
   ytSearchMusic,
@@ -166,6 +169,182 @@ describe('R8-P4 — the feed pager collapses recordings inside a batch', () => {
     const batch = await pager.next();
     if (batch?.kind !== 'songs') throw new Error('expected songs batch');
     expect(batch.songs.some((t) => t.title === 'Zalima')).toBe(false);
+  });
+});
+
+// ═══════════════ P4b — credit-order reconciliation (residual gap) ═══════════
+// Live ground truth: JioSaavn re-lists the same recording with a
+// RE-ORDERED or TRUNCATED credit list — "Tum Hi Ho | Arijit Singh,
+// Mithoon" vs "Tum Hi Ho | Mithoon, Arijit Singh" carry different
+// primary-artist keys, so key-dedup alone still showed one song twice.
+
+describe('R8-P4b — reconcileRecordings (nested credit sets)', () => {
+  test('the credit-order flip collapses (live: Tum Hi Ho x2 in Top Songs)', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Tum Hi Ho (From "Aashiqui 2")', artist: 'Arijit Singh, Mithoon', artistsFull: ['Arijit Singh', 'Mithoon'] }),
+      mkTrack({ id: 'b', title: 'Tum Hi Ho (From "Aashiqui 2")', artist: 'Mithoon, Arijit Singh', artistsFull: ['Mithoon', 'Arijit Singh'] }),
+    ]);
+    expect(out.map((t) => t.id)).toEqual(['a']);
+  });
+
+  test('the truncated re-credit collapses (live: Labon Ko)', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Labon Ko', artist: 'KK, Pritam, Sayeed Quadri', artistsFull: ['KK', 'Pritam', 'Sayeed Quadri'] }),
+      mkTrack({ id: 'b', title: 'Labon Ko', artist: 'Pritam, KK', artistsFull: ['Pritam', 'KK'] }),
+    ]);
+    expect(out.map((t) => t.id)).toEqual(['a']);
+  });
+
+  test('play-count twins collapse (the lyricist-first fuller-credit re-list, live: Humnava Mere)', () => {
+    // JioSaavn re-lists one recording with the lyricist-first FULL credit
+    // list vs the plain singer credit — the singleton guard blocks the
+    // credit collapse (correctly), but both rows carry the SAME global
+    // play counter (live probe: 137,044,726 vs 137,044,723)
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Humnava Mere', artist: 'Manoj Muntashir, Rocky-Shiv, Jubin Nautiyal', artistsFull: ['Manoj Muntashir', 'Rocky-Shiv', 'Jubin Nautiyal'], playCount: 137044726 }),
+      mkTrack({ id: 'b', title: 'Humnava Mere', artist: 'Jubin Nautiyal', artistsFull: ['Jubin Nautiyal'], playCount: 137044723 }),
+    ]);
+    expect(out.map((t) => t.id)).toEqual(['a']);
+  });
+
+  test('a guard-blocked pair with DIFFERENT counters stays (twins need Δ ≤ 1000)', () => {
+    // same Humnava shape, but the second row is a genuinely different
+    // performance (a cover): credits nest, the singleton guard blocks,
+    // and the play counters sit millions apart — no twin
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Humnava Mere', artist: 'Manoj Muntashir, Rocky-Shiv, Jubin Nautiyal', artistsFull: ['Manoj Muntashir', 'Rocky-Shiv', 'Jubin Nautiyal'], playCount: 137044726 }),
+      mkTrack({ id: 'b', title: 'Humnava Mere', artist: 'Jubin Nautiyal', artistsFull: ['Jubin Nautiyal'], playCount: 502311 }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('SMALL counters never twin (two obscure same-titled songs, round-3 NEW-6)', () => {
+    // 943 vs 1200 plays — within the raw Δ, but small counters are
+    // noise, not identity: both rows must stay
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Trending', artist: 'Manoj Muntashir, Rocky-Shiv, Jubin Nautiyal', artistsFull: ['Manoj Muntashir', 'Rocky-Shiv', 'Jubin Nautiyal'], playCount: 1200 }),
+      mkTrack({ id: 'b', title: 'Trending', artist: 'Jubin Nautiyal', artistsFull: ['Jubin Nautiyal'], playCount: 943 }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('rows without play counts fall back to the credit rules alone', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Humnava Mere', artist: 'Manoj Muntashir, Rocky-Shiv, Jubin Nautiyal' }),
+      mkTrack({ id: 'b', title: 'Humnava Mere', artist: 'Jubin Nautiyal' }),
+    ]);
+    expect(out).toHaveLength(2); // no counters → the conservative guard wins
+  });
+
+  test('genuinely different songs with the same title SURVIVE (disjoint credits)', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Tum Se Hi', artist: 'Pritam, Mohit Chauhan', artistsFull: ['Pritam', 'Mohit Chauhan'] }),
+      mkTrack({ id: 'b', title: 'Tum Se Hi', artist: 'Ankit Tiwari, Leena Bose', artistsFull: ['Ankit Tiwari', 'Leena Bose'] }),
+      mkTrack({ id: 'c', title: 'Wajah Tum Ho', artist: 'Armaan Malik' }),
+      mkTrack({ id: 'd', title: 'Wajah Tum Ho', artist: 'Mithoon, Altamash Faridi, Tulsi Kumar', artistsFull: ['Mithoon', 'Altamash Faridi', 'Tulsi Kumar'] }),
+    ]);
+    expect(out).toHaveLength(4);
+  });
+
+  test('version words still protect the distinct performances', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Kesariya', artist: 'Arijit Singh', artistsFull: ['Arijit Singh'] }),
+      mkTrack({ id: 'b', title: 'Kesariya (Lofi Flip)', artist: 'VIBIE, Arijit Singh, Pritam' }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('empty-credit rows never collapse on credits alone', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: 'Trending', artist: '' }),
+      mkTrack({ id: 'b', title: 'Trending', artist: '' }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('titleless rows pass through untouched (key pass owns them)', () => {
+    const out = reconcileRecordings([
+      mkTrack({ id: 'a', title: '', artist: 'X' }),
+      mkTrack({ id: 'b', title: '', artist: 'X' }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  test('idempotent: reconciling its own output changes nothing', () => {
+    const rows = [
+      mkTrack({ id: 'a', title: 'Tum Hi Ho', artist: 'Arijit Singh, Mithoon', artistsFull: ['Arijit Singh', 'Mithoon'] }),
+      mkTrack({ id: 'b', title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', artistsFull: ['Mithoon', 'Arijit Singh'] }),
+      mkTrack({ id: 'c', title: 'Other', artist: 'Arijit Singh' }),
+    ];
+    const once = reconcileRecordings(rows);
+    expect(reconcileRecordings(once)).toEqual(once);
+  });
+});
+
+describe('R8-P4b — dedupeRecordings / mergeUniqueTracks absorb re-credits', () => {
+  test('dedupeRecordings collapses the flipped-credit row (end-to-end)', () => {
+    const out = dedupeRecordings([
+      mkTrack({ id: 'a', title: 'Gehra Hua (From "Dhurandhar")', artist: 'Shashwat Sachdev, Arijit Singh, Irshad Kamil, Armaan Khan' }),
+      mkTrack({ id: 'b', title: 'Gehra Hua (From "Dhurandhar")', artist: 'Irshad Kamil, Arijit Singh, Shashwat Sachdev, Armaan Khan' }),
+      mkTrack({ id: 'c', title: 'Apna Bana Le', artist: 'Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh' }),
+      mkTrack({ id: 'd', title: 'Apna Bana Le', artist: 'Sachin-Jigar, Arijit Singh' }),
+    ]);
+    expect(out.map((t) => t.id)).toEqual(['a', 'c']);
+  });
+
+  test('mergeUniqueTracks drops a page-2 row that only re-orders the credits', () => {
+    const prev = [mkTrack({ id: 'a', title: 'Tum Hi Ho', artist: 'Arijit Singh, Mithoon', artistsFull: ['Arijit Singh', 'Mithoon'] })];
+    const next = [
+      mkTrack({ id: 'b', title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', artistsFull: ['Mithoon', 'Arijit Singh'] }),
+      mkTrack({ id: 'c', title: 'Zara Sa', artist: 'KK, Pritam' }),
+    ];
+    expect(mergeUniqueTracks(prev, next).map((t) => t.id)).toEqual(['a', 'c']);
+  });
+});
+
+describe('R8-P4b — the feed pager suppresses re-credited re-lists across batches', () => {
+  const fetchers: FeedFetchers = {
+    // page 1 shows the song; page 2 re-lists it with flipped credits
+    searchSongs: async (_q: string, page: number) =>
+      page === 1
+        ? [
+            mkTrack({ id: 'thh1', title: 'Tum Hi Ho', artist: 'Arijit Singh, Mithoon', artistsFull: ['Arijit Singh', 'Mithoon'] }),
+            ...[1, 2, 3, 4, 5, 6, 7].map((n) => mkTrack({ id: `u${n}`, title: `Unique ${n}`, artist: `Artist ${n}` })),
+          ]
+        : page === 2
+          ? [
+              mkTrack({ id: 'thh2', title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', artistsFull: ['Mithoon', 'Arijit Singh'] }),
+              ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => mkTrack({ id: `v${n}`, title: `Deeper ${n}`, artist: `Performer ${n}` })),
+            ]
+          : [],
+    searchAlbums: async () => [],
+  };
+
+  test('a page-2 row that only flips the credit order never renders', async () => {
+    const pager = new EndlessFeedPager(fetchers);
+    const seen: Track[] = [];
+    for (let i = 0; i < 6; i++) {
+      const batch = await pager.next();
+      if (!batch || batch.kind !== 'songs') continue;
+      seen.push(...batch.songs);
+    }
+    expect(seen.filter((t) => t.title === 'Tum Hi Ho').map((t) => t.id)).toEqual(['thh1']);
+  });
+
+  test('prime() bucket: a flipped-credit feed row is suppressed by the fixed shelf', async () => {
+    const pager = new EndlessFeedPager({
+      ...fetchers,
+      searchSongs: async () => [
+        mkTrack({ id: 'feed-thh', title: 'Tum Hi Ho', artist: 'Mithoon, Arijit Singh', artistsFull: ['Mithoon', 'Arijit Singh'] }),
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => mkTrack({ id: `u${n}`, title: `Unique ${n}`, artist: `Artist ${n}` })),
+      ],
+    });
+    pager.prime({
+      songs: [mkTrack({ id: 'shelf-thh', title: 'Tum Hi Ho (From "Aashiqui 2")', artist: 'Arijit Singh, Mithoon', artistsFull: ['Arijit Singh', 'Mithoon'] })],
+    });
+    const batch = await pager.next();
+    if (batch?.kind !== 'songs') throw new Error('expected songs batch');
+    expect(batch.songs.some((t) => t.id === 'feed-thh')).toBe(false);
   });
 });
 
@@ -528,5 +707,314 @@ describe('R8-P1 — the home feed is a windowed FlatList (source contract)', () 
     const search = SRC('screens/SearchScreen.tsx');
     expect(search).toContain('ytSearchMusicMore');
     expect(search).toContain('ytContRef');
+  });
+
+  test('SearchScreen eager top-up: a short first page walks page 2 unprompted (the BIG list)', () => {
+    const search = SRC('screens/SearchScreen.tsx');
+    // the silent single-flighted append shared by scroll + top-up
+    expect(search).toContain('appendYtPage');
+    // the top-up trigger: continuation present AND first page < 20 rows
+    expect(search).toContain('ytr.tracks.length < 20');
+    // single-flight guard: scroll + top-up can never double-fetch
+    expect(search).toContain('ytAppendRef.current');
+  });
+});
+
+// ═══════════ P4b/P3 — behavioral locks (critic P1-2: no greps-only) ══════════
+
+describe('R8-P4b behavioral — ytSearchMusic reconcile wiring (setYtFetch)', () => {
+  /** artist-first filtered rows with NESTED credit lists (the reconcile
+   *  pass is the ONLY thing that can collapse these — keys differ). */
+  const nestedCreditsBody = (rows: [string, string, string][]) => ({
+    contents: {
+      tabbedSearchResultsRenderer: {
+        tabs: [
+          {
+            tabRenderer: {
+              content: {
+                sectionListRenderer: {
+                  contents: [
+                    {
+                      musicShelfRenderer: {
+                        title: { runs: [{ text: 'Songs' }] },
+                        contents: rows.map(([vid, title, subtitle]) => ytItem(vid, title, subtitle)),
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  test('two catalog entities with NESTED credits collapse to one row (reconcile is wired)', async () => {
+    // kept row keys "kesariya|arijitsingh", fresh row keys "kesariya|pritam"
+    // (composer-first credit) — DIFFERENT keys, so only the credit-set
+    // reconciliation can collapse the pair; the 2-artist subset also
+    // stays clear of the singleton guard. (Round-2 critic: the previous
+    // fixture led with the same primary in both rows — the KEY pass
+    // already dropped it and the lock proved nothing.)
+    const body = nestedCreditsBody([
+      ['kesariyaA11', 'Kesariya', 'Arijit Singh, Pritam • Brahmastra • 4:29'],
+      ['kesariyaB22', 'Kesariya', 'Pritam, Arijit Singh, Amitabh Bhattacharya • Brahmastra (Original Motion Picture Soundtrack) • 4:31'],
+    ]);
+    const f = makeFetch([(_u, _b) => ({ status: 200, json: body })]);
+    setYtFetch(f.impl);
+    const res = await ytSearchMusic('kesariya');
+    const k = res.tracks.filter((t) => t.title === 'Kesariya');
+    expect(k).toHaveLength(1);
+    expect(k[0].youtubeId).toBe('kesariyaA11'); // rank-1 entity wins
+  });
+
+  test('the featured artist\'s own same-titled track SURVIVES (singleton guard, live-probed adversarial)', async () => {
+    // "Kar Gayi Chull (feat. Badshah)" by Fazilpuria vs a solo
+    // "Kar Gayi Chull" by Badshah — feat is title noise (same bucket),
+    // but Badshah is only a SECONDARY credit of the first row
+    const body = nestedCreditsBody([
+      ['chullA11111', 'Kar Gayi Chull (feat. Badshah)', 'Fazilpuria, Badshah • Kapoor & Sons • 2:52'],
+      ['chullB22222', 'Kar Gayi Chull', 'Badshah • Singles • 2:51'],
+    ]);
+    const f = makeFetch([(_u, _b) => ({ status: 200, json: body })]);
+    setYtFetch(f.impl);
+    const res = await ytSearchMusic('kar gayi chull');
+    expect(res.tracks.filter((t) => /chull/i.test(t.title))).toHaveLength(2);
+  });
+
+  test('ytSearchMusicMore marks TRANSPORT failure with error (token stays retryable — gauntlet P1-1)', async () => {
+    const impl = ((_url: any, init?: any) => {
+      let body: any = null;
+      try {
+        body = init?.body ? JSON.parse(init.body) : null;
+      } catch {
+        body = null;
+      }
+      if (bodyContinuation(body)) return Promise.reject(new Error('network down'));
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    }) as unknown as typeof fetch;
+    setYtFetch(impl);
+    const more = await ytSearchMusicMore('CONT_TOKEN_PAGE1');
+    expect(more.error).toBe(true);
+    expect(more.tracks).toHaveLength(0);
+    // no continuation reported — the CALLER keeps its token and retries
+    expect(more.continuation).toBeUndefined();
+  });
+});
+
+describe('R8-P4b behavioral — getTrending gates on POST-dedup rows', () => {
+  /** minimal JioSaavn song row (mapSaavnSong needs id + encrypted url +
+   *  artistMap for the credit set). */
+  const saavnRow = (id: string, title: string, artists: string[]) => ({
+    id,
+    title,
+    more_info: {
+      encrypted_media_url: `ENC_${id}`,
+      artistMap: {
+        primary_artists: artists.map((name) => ({ name })),
+        featured_artists: [],
+      },
+    },
+  });
+
+  const PRISTINE = globalThis.fetch;
+  afterAll(() => {
+    globalThis.fetch = PRISTINE;
+  });
+
+  test('a degenerate chart (5 re-lists + 1) is SKIPPED, not rendered as a 2-row shelf', async () => {
+    const chart1 = {
+      id: 'c1',
+      title: 'Degenerate chart',
+      image: 'https://img.example/x.jpg',
+      count: 6,
+      more_info: { firstname: 'JioSaavn' },
+    };
+    const chart2 = {
+      id: 'c2',
+      title: 'Good chart',
+      image: 'https://img.example/y.jpg',
+      count: 7,
+      more_info: { firstname: 'JioSaavn' },
+    };
+    globalThis.fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes('__call=content.getCharts')) {
+        return new Response(JSON.stringify([chart1, chart2]), { status: 200 });
+      }
+      if (u.includes('__call=playlist.getDetails')) {
+        const list = u.includes('listid=c1')
+          ? [ // 5 re-lists of one recording + 1 distinct → dedupes to 2 (< gate)
+              saavnRow('d1', 'Zalima', ['Pritam', 'Arijit Singh']),
+              saavnRow('d2', 'Zalima', ['Pritam', 'Arijit Singh']),
+              saavnRow('d3', 'Zalima', ['Pritam', 'Arijit Singh']),
+              saavnRow('d4', 'Zalima', ['Arijit Singh', 'Pritam']),
+              saavnRow('d5', 'Zalima', ['Arijit Singh', 'Pritam', 'Harshdeep Kaur']),
+              saavnRow('d6', 'One Real Song', ['Some Artist']),
+            ]
+          : [ // healthy chart: 6 distinct + 1 re-list → dedupes to 7… 6 distinct + 1 = 7 ≥ gate
+              saavnRow('g1', 'Song One', ['Artist One']),
+              saavnRow('g2', 'Song Two', ['Artist Two']),
+              saavnRow('g3', 'Song Three', ['Artist Three']),
+              saavnRow('g4', 'Song Four', ['Artist Four']),
+              saavnRow('g5', 'Song Five', ['Artist Five']),
+              saavnRow('g6', 'Zalima', ['Pritam', 'Arijit Singh']),
+              saavnRow('g7', 'Zalima', ['Arijit Singh', 'Pritam']), // re-list — collapses
+            ];
+        return new Response(JSON.stringify({ list }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const trending = await getTrending(14);
+    // chart1 was skipped (would have been a 2-row shelf pre-gate-fix);
+    // chart2 answers with 6 rows, ONE Zalima
+    expect(trending).toHaveLength(6);
+    expect(trending.filter((t) => t.title === 'Zalima')).toHaveLength(1);
+    expect(trending.every((t) => !t.id.startsWith('saavn-d'))).toBe(true);
+  });
+});
+
+// ═════════════ R8-P3 — YtAppendController (behavioral, round-2 NEW-9) ════════
+
+describe('R8-P3 behavioral — YtAppendController state machine', () => {
+  interface Harness {
+    ctrl: YtAppendController;
+    fetches: string[];
+    cont: string | null;
+    rows: Track[];
+    state: { hasMore: boolean; endNote: string | null };
+    busy: boolean[];
+    gen: { current: number };
+  }
+
+  function makeHarness(
+    page: (cont: string) => Promise<YtAppendPage>,
+    opts?: { initialCont?: string | null; gen?: number },
+  ): Harness {
+    const h: Harness = {
+      fetches: [],
+      cont: opts?.initialCont ?? 'CONT_1',
+      rows: [mkTrack({ id: 'r1', title: 'Row One', artist: 'A' })],
+      state: { hasMore: true, endNote: null },
+      busy: [],
+      gen: { current: opts?.gen ?? 1 },
+    };
+    h.ctrl = new YtAppendController({
+      fetchMore: async (cont) => {
+        h.fetches.push(cont);
+        return page(cont);
+      },
+      getCont: () => h.cont,
+      setCont: (c) => {
+        h.cont = c;
+      },
+      getRows: () => h.rows,
+      publishRows: (rows) => {
+        h.rows = rows;
+      },
+      publishState: (s) => {
+        h.state = s;
+      },
+      isCurrentGen: (gen) => gen === h.gen.current,
+      getSignal: () => undefined,
+      setBusy: (b) => h.busy.push(b),
+    });
+    return h;
+  }
+
+  const pageTrack = (n: number) => mkTrack({ id: `p${n}`, title: `Page Track ${n}`, artist: `Artist ${n}` });
+
+  test('single-flight: concurrent scroll + eager top-up produce ONE fetch', async () => {
+    let release: (() => void) | undefined;
+    const h = makeHarness(() =>
+      new Promise<YtAppendPage>((res) => {
+        release = () => res({ tracks: [pageTrack(1)], continuation: 'CONT_2' });
+      }),
+    );
+    const p1 = h.ctrl.append(1);
+    const p2 = h.ctrl.append(1, { silent: true }); // the eager top-up racing the scroll
+    release!();
+    await Promise.all([p1, p2]);
+    expect(h.fetches).toHaveLength(1);
+    expect(h.rows).toHaveLength(2); // base + one page merged ONCE
+  });
+
+  test('a productive append advances the token, merges, clears the stale note', async () => {
+    const h = makeHarness(async () => ({ tracks: [pageTrack(2)], continuation: 'CONT_2' }));
+    h.state = { hasMore: true, endNote: "Couldn't load more — check your connection" }; // stale error note
+    await h.ctrl.append(1);
+    expect(h.cont).toBe('CONT_2');
+    expect(h.rows.map((t) => t.id)).toEqual(['r1', 'p2']);
+    expect(h.state).toEqual({ hasMore: true, endNote: null }); // round-2 NEW-10
+  });
+
+  test('end of catalog is honest (no token → hasMore false + end note)', async () => {
+    const h = makeHarness(async () => ({ tracks: [pageTrack(3)] })); // no continuation
+    await h.ctrl.append(1);
+    expect(h.cont).toBeNull();
+    expect(h.state.hasMore).toBe(false);
+    expect(h.state.endNote).toBe("That's everything YouTube found");
+  });
+
+  test('transport failure KEEPS the token and stays retryable (gauntlet P1-1)', async () => {
+    let fail = true;
+    const h = makeHarness(async () =>
+      fail ? { tracks: [], error: true } : { tracks: [pageTrack(4)], continuation: 'CONT_2' },
+    );
+    await h.ctrl.append(1);
+    expect(h.cont).toBe('CONT_1'); // token survived
+    expect(h.state.hasMore).toBe(true); // retry on next scroll
+    expect(h.state.endNote).toBe("Couldn't load more — check your connection");
+    // the retry succeeds → rows merge, note clears
+    fail = false;
+    await h.ctrl.append(1);
+    expect(h.rows.map((t) => t.id)).toEqual(['r1', 'p4']);
+    expect(h.state.endNote).toBeNull();
+  });
+
+  test('a stale generation publishes NOTHING (late page for a left query)', async () => {
+    const h = makeHarness(async () => ({ tracks: [pageTrack(5)], continuation: 'CONT_2' }));
+    const p = h.ctrl.append(1);
+    h.gen.current = 2; // user typed a new query while the page was in flight
+    await p;
+    expect(h.rows).toHaveLength(1); // base only
+    expect(h.cont).toBe('CONT_1'); // token untouched
+    expect(h.state).toEqual({ hasMore: true, endNote: null }); // state untouched
+  });
+
+  test('the busy spinner runs only on non-silent appends', async () => {
+    const h1 = makeHarness(async () => ({ tracks: [pageTrack(6)] }));
+    await h1.ctrl.append(1);
+    expect(h1.busy).toEqual([true, false]);
+    const h2 = makeHarness(async () => ({ tracks: [pageTrack(7)] }));
+    await h2.ctrl.append(1, { silent: true });
+    expect(h2.busy).toEqual([]);
+  });
+
+  test('a NEW generation never queues behind a doomed one (round-3 NEW-7)', async () => {
+    let releaseGen1: (() => void) | undefined;
+    let calls = 0;
+    const h = makeHarness(() => {
+      calls += 1;
+      if (calls === 1) {
+        // the gen-1 walk's fetch — hangs until released
+        return new Promise<YtAppendPage>((res) => {
+          releaseGen1 = () => res({ tracks: [pageTrack(8)], continuation: 'CONT_X' });
+        });
+      }
+      // the gen-2 walk's fetch — resolves immediately
+      return Promise.resolve({ tracks: [pageTrack(9)], continuation: 'CONT_3' });
+    });
+    const doomed = h.ctrl.append(1); // gen-1 walk, hanging
+    h.gen.current = 2; // the user typed a new query
+    await h.ctrl.append(2, { silent: true }); // fires IMMEDIATELY, not queued
+    expect(h.cont).toBe('CONT_3'); // gen-2's walk completed
+    expect(h.rows.map((t) => t.id)).toEqual(['r1', 'p9']); // only gen-2's page merged
+    releaseGen1!();
+    await doomed; // gen-1 lands late — stale-swallowed
+    expect(h.rows.map((t) => t.id)).toEqual(['r1', 'p9']); // unchanged
+    expect(h.cont).toBe('CONT_3'); // token untouched by the late gen-1 walk
   });
 });

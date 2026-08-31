@@ -28,7 +28,7 @@
 
 import type { Collection, Track } from '../types';
 import { filterClean } from '../safety';
-import { recordingKey } from './recording';
+import { recordingKey, titleKeyOf, creditSetOf, sameCredits, nestedCredits, countTwins, primaryArtistOf } from './recording';
 
 export interface FeedFetchers {
   searchSongs: (q: string, page: number, signal?: AbortSignal) => Promise<Track[]>;
@@ -104,6 +104,14 @@ export class EndlessFeedPager {
   private albumLadder: string[];
   private seenSongIds = new Set<string>();
   private seenSongKeys = new Set<string>();
+  /** R8-P4b: title bucket → credit sets already shown — catches the
+   *  re-ordered/truncated re-credit re-lists ACROSS batches (the key
+   *  pass can't see those). Entries carry play counts for the twin
+   *  escape (round-2 NEW-6: lyricist-first fuller-credit re-lists). */
+  private seenSongBuckets = new Map<
+    string,
+    { credits: Set<string>; primary: string; plays?: number }[]
+  >();
   private seenAlbumIds = new Set<string>();
   private lastWasSongs = false;
   private failures = 0;
@@ -127,6 +135,36 @@ export class EndlessFeedPager {
 
   private albumLadderDone(): boolean {
     return this.albumCursor.queriesUsed >= this.albumLadder.length * MAX_LADDER_PASSES;
+  }
+
+  /** Full recording-ledger check (R8-P4 + P4b): id, recording key,
+   *  same-title nested credit sets (guarded), and play-count twins.
+   *  Callers add the id — this method never mutates. */
+  private seenRecording(t: Track): boolean {
+    if (this.seenSongKeys.has(recordingKey(t))) return true;
+    const bucket = this.seenSongBuckets.get(titleKeyOf(t));
+    if (!bucket) return false;
+    const credits = creditSetOf(t);
+    const primary = primaryArtistOf(t);
+    return bucket.some(
+      (seen) =>
+        nestedCredits(seen.credits, credits) &&
+        (sameCredits(seen.credits, credits, seen.primary, primary) ||
+          countTwins(seen.plays, t.playCount)),
+    );
+  }
+
+  /** Register a row's identity in the ledger (id + key + bucket). */
+  private registerRecording(t: Track): void {
+    this.seenSongKeys.add(recordingKey(t));
+    const title = titleKeyOf(t);
+    if (!title) return;
+    let bucket = this.seenSongBuckets.get(title);
+    if (!bucket) {
+      bucket = [];
+      this.seenSongBuckets.set(title, bucket);
+    }
+    bucket.push({ credits: creditSetOf(t), primary: primaryArtistOf(t), plays: t.playCount });
   }
 
   /**
@@ -169,13 +207,14 @@ export class EndlessFeedPager {
       // title+primary-artist key (kept INSIDE one page too — the same
       // page can carry "Zalima" 5x with 5 different ids). Albums stay
       // id-only (a re-issued album shelf is legitimately distinct).
+      // R8-P4b: same-title rows with NESTED credit sets collapse too
+      // ("Tum Hi Ho | Mithoon, Arijit" after "… | Arijit, Mithoon").
       const freshRows: Array<{ id: string }> = [];
       for (const r of rows as Array<{ id: string }>) {
         if (seen.has(r.id)) continue;
-        const key = kind === 'songs' ? recordingKey(r as Track) : r.id;
-        if (kind === 'songs' && this.seenSongKeys.has(key)) continue;
+        if (kind === 'songs' && this.seenRecording(r as Track)) continue;
         seen.add(r.id);
-        if (kind === 'songs') this.seenSongKeys.add(key);
+        if (kind === 'songs') this.registerRecording(r as Track);
         freshRows.push(r);
       }
       if (freshRows.length >= minRows) {
@@ -271,13 +310,14 @@ export class EndlessFeedPager {
     return { kind: 'retry' };
   }
 
-  /** Register ids AND recording keys already on screen (fixed shelves)
-   *  so the feed never repeats them — "Trending now" showing Zalima also
-   *  suppresses every compilation re-list of Zalima below (R8-P4). */
+  /** Register ids AND recording identities already on screen (fixed
+   *  shelves) so the feed never repeats them — "Trending now" showing
+   *  Zalima also suppresses every compilation and re-credited re-list
+   *  of Zalima below (R8-P4 + P4b). */
   prime(seen: { songs?: Track[]; albums?: Collection[] }): void {
     for (const t of seen.songs ?? []) {
       this.seenSongIds.add(t.id);
-      this.seenSongKeys.add(recordingKey(t));
+      this.registerRecording(t);
     }
     for (const c of seen.albums ?? []) this.seenAlbumIds.add(c.id);
   }

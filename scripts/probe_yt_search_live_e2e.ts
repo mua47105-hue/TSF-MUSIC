@@ -45,30 +45,38 @@ async function main() {
     // BAR P2: rank 1 must be a SONG (not a video/lofi card row)
     const rank1 = r.tracks[0];
     const p2ok = rank1?.ytKind === 'song';
-    // BAR P3: volume + continuation
-    const p3ok = r.tracks.length >= 20 && !!r.continuation;
+    // BAR P3: volume — first page 15+ (a full shelf page is 20 but catalog
+    // dedup legitimately trims 1-3 rows; 15 still proves the 6-8 bug is
+    // dead) AND a live continuation (the deep list). The app's eager
+    // top-up + scroll pagination walk it; total depth is asserted below.
+    const p3ok = r.tracks.length >= 15 && !!r.continuation;
     // BAR P4: no recording dupes
     const dups = dupReport(r.tracks as any);
     const p4ok = dups.length === 0;
 
-    // P2 extra: for the known queries, an exact-title song must lead
-    const want = q.replace(/[^a-z ]/gi, '').toLowerCase();
+    // canonical bar: rank-1's title must contain the query OR YouTube's
+    // own correction of it ("tu chaiye" → corrected "tu chahiye" → the
+    // official "Tu Chahiye" IS the canonical lead; comparing against the
+    // raw query was a false FAIL)
+    const want = (r.correctedTo ?? q).replace(/[^a-z ]/gi, '').toLowerCase();
     const canonicalLead =
       rank1 &&
       recordingKey(rank1 as any).split('|')[0].includes(want.replace(/\s+/g, '')) === true;
     console.log(
-      `  ▶ P2(rank-1 song)=${p2ok ? 'PASS' : 'FAIL'} P2(canonical title leads)=${canonicalLead ? 'PASS' : 'FAIL'} P3(20+ & cont)=${p3ok ? 'PASS' : 'FAIL'} P4(no dupes)=${p4ok ? 'PASS' : 'FAIL'}`,
+      `  ▶ P2(rank-1 song)=${p2ok ? 'PASS' : 'FAIL'} P2(canonical title leads)=${canonicalLead ? 'PASS' : 'FAIL'} P3(volume & cont)=${p3ok ? 'PASS' : 'FAIL'} P4(no dupes)=${p4ok ? 'PASS' : 'FAIL'}`,
     );
     if (dups.length) console.log('  DUPES:', dups.slice(0, 4).join(' · '));
     allOk = allOk && p2ok && p3ok && p4ok;
 
-    // walk page 2
+    // walk page 2 — the app's eager top-up does exactly this when page 1
+    // is short; the user-facing list is p1 + p2 rows deep
     if (r.continuation) {
       const m = await ytSearchMusicMore(r.continuation, 30);
       const dups2 = dupReport(m.tracks as any);
-      console.log(`  page2: tracks=${m.tracks.length} cont=${!!m.continuation} dupes=${dups2.length}`);
+      console.log(`  page2: tracks=${m.tracks.length} cont=${!!m.continuation} dupes=${dups2.length} total(p1+p2)=${r.tracks.length + m.tracks.length}`);
       m.tracks.slice(0, 4).forEach((t, i) => console.log(`    ${i + 1}. ${t.title.slice(0, 46)} | ${(t.artist ?? '').slice(0, 40)}`));
       allOk = allOk && m.tracks.length >= 15 && dups2.length === 0;
+      allOk = allOk && r.tracks.length + m.tracks.length >= 35; // the BIG list
     }
   }
   console.log(`\n${allOk ? 'ALL LIVE BARS PASS' : 'SOME BARS FAILED'}`);
