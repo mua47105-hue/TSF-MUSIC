@@ -21,13 +21,16 @@ flows through the app, and the contracts that keep the standalone promise
 │  mindbeat facade  →  src/ai (MINDBEAT intelligence, see            │
 │                      docs/MINDBEAT.md)                             │
 ├────────────────────────────────────────────────────────────────────┤
-│  api/saavn · api/artists · api/music · api/itunes                  │
+│  search/ (Search V2 pipeline) · ytAppend (single-flight pager)     │
+├────────────────────────────────────────────────────────────────────┤
+│  api/saavn · api/youtube · api/artists · api/music · api/lrclib ·  │
+│  api/itunes · api/recording (dedup/reconciliation) · api/feed      │
 ├────────────────────────────────────────────────────────────────────┤
 │  storage/store (AsyncStorage) · storage/downloads (files) ·        │
 │  ai/core/storeSqlite (event ledger)                                │
 ├────────────────────────────────────────────────────────────────────┤
 │  react-native-track-player  ←  background service (service.ts)     │
-│  JioSaavn CDN (320 kbps AAC)  ·  iTunes preview CDN                │
+│  JioSaavn CDN (320 kbps AAC) · YouTube InnerTube · iTunes preview  │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -82,6 +85,73 @@ carry genuine portraits. This module is the honest layer on top:
   URLs pass** (upgraded to 500×500). Album art masquerading as artist
   art is rejected; callers fall back to an elegant initials circle
   (`Artwork` component) — the app never shows a wrong photo.
+
+### youtube.ts — the second catalog (v3.4)
+The YouTube source module — same culture as the JioSaavn client: a
+minimal, isolated, direct-API implementation with zero dependencies on
+any third-party extraction library:
+
+- **Search**: YT Music `WEB_REMIX` InnerTube queries. The primary call
+  runs the songs filter (`SONGS_FILTER_PARAMS` — official Song rows
+  first, the lo-fi/cover-displacement fix), the raw query rides as
+  fallback. Videos are admitted only at 0 < duration ≤ 15 min (junk /
+  podcast filter). Continuations (`ytSearchMusicMore`) power deep,
+  resumable pagination: transport failures reject with `error:true` so
+  the caller keeps the token and can retry — a network blip never
+  paints a terminal "end of results".
+- **Playback**: a three-client InnerTube ladder — VISIONOS (tokenless,
+  pre-signed URLs) → WEB_REMIX (BotGuard-attested with **PO tokens
+  minted in a hidden 1×1 WebView** on the youtube.com origin,
+  `testID="yt-po-token-webview"`) → ANDROID_VR (last resort). Per-client
+  health cooldowns, per-rung diagnostics (`ytLastDiagnostics()`),
+  IP-bound URL cache with refresh.
+- **Kill-switch discipline**: 3 consecutive systemic failures soft-disable
+  the source for 1 h; per-video UNPLAYABLE never disables it; every
+  entry point resolves null within timeouts — JioSaavn playback can
+  never be blocked by YouTube breakage.
+
+Design RFC: [docs/YOUTUBE-INTEGRATION-PLAN.md](YOUTUBE-INTEGRATION-PLAN.md).
+
+### search/ — the Search V2 pipeline (v3.3)
+Six stages behind one orchestrator (`api/music.ts` → `searchMusicV2`):
+
+- `plan.ts` (S0) — normalize + Hinglish variance folds + intent
+  classifier (title / artist / artist+title / lyric fragment / vibe /
+  browse) + connector stripping
+- `lexicon.ts` (S0) — SymSpell deletes-only typo index (≤2 edits,
+  language-independent)
+- `retrieve.ts` (S1) — bounded parallel probe fan-out, in-flight dedupe,
+  per-keystroke AbortController cancellation, LRU result cache
+- `verify.ts` (S2) — id-dedupe, version clustering, recording
+  reconciliation (via `api/recording.ts`), lyric verification V1/V2
+- `rank.ts` (S3) — deterministic scorer with the disambiguation
+  override and truthful reason lines
+- `recover.ts` (S4) — the relaxation + rescue ladder (YouTube → iTunes
+  → variant spellings → album) with honest zero-states
+- `learn.ts` (S5) — correlated query→click evidence, fragment→track
+  memory, engagement re-ranking, sourceTrust feeding
+- `ytAppend.ts` — the single-flight continuation pager behind search's
+  endless scroll (gen-keyed: a new query never queues behind a doomed
+  page walk; stale generations are swallowed)
+
+Failure-analysis RFC: [docs/SEARCH-INTENT-RESCUE-PLAN.md](SEARCH-INTENT-RESCUE-PLAN.md).
+
+### recording.ts — one row per recording (v3.4.5)
+Providers re-list the same recording with re-ordered or truncated credit
+lists ("Tum Hi Ho | Arijit Singh, Mithoon" vs "Mithoon, Arijit Singh") —
+naive key-dedup lets both through (the Zalima ×5 field report).
+`creditSetOf` / `sameCredits` (nested-set test with a singleton guard) /
+`reconcileRecordings` (order-preserving title-bucket reconciliation,
+idempotent) plus play-count-twin collapsing (global counters within
+1,000 = re-list) run at **every** merge point: saavn dedup, cross-source
+merge, feed pager buckets, YouTube page appends, trending.
+
+### feed.ts — the endless home feed (v3.4.1)
+`EndlessFeedPager` keeps Home loading forever after the fixed shelves:
+alternating paged song batches (a rotating 16-query ladder with deep
+per-query paging) and paged album-card shelves, deduped across batches
+and against the shelves (per-title bucket ledger), safety-filtered,
+with an honest retry row on network failure and an honest end marker.
 
 ### music.ts + itunes.ts — aggregation & fallback
 `searchMusic()` queries JioSaavn first; if results are thin (< 8) or the
@@ -192,6 +262,7 @@ modules — **web platform only**:
 | `expo-file-system` | no-op |
 | `src/api/saavn.ts` | fixture catalog (real JioSaavn CDN artwork) |
 | `src/api/music.ts`, `artists.ts` | fixture aggregations |
+| `src/api/youtube.ts` | fixture InnerTube responses (the real API has no CORS) |
 | `src/ai/core/storeSqlite.ts` | `storeMemory.ts` (same interface) |
 
 Every redirect is gated on `platform === 'web'`; Android bundles are

@@ -2,6 +2,13 @@
 ### TSF Music · Search V2 post-ship failure analysis + complete fix plan
 **Version 1.0 · Built from live evidence, not theory · Every claim below was reproduced and captured**
 
+> **STATUS: SHIPPED — v3.4.0** (hardened through v3.4.5).
+> The rescue ladder, its truth contracts and its regression locks are
+> live in production. This document is preserved as the original
+> engineering RFC — the live evidence, the failure analysis and the
+> design decisions behind the shipped system. Read it as history, not
+> as a TODO list. See [CHANGELOG.md](CHANGELOG.md) for what shipped.
+
 ---
 
 ## 0. Executive summary — what is the issue

@@ -1,6 +1,14 @@
 # YOUTUBE INTEGRATION PLAN — "The YouTube Section"
-### TSF Music · Add-free YouTube playback, researched from the open-source ecosystem, built as our own module
+### TSF Music · Ad-free YouTube playback, researched from the open-source ecosystem, built as our own module
 **Version 1.0 · Every feasibility claim below is live-verified or source-cited**
+
+> **STATUS: SHIPPED — v3.4.0** (hardened through v3.4.5).
+> The three-client InnerTube ladder, the hidden-WebView PO-token minter
+> and the kill-switch discipline are live in production. This document
+> is preserved as the original engineering RFC — the ecosystem research,
+> the feasibility gates and the design decisions behind the shipped
+> module. Read it as history, not as a TODO list. See
+> [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
 ---
 

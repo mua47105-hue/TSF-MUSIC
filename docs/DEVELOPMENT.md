@@ -27,18 +27,20 @@ bunx expo start          # Metro dev server (scan with Expo Go or a debug build)
 bunx expo run:android    # compile + install a native debug build
 bunx expo run:ios        # native iOS build (macOS + Xcode required)
 bun run typecheck        # tsc --noEmit — strict; keep it clean
-bun test                 # the AI replay suite (74 tests)
+bun test                 # the replay suite (261 tests · 1,640+ assertions)
 ```
 
 `bun run typecheck` and `bun test` are the two gates every change must
-pass before commit.
+pass before commit (CI enforces both inside every APK build).
 
 ## The device lab (visual QA)
 
 There is no Android emulator in this environment (no KVM), so the repo
 ships its own "emulator": the real app running on **react-native-web**
 with the data/player layers swapped for fixtures, driven by Playwright
-at hardware-faithful viewports.
+at hardware-faithful viewports — currently **5 viewports** (Pixel 7,
+iPhone 13, portrait tablet 600×960, landscape tablet 960×600, and a
+1280×800 desktop-style window).
 
 ```bash
 bash scripts/lab.sh
@@ -48,17 +50,19 @@ What it does:
 
 1. Boots `expo start --web` on port 8123 (Metro is killed afterwards —
    the sandbox reaps background processes between runs).
-2. Runs `scripts/device_lab.py`: a 28-check walkthrough (14 checkpoints ×
-   2 devices) on **Pixel 7 (412×915 @2.625)** and **iPhone 13
-   (390×844 @3)** viewports (no browser chrome — native full-screen
-   dimensions):
+2. Runs `scripts/device_lab.py`: the full walkthrough on every viewport
+   — **93 checkpoints × 3 devices** as of v3.4.1, plus the window-policy
+   assertions (tab-bar pinned to the real window bottom, no horizontal
+   overflow) on every viewport:
    - What's-new dialog → onboarding (name → artist picks → genres)
    - **the persistence regression**: reload after completing onboarding
      and assert it never re-asks + Home greets by name
    - More-artists expansion, artist search
-   - Home at 3 scroll depths (editorial feed verification)
-   - Search (browse grid + top-result), mini-player, full player
-     playing/paused, queue sheet, library, premium, tabs
+   - Home at 3 scroll depths + endless-feed loading (real scrollTop
+     driving — RN-web ScrollViews ignore mouse.wheel in headless
+     Chromium)
+   - Search (browse grid, typeahead, results, pagination), mini-player,
+     full player playing/paused, queue sheet, library, premium, tabs
 3. Asserts **zero console errors** along the way.
 4. Screenshots land in `screenshots/{pixel7,iphone13}/`, with a
    `report.json` of every step.
@@ -94,16 +98,21 @@ MINDBEAT, onboarding):
 3. **Critique harshly** — fresh-context critics (VLM side-by-side
    against references; adversarial code reviewers for the engine) that
    must FAIL the work with concrete, verifiable findings.
-4. **Fix every P0** and add a regression lock for each
-   (`tests/ai/gauntlet-r2.test.ts` now carries 25).
+4. **Fix every P0** and add a regression lock for each — the lock suites
+   now span the whole history of the discipline
+   (`gauntlet-r2`, `search_yt_locks`, `r4_critic_locks`, `r8_locks`,
+   `window_policy_locks`, `po_bridge_layout_locks`, … — 261 tests total,
+   every lock proven red on the old code before it counts).
 5. **Verify blind** — A/B the result against the reference/replacement
    without telling the critic which is which; ship only on a win or
    parity.
 6. **Verify the artifact** — the shipped APK itself is deep-inspected,
    not just the working tree.
 
-Artifacts from past gauntlets live in `gauntlet/` (icon rounds, UI
-comparisons) and `scripts/ab2-blind.txt` (engine A/B).
+Every verdict in the loop is machine-verified (live probes, replayed
+fixtures through the real parse, binary markers) — never a judgment
+call. Artifacts from past gauntlets live in `gauntlet/` (icon rounds,
+UI comparisons) and `scripts/ab2-blind.txt` (engine A/B).
 
 ## Release process
 
@@ -131,14 +140,20 @@ CI (`.github/workflows/native-android.yml`) then:
 
 ### Release verification (post-ship)
 
-Each release has been deep-verified with a script
-(`scripts/verify_v32_apk.py` is the current template):
+Each release is deep-verified with a script
+(`scripts/verify_v345_apk.py` is the current template — 19/19 checks
+on v3.4.5):
 
 - downloads the published APK
-- probes `AndroidManifest.xml` (UTF-16) for the expected versionName
+- probes `AndroidManifest.xml` via **pyaxmlparser** for the expected
+  versionName + versionCode + window policy
 - asserts every feature's **bundle markers** exist in the Hermes bundle
-  (unique strings from the new code)
+  (unique component/function/constant names from the new code — Hermes
+  keeps them in the string table; literals are checked in both UTF-8
+  and UTF-16 regions)
 - asserts `webmocks` did **not** leak into the Android bundle
+- re-runs the same markers on the PREVIOUS release's APK and asserts
+  they FAIL (discriminators must be real)
 
 Copy the script per release, update the marker list, run it.
 
@@ -165,6 +180,14 @@ These keep the app fast, honest and standalone:
   numbers in the intelligence stack.
 - **Safety gate on every algorithmic surface** (`src/safety.ts`); search
   is the only explicit-tolerant surface (badged).
+- **Recording reconciliation on every merge point**: any list that merges
+  rows from multiple sources/pages passes through
+  `src/api/recording.ts` (`reconcileRecordings` / `sameCredits` /
+  count-twin collapse) — a re-credited or re-ordered re-listing of the
+  same recording must never render twice (the Zalima ×5 lesson).
+- **YouTube failures are retryable, never terminal**: transport errors
+  reject with `error:true` (caller keeps the token + `hasMore`);
+  systemic-failure kill-switch accounting is class-aware.
 - **Artist images must pass `sanitizeArtistImage()`** — never render
   album art as an artist photo; fall back to initials.
 - **Performance guardrails in UI**: no BlurViews, no animation loops on

@@ -3,6 +3,58 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v3.4.5 — 2026-08-31 — The field-fix round: real songs, deep results, zero repeats
+
+Four field reports, each closed at three levels — live-probed root cause,
+behavioral lock (288 tests at ship), and binary verification in the shipped
+APK (19/19 + red-on-old-APK sanity):
+
+- **Home deep-scroll lag** (R8-1): the home feed was rebuilt on FlatList
+  virtualization — memo'd `FeedSongRow`/`FeedAlbumShelf` rows render off a
+  data snapshot, so deep scrolling no longer re-renders the shelves above.
+- **Lo-fi-first YouTube results** (R8-2): YouTube search now runs the
+  **songs filter as the primary query** (`SONGS_FILTER_PARAMS` — official
+  Song rows first), with the raw query as fallback. Live-probed: official
+  song rank #1 for tu chaiye / tum hi ho / kesariya / apna bana le.
+- **6–8 result shallow search** (R8-3): continuation-based deep pagination
+  — search appends YouTube pages on scroll, with retryable transport
+  failures (`ytSearchMusicMore` rejects with `error:true` — a network blip
+  never paints "That's everything" nor burns the continuation token) and
+  a single-flight `YtAppendController` (extracted to `src/search/ytAppend.ts`,
+  6 behavioral locks) so a new query never queues behind a doomed walk.
+  Eager top-up paints ~2 catalog pages before any scrolling starts.
+- **Top Songs repeats** (R8-4, the Zalima ×5–6 report): same recording
+  re-listed with re-ordered/truncated credit lists survived key-dedup.
+  Fixed by recording reconciliation (`src/api/recording.ts`:
+  `creditSetOf`/`sameCredits`/`reconcileRecordings`) wired into every
+  merge point — including `getTrending`, which was never deduped at all —
+  plus play-count-twin collapsing (global counters within 1,000 =
+  re-list). Live probe: 'top songs' clusters 5 → 0.
+- Gauntlet loop: 3 rounds (R1 FIX-FIRST → R2 FIX-FIRST — caught the
+  builder's own regressions, e.g. the singleton credit guard un-collapsed
+  the live "Humnava Mere" pair — → R3 SHIP). Every verdict machine-proven.
+- WhatsNew 3.4.5: "real songs, deep results, zero repeats" — every
+  3.4.4 upgrader sees the four fixes once.
+
+## v3.4.4 — 2026-08-31 — The half-screen bug, closed at the root
+
+The four-release mystery (half-height app window on every Android device,
+both orientations) is root-caused and shut out:
+
+- **Root cause**: an invisible `react-native-webview` v14 `flex:1` wrapper
+  (mount of the PO-token BotGuard bridge) — not any OS window policy —
+  was eating the bottom half of every screen.
+- **Two-level fix**: the WebView mount is re-homed inside a fixed
+  `StatusBar`-height slot (belt 1, with a minification-safe
+  `testID="yt-po-token-webview"` marker), and the bridge fragment is
+  additionally detached from the layout tree (belt 2).
+- **9 regression locks** proven red on the v3.4.3 code before shipping,
+  plus the R7 marker contract locked in source.
+- Binary-verified on the shipped APK (13/13, incl. belts + window-policy
+  retention + WhatsNew key); all R7 markers correctly FAIL on v3.4.3.
+- User-confirmed fixed in the field: "the UI problem is now completely
+  fixed."
+
 ## v3.4.3 — 2026-08-31 — The real tablet fix, part 2: aspect-clamp immunity
 
 v3.4.2's orientation freedom worked (rotation unlocked, field-verified)

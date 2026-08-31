@@ -1,257 +1,303 @@
-# TSF Music v3.4 — MINDBEAT + YouTube
+<div align="center">
 
-**A standalone, cross-platform (Android + iOS) music app with a Spotify-grade
-interface and a learning, on-device intelligence engine.**
-No server. No setup. No account. Install the APK and it works.
+<img src="assets/icon.png" width="96" alt="TSF Music" />
 
-Music streams at **320 kbps** straight from the device via direct JioSaavn
-API calls (DES-decrypted on-device), with a **full YouTube source**
-(search + ad-free full-song playback) and an iTunes preview fallback —
-React Native talks to the APIs directly, so there are no CORS proxies, no
-backends, nothing to host. Every AI feature runs **100% on the device**:
-no LLM APIs, no analytics, no telemetry — your listening history never
-leaves the phone.
+# TSF Music
 
-> **Install**: grab `app-release.apk` from the latest release
-> (https://github.com/mua47105-hue/TSF-MUSIC/releases) and sideload it.
-> Builds are signed with the same keystore, so updates install in place.
+**A complete, Spotify-grade music platform — with a learning intelligence engine that runs entirely on your phone.**
+
+No server · No account · No tracking · Install and it works
+
+[![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=1ED760&label=release)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
+[![Tests](https://img.shields.io/badge/replay_tests-261_passing-1ED760?labelColor=121212)](#quality-assurance)
+[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-3E3E3E?labelColor=121212)](#build--run)
+[![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-1ED760?labelColor=121212)](#privacy)
+
+[Installation](#installation) · [Features](#the-experience) · [MINDBEAT AI](#mindbeat--the-on-device-intelligence) · [Architecture](#architecture) · [Documentation](#documentation) · [Releases](#release-history)
+
+</div>
 
 ---
 
-## What's inside
+TSF Music streams **320 kbps audio** from two catalogs — JioSaavn's full library
+(decrypted on-device) and **YouTube's music catalog with ad-free full-song
+playback** — wrapped in an interface pixel-verified against Spotify itself.
+Every play, skip, like and download becomes graded evidence for **MINDBEAT**,
+an on-device learning engine that builds radio stations, daily mixes, and
+recommendations that actually explain themselves.
 
-### YouTube source — a second catalog (v3.4)
-- **A Catalog | YouTube toggle** in search: YouTube's music catalog
-  answers directly — official Song rows first, videos (≤ 15 min, junk
-  filtered) after
-- **Ad-free full-song playback**: a three-client InnerTube ladder
-  (VISIONOS tokenless → WEB_REMIX attested via a hidden-WebView
-  BotGuard PO-token minter → ANDROID_VR last resort) resolves direct
-  audio URLs — the same technique NewPipe/yt-dlp ship
-- **Kill-switch discipline**: YouTube breakage can never degrade the
-  JioSaavn core — every entry point degrades to honest empty states,
-  toasts, and per-rung diagnostics
+There is no backend anywhere in this system. No sign-up, no telemetry, no
+LLM APIs — your listening history never leaves the device. The app calls the
+music APIs directly from the phone, and every intelligence feature is computed
+locally in under 35 ms.
 
-### Search that rescues the song you meant (v3.4)
-When the catalog only has same-name covers of the song you typed
-("tu chaiye" → 31 covers, none canonical), the engine escalates a
-**rescue ladder** — YouTube (full song, ad-free) → iTunes (30 s preview,
-truthfully labelled) → variant spellings (chaiye ↔ chahiye) → the album
-route — and paints the verified canonical recording at rank 1 with an
-honest label: *Found on YouTube · full song, ad-free*. Covers never
-displace a verified rescue; a fabricated result state is a test-locked
-bug class.
+---
 
-### Search V2 — a real search engine (v3.3)
-Search is a full pipeline, not a text field: **S0** query understanding
-(normalize + Hinglish variance folds + SymSpell typo correction —
-"arjit sing" → "arijit singh", "kun fya kun" → "kun faya kun") ·
-**S1** parallel probe fan-out with per-keystroke cancellation and a
-10-minute result cache · **S2** verification (id-dedupe, version
-clustering — 26 duplicate "Tum Hi Ho" releases collapse to one row —
-and lyric verification) · **S3** deterministic ranking with the FULL
-artist list, disambiguation override (wrong-artist versions can never
-outrank the artist you typed), engagement and personalization ·
-**S4** a relaxation ladder with honest zero-states ("Did you mean …",
-never unrelated rows) · **S5** learning (correlated query→click
-evidence, fragment→track memory, sourceTrust feeding).
+## The experience
 
-- **Typeahead rail**: suggestions while you type — your recents at 0 ms,
-  provider songs/artists and a "Best guess" row at ~250 ms
-- **Lyric search**: type a remembered line — matches carry a green
-  **Lyric match** chip with the matched line (verified against
-  LRCLIB, a free public lyrics catalog)
-- **Truthful reason lines**: "Best match for your search" · "Matches
-  the lyric you typed" · "You chose this for this search before" · …
-  from a closed set — never invented
-- Latency budgets are test-enforced: on-device stages cost <35 ms
-  combined; cache-hit repeat searches answer in <15 ms
+<table>
+<tr>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/06-home.png" width="190" alt="Home feed" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/11-search-results.png" width="190" alt="Search results" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/13-player-playing.png" width="190" alt="Now playing" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/12-miniplayer.png" width="190" alt="Mini player" /></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Home</b> — deep editorial feed</sub></td>
+<td align="center"><sub><b>Search</b> — ranked & verified</sub></td>
+<td align="center"><sub><b>Player</b> — artwork-tinted</sub></td>
+<td align="center"><sub><b>Mini player</b> — persistent</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/10b-search-typeahead.png" width="190" alt="Typeahead" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/11b-search-rescued.png" width="190" alt="Rescue ladder" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/11c-search-youtube-mode.png" width="190" alt="YouTube source" /></td>
+<td align="center"><img src="download/tsf-ui-screenshots/pixel7-v34/11d-rescued-playing.png" width="190" alt="Rescue playback" /></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Typeahead</b> — suggests as you type</sub></td>
+<td align="center"><sub><b>Rescue</b> — the song you *meant*</sub></td>
+<td align="center"><sub><b>YouTube</b> — second catalog</sub></td>
+<td align="center"><sub><b>Verified</b> — plays what it promised</sub></td>
+</tr>
+</table>
+
+<div align="center"><sub>Full walkthrough gallery: <a href="download/tsf-ui-screenshots/UI-Gallery.html">UI-Gallery.html</a> (every screen, two devices, automated capture)</sub></div>
+
+### Two catalogs, one app
+
+| | JioSaavn (primary) | YouTube (secondary) |
+|---|---|---|
+| Depth | Full Indian + international catalog | Music catalog + official uploads |
+| Quality | 320 kbps AAC (DES stream, decrypted on-device) | Best-available audio stream |
+| Ads | None | **None** — direct audio stream extraction |
+| Role | Home feed, charts, editorial, playback core | Catalog toggle, rescue provider, long-tail songs |
+
+The YouTube source is a three-client InnerTube ladder — VISIONOS (tokenless)
+→ WEB_REMIX (BotGuard-attested PO tokens minted in a hidden WebView) →
+ANDROID_VR (last resort) — the same production technique used by NewPipe and
+yt-dlp. A strict kill-switch discipline guarantees YouTube breakage can
+**never** degrade the JioSaavn core: every entry point degrades to honest
+empty states and per-rung diagnostics.
+
+### Search that finds the song you meant
+
+Search isn't a text field — it's a six-stage engine
+([S0 classifier → S5 learning](docs/ARCHITECTURE.md)):
+
+- **Typos and Hinglish fixed automatically** — "arjit sing" → Arijit Singh,
+  "kun fya kun" → Kun Faya Kun (SymSpell, ≤2 edits)
+- **One row per song** — 26 duplicate "Tum Hi Ho" releases collapse to one;
+  re-credited and re-ordered re-listings reconcile to a single recording
+- **The rescue ladder** — when the catalog only has covers of the song you
+  typed ("tu chaiye" → 31 covers, zero originals), the engine escalates
+  YouTube → iTunes → variant spellings → album routes and paints the
+  *verified canonical recording at rank 1* with an honest label:
+  *Found on YouTube · full song, ad-free*
+- **Lyric search** — type a remembered line; matches carry a green
+  *Lyric match* chip with the matched line, verified against LRCLIB
+- **Truthful reason lines, always** — every row explains itself from a
+  closed code set: *Best match for your search · Matches the lyric you
+  typed · You chose this for this search before*. A fabricated result
+  state is a test-locked bug class
+- **Deep results** — pages keep appending as you scroll (39–40 verified
+  rows per query), with honest end markers, never a dead spinner
 
 ### The player
-- **320 kbps playback** with background audio, notification and lock-screen
-  controls (react-native-track-player)
-- **Stale-URL auto-recovery**: expired CDN links are silently refetched and
-  re-decrypted mid-session
-- Real queue control: play next, add to queue, remove from queue, shuffle,
-  repeat
-- **Downloads for offline** — resolved streams are saved into the app's
-  private document directory and play back forever
-- Share sheet, per-track long-press menu, toast feedback for every action
 
-### MINDBEAT — the on-device intelligence (v3.0+)
-Every play, skip, like and download becomes **graded evidence** in a local
-event ledger, and the app learns from it:
+- 320 kbps playback with background audio, notification & lock-screen controls
+- **Stale-URL auto-recovery** — expired CDN links silently refetch and
+  re-decrypt mid-session
+- Real queue control: play next, add/remove from queue, shuffle, repeat,
+  Smart Shuffle & Autoplay toggles in the queue sheet
+- **Offline downloads** — resolved streams saved to app-private storage,
+  playable forever
+- The app **repaints itself per song**: artwork colors are extracted in
+  pure JS and drive the player gradient and every collection header
+
+## MINDBEAT — the on-device intelligence
+
+Every interaction becomes graded evidence in a local ledger. Six layers —
+ledger → taste profile → session brain → decision engine → surfaces →
+trust — turn that into:
 
 | Surface | What it does |
 |---|---|
-| **Smart Shuffle v2** | AI picks interleaved into your queue, vibe-locked to the current session; skipping a rec re-seeds the next one away from what you rejected ("it's listening back") |
-| **Autoplay Radio v2** | When the queue runs dry, a multi-seed station keeps playing — even with the UI killed — drifting between mood cells inside your artist clusters |
-| **Daily Mixes v2** | Cluster-cross mixes (artist cluster × mood cell) with a 60/25/15 core/bridge/fresh split, re-ranked nightly and after every third session |
-| **Now Sound (daylist)** | A time-aware playlist: your 11pm and your 11am get different names and different tracks ("Midnight Riyaz", "Gym-time Bhangra") |
-| **On the Rise** | Seed-of-seed discovery: neighbors of your co-play neighbors, filtered to never-played tracks, each with an honest "via artist" chain |
-| **AI Playlist Generator** | Type a vibe ("Punjabi gym bangers", "90s heartbreak Bollywood", Hinglish works) → five-stage pipeline (Understand → Hunt → Curate → Polish → Narrate) → 25-track playlist with a name and description |
-| **Vibe Search** | The search bar's NLP mode: "songs like kun faya kun", typo-tolerant ("sahd songs"), intent chips on the results |
-| **Your Sound v2** | Wrapped-grade stats with the industry 30-second rule, listening clock, streaks and skip profile |
-| **Taste DNA** | The transparency screen: see the entire model — affinity weights, the daypart matrix, exploration budget — and act on it (Boost / Mute / Not-for-me / export JSON / kill switch) |
+| **Smart Shuffle v2** | AI picks interleaved into your queue, vibe-locked to the session; skipping a rec re-seeds the next one away from what you rejected |
+| **Autoplay Radio v2** | Queue never dies — a multi-seed station keeps playing even with the UI killed |
+| **Daily Mixes v2** | Artist-cluster × mood-cell crosses, 60/25/15 core/bridge/fresh, re-ranked nightly |
+| **Now Sound (daylist)** | Time-aware: your 11 pm and 11 am get different names and tracks |
+| **On the Rise** | Seed-of-seed discovery, each row with its honest "via artist" chain |
+| **AI Playlists** | Type a vibe — "Punjabi gym bangers", Hinglish works — get a narrated 25-track playlist |
+| **Vibe Search** | The search bar's NLP mode: "songs like kun faya kun", typo-tolerant |
+| **Your Sound v2** | Wrapped-grade stats with the industry 30-second rule |
+| **Taste DNA** | The full model, exposed: affinities, daypart matrix, corrections, JSON export, kill switch |
 
-Every recommendation carries a **truthful reason line** from a closed code
-set — the app never invents an explanation. See
-[docs/MINDBEAT.md](docs/MINDBEAT.md) for the full six-layer architecture.
+Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 ms**
+(budget: 150 ms) · blind A/B preferred over the legacy engine 17/20.
 
-### First-run onboarding (v3.2)
-Spotify-faithful three-step flow:
-1. **"What's your name?"** — powers the "Made for {name}" shelf
-2. **"Choose 3 or more artists you like."** — **real artist photos**
-   (48 verified A-lister seeds + unbounded "More" batches across 8 live
-   categories + artist search), circular avatars with white-ring selection
-3. **"What kind of music do you like?"** — colorful genre tiles
+### Design
 
-Completion is **permanent**: the flag is dual-written (SQLite + AsyncStorage)
-before the flow closes, and a mid-flow kill resumes instead of restarting.
-Your picks seed the taste profile immediately.
+- Authentic Spotify Android design language — pixel-verified against genuine
+  reference screenshots (green-active chips, #282828 mini-player card,
+  4-tab bar, plain-white play glyph)
+- Figtree typography (6 weights), Spotify's own color system
+- **Tablet & foldable correct** — fully resizeable windows, live
+  re-measuring layout, no letterboxing, verified at 5 viewports
+  (Pixel 7, iPhone 13, portrait + landscape tablet, desktop window)
+- First-run onboarding with real artist photography (48 verified A-lister
+  seeds + 8 live categories), permanent completion (dual-write, crash-safe)
+- "What's new" dialog + on-screen version badge on every release — updates
+  are visibly verifiable on the device
 
-### The interface
-- Authentic Spotify Android design language, pixel-verified against
-  genuine reference screenshots (green-active filter chips, 8-tile shortcut
-  grid, #282828 mini-player card, plain-white play glyph, 4-tab bar with
-  Premium)
-- **The app repaints itself per song**: artwork colors are extracted in
-  pure JS (jpeg-js quantizer, no native module) and drive the player
-  gradient, collection headers and accent surfaces
-- **Deep Home feed**: shortcuts → Made for {name} → Now Sound → Jump back
-  in → Popular artists (real-photo rail) → Trending → On the Rise →
-  Because you listened → New releases → Featured playlists → charts
-  — JioSaavn's editorial feed keeps the screen populated from the very
-  first session
-- **Endless scrolling (v3.4.1)**: Home keeps loading forever after the
-  fixed shelves (alternating paged song lists and album shelves,
-  deduped, safety-filtered), and search results append JioSaavn pages
-  as you scroll — with honest "end of results" markers, never a dead
-  spinner
-- **Tablet-correct windows (v3.4.1)**: fully resizeable, no aspect-ratio
-  caps — the bottom bar sits at the real bottom of ANY window (phones,
-  tablets, split-screen, pop-up), and the layout re-measures live
-- Search: Spotify's Top-result hero card over a Songs list, 18-category
-  Browse grid, recent searches, Keyword|Vibe toggle
-- Library: playlists / artists / albums / downloaded filters, list⇄grid
-  view toggle, Liked Songs gradient hero
-- "What's new" dialog on every update + an on-screen version badge, so
-  releases are visibly verifiable on the device
+### Privacy & content safety
 
-### Content safety
-Explicit/abusive content never appears on Home or any algorithmic surface:
-provider explicit flags plus a word-boundary profanity blocklist
-(English + Hindi/Punjabi romanized). Search results honor user intent and
-show an "E" badge instead. The filter is tested against a dodge corpus.
-
-### Privacy
 - The ledger stores **no URLs, device ids or identifiers** (verifier-tested)
 - Everything lives in app-private storage; nothing is uploaded anywhere
-- Lyric searches send the typed fragment to LRCLIB (a public lyrics
-  catalog) to resolve the song — the same class of call as the catalog
-  search itself, and the only extra party; candidate lookups send
-  title + artist only. Listening history, ledger and profile NEVER
-  leave the device
-- Kill switch: disable all recommendations (persists across restarts);
-  export or reset the model from Taste DNA
+- The only third-party call beyond the music APIs: LRCLIB (public lyrics
+  catalog) for lyric-search resolution — title + artist only
+- Kill switch disables all recommendations; export or reset the model any
+  time from Taste DNA
+- Explicit/abusive content never reaches Home or any algorithmic surface
+  (provider flags + EN/Hindi/Punjabi blocklist, dodge-corpus tested);
+  search honors intent and shows an "E" badge instead
 
----
+## At a glance
 
-## Project map
+| | |
+|---|---|
+| Latest release | **v3.4.5** (versionCode 165 — in-place upgrades, same keystore since v2.0) |
+| Audio | 320 kbps AAC, background service, lock-screen controls |
+| Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
+| Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
+| QA | 261 replay tests · 1,640+ assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
+| Size | ~79 MB APK, RN 0.76 + Expo 52, zero telemetry |
+
+## Installation
+
+1. Download `app-release.apk` from the
+   [latest release](https://github.com/mua47105-hue/TSF-MUSIC/releases)
+2. Open it on your Android phone and allow installs from your browser/files
+   app (one-time)
+
+That's it. All releases are signed with the same keystore, so every update
+installs in place over the previous version — playlists, downloads and
+stats are preserved.
+
+## Architecture
 
 ```
-App.tsx                    App shell — tabs, stack, providers
-src/
-  screens/                 Home, Search, Library, Premium, Player,
-                           Collection, Playlist, AI, Stats (Your Sound),
-                           Taste (Taste DNA)
-  components/              Onboarding, WhatsNewDialog, MiniPlayer,
-                           TrackRow/TrackMenu, Shelf, Artwork, Toast, …
-  search/                  SEARCH V2: plan (S0 classify) · lexicon
-                           (SymSpell) · retrieve (S1 fan-out) · verify
-                           (S2 clusters + lyrics) · rank (S3) · recover
-                           (S4 ladder) · learn (S5) · normalize
-  ai/
-    mindbeat.ts            The single intelligence entry point (facade)
-    core/                  L1 ledger · L2 profile · L3 session brain ·
-                           L4 decision engine · proxy features · priors ·
-                           SQLite/memory stores · the tuning table
-    surfaces/              Smart Shuffle, Radio, Daily Mixes, Now Sound,
-                           On the Rise, AI Playlist v2, Vibe Search
-    engine.ts, generator   v2.1 legacy surfaces (kept as fallback layer)
-  api/                     saavn.ts (DES stream decrypt + autocomplete) ·
-                           artists.ts (real artist photos) · music.ts
-                           (Search V2 orchestrator) · lrclib.ts (lyrics) ·
-                           itunes.ts
-  player/                  PlayerProvider + background service
-  storage/                 AsyncStorage store + download manager
-  theme/                   Dynamic palette engine + provider
-  safety.ts                Content-safety filter
-  webmocks/                Web-only fixture layer for the device lab
-tests/ai/                  126 replay tests: MINDBEAT + search plan /
-                           lexicon / rank locks / perf budgets +
-                           gauntlet regression locks
-scripts/                   Device lab (Playwright), search A/B, APK
-                           verifiers, icon generators, screenshot packager
-ci/                        Gradle signing patch for CI
-docs/                      Architecture, MINDBEAT, development, changelog
+┌─────────────────────────────────────────────────────────────────┐
+│  UI        10 screens · Spotify-faithful · dynamic palette      │
+│            (artwork color extraction in pure JS)                │
+├─────────────────────────────────────────────────────────────────┤
+│  SEARCH    S0 plan → S1 fan-out → S2 verify → S3 rank →        │
+│  V2        S4 recover → S5 learn (typo-tolerant, Hinglish,      │
+│            rescue ladder, lyric verification)                   │
+├─────────────────────────────────────────────────────────────────┤
+│  MINDBEAT  ledger → profile → session → decisions → surfaces   │
+│  (src/ai)  single facade, SQLite WAL store, 6 layers            │
+├─────────────────────────────────────────────────────────────────┤
+│  SOURCES   saavn.ts (DES decrypt) · youtube.ts (InnerTube      │
+│            3-client ladder + PO-token bridge) · artists.ts ·   │
+│            lrclib.ts · itunes.ts · recording.ts (dedup/reconcile)│
+├─────────────────────────────────────────────────────────────────┤
+│  PLAYBACK  react-native-track-player · background service ·    │
+│            stale-URL recovery · offline downloads               │
+├─────────────────────────────────────────────────────────────────┤
+│  DEVICE    no servers, no accounts — the phone is the client   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Full module map, data flow and contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 
 ## Build & run
 
 ```bash
 bun install
-bun run typecheck        # tsc --noEmit (strict)
-bun test                 # 126 replay tests incl. latency budgets
-bunx expo start          # dev server
+bun run typecheck        # tsc --noEmit (strict) — must be clean
+bun test                 # 261 replay tests incl. latency budgets
+bunx expo start          # Metro dev server
 bunx expo run:android    # native debug build
 ```
 
-### Release (CI)
+### Release pipeline (CI/CD)
 
-GitHub Actions (`.github/workflows/native-android.yml`) on every push to
-`main`: stamps a monotonic `versionCode`, runs `expo prebuild`, builds a
-**signed release APK** from the secret keystore and attaches it as an
-artifact. Pushing a `v*` tag publishes a GitHub Release.
-
-```bash
-git tag v3.4.0 && git push origin v3.4.0   # → release APK in ~15 min
-```
-
-APKs are deep-verified after each release (manifest version probe, Hermes
-bundle markers, webmock-leak check — `scripts/verify_v32_apk.py` is the
-latest example).
-
-### Visual QA — the device lab
+Every push to `main` runs the full test + typecheck gate, then builds a
+**signed release APK** via GitHub Actions (monotonic versionCode, keystore
+from secrets). Pushing a `v*` tag publishes a GitHub Release:
 
 ```bash
-bash scripts/lab.sh
+git tag v3.4.6 && git push origin v3.4.6   # → signed release APK in ~15 min
 ```
 
-Boots Expo web with react-native-web, redirects the data/player layers to
-fixtures (`src/webmocks/` + `metro.config.js` — **Android builds are
-unaffected**), then runs a Playwright walkthrough on hardware-faithful
-Pixel 7 and iPhone 13 viewports: onboarding → reload-persistence
-regression → deep home scroll → search → player → queue. Screenshots land
-in `screenshots/`; `scripts/package_ui_shots.py` builds the browsable
-gallery committed at `download/tsf-ui-screenshots/`.
+After every release, the **shipped APK itself** is deep-verified — manifest
+version probe, Hermes bundle markers for each feature, webmock-leak check,
+window-policy assertions (`scripts/verify_v345_apk.py` is the current
+template, 19/19 checks on v3.4.5).
+
+## Quality assurance
+
+1. **261 replay tests** — engine behavior, latency budgets, gauntlet
+   regression locks (every shipped bug class is locked red-on-old-code)
+2. **The device lab** — the real app on react-native-web with fixture
+   data layers, driven by Playwright at hardware-faithful viewports:
+   93 checkpoints × 3 devices, zero console errors
+3. **The gauntlet loop** — every major feature ships only after a
+   fresh-context adversarial critic fails it, every P0 is fixed with a
+   regression lock, and blind A/B beats or matches the reference
+4. **Post-ship binary verification** — the published APK is unpacked and
+   inspected, not just the working tree
+
+Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 ## Documentation
 
 | Doc | Contents |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, playback pipeline, theming, persistence, web harness |
-| [docs/MINDBEAT.md](docs/MINDBEAT.md) | The six-layer intelligence stack, surfaces, reason codes, tuning, privacy |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Workflow, device lab, gauntlet loop, testing, release process, conventions |
-| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Release history v2.0 → v3.2.0 |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, playback pipeline, theming, persistence, CI topology |
+| [MINDBEAT.md](docs/MINDBEAT.md) | The six-layer intelligence stack: surfaces, reason codes, tuning, privacy |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setup, workflow, device lab, gauntlet methodology, release process, conventions |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v3.4.5, root-caused and verified |
+| [SEARCH-INTENT-RESCUE-PLAN.md](docs/SEARCH-INTENT-RESCUE-PLAN.md) | Engineering RFC: the specific-intent guarantee (shipped in v3.4.0) |
+| [YOUTUBE-INTEGRATION-PLAN.md](docs/YOUTUBE-INTEGRATION-PLAN.md) | Engineering RFC: the YouTube source design (shipped in v3.4.0) |
+| [LAB-TESTING-GUIDE.md](docs/LAB-TESTING-GUIDE.md) | The staging-repo workflow that device-verified the v3.4.0 line |
+
+## Release history
+
+| Version | Headline |
+|---|---|
+| **v3.4.5** | Field-fix round: real songs over lo-fi covers, 40-deep search results, zero Top Songs repeats, 60 fps home feed |
+| **v3.4.4** | The half-screen window bug, closed at the root (invisible WebView wrapper) with 9 regression locks |
+| **v3.4.3** | Full-bleed windows on every device: aspect-clamp immunity (4 compat opt-outs + maxAspectRatio) |
+| **v3.4.0–.2** | YouTube source + search rescue ladder; orientation freedom; endless feeds |
+| **v3.3.0** | Search V2 — the six-stage engine (classifier, SymSpell, verification, ranking, recovery, learning) |
+| **v3.0–v3.2** | MINDBEAT intelligence stack; onboarding with real artist photos; deep editorial home |
+| **v2.1–v2.5** | Spotify-grade UI system, dynamic theming, content safety, CI releases |
+| **v2.0** | Standalone baseline: direct JioSaavn API, 320 kbps, offline downloads |
+
+Full detail: [docs/CHANGELOG.md](docs/CHANGELOG.md) · session-level engineering
+history: `worklog.md`
 
 ## Stack
 
 React Native 0.76 · Expo SDK 52 (prebuild, bare workflow) ·
-react-native-track-player 4.1.1 · expo-sqlite (event ledger) ·
-@react-native-async-storage/async-storage · expo-linear-gradient /
-haptics / font / file-system · crypto-js (DES stream decryption) ·
-jpeg-js (artwork color extraction) · Figtree typography ·
-TypeScript strict · Bun.
+react-native-track-player 4.1.1 · expo-sqlite (event ledger, WAL) ·
+AsyncStorage · expo-linear-gradient / haptics / font / file-system ·
+crypto-js (DES stream decryption) · jpeg-js (artwork color extraction) ·
+Figtree typography · TypeScript strict · Bun · GitHub Actions.
+
+---
+
+<div align="center">
+
+**TSF Music** — big-platform experience, zero-platform dependency.
+
+[Download the latest release](https://github.com/mua47105-hue/TSF-MUSIC/releases) · [Report an issue](https://github.com/mua47105-hue/TSF-MUSIC/issues)
+
+</div>
