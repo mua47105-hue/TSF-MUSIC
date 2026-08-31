@@ -1388,3 +1388,113 @@ Stage Summary:
   locked (288 tests), and binary-verified in the shipped APK
   (19/19 + sanity). Gauntlet loop: 3 rounds, R1 FIX-FIRST →
   R2 FIX-FIRST (caught the builder's own regressions) → R3 SHIP.
+
+---
+Task ID: 19 (R9 triage + auto-update advisory)
+Agent: Super Z (main agent)
+
+Task: Triage two field reports — (a) player queue button (marked in
+screenshot) dims the screen but the sheet never opens; (b) playlist
+"ratoon main aana (from 'vibe')" showed no-internet UI while music
+played on 5G — then deliver the auto-update advisory (options +
+costs + risks; user approves manually, no implementation yet).
+
+Work Log:
+- VLM-analyzed the screenshot: marked button = player subRow queue
+  icon (testID player-queue-btn), right of share, above the lyrics
+  card → opens the showQueue Modal (PlayerScreen L335-423).
+- Code-verified the modal chain (Modal → backdrop Pressable → sheet
+  Pressable w/ stopPropagation): no dead-render defect found;
+  colors.elevated exists; TrackMenu on the same screen uses the
+  same transparent-modal pattern and was NOT reported broken.
+- Traced every offline surface: CollectionScreen "Couldn't load
+  this — check your connection" (chart/album/search kinds),
+  HomeScreen offline chip, AIScreen error card. PlaylistScreen is
+  storage-only (no network). The named playlist is AI-generated
+  (aiGenerated) → Library → Playlist route, purely local — so the
+  observed no-internet UI came from a collection surface in the
+  same session or transient state.
+- USER RESOLUTION: both symptoms cleared after an app restart;
+  user explicitly said not to worry. Decision: ship NOTHING
+  (zero churn; standing rule "don't create another problem").
+  If the queue freeze recurs: capture what was on screen + whether
+  backgrounding the app frees it (suspect stuck modal state).
+- Delivered the auto-update advisory in chat (no code): compared
+  (A) expo-updates OTA (JS-only, bypasses APK verification), (B)
+  in-app GitHub-Release self-updater with update.json manifest
+  (recommended — covers native+JS, rides existing Actions pipeline,
+  ~3 focused days, $0), (C) Play Store (takedown risk for this
+  app's catalog sources), (D) Obtainium (zero code, external UX).
+  Rails if approved: CI-written sha256 manifest, monotonic
+  versionCode gate, Wi-Fi-first resumable download, sha256 verify
+  before install, silent-failure-can-never-block-the-app, never
+  rotate the keystore.
+
+Stage Summary:
+- R9 closed as TRANSIENT (restart cleared both; zero diff shipped).
+- Auto-update: recommended Option B. AWAITING USER APPROVAL — do
+  not implement before approval.
+
+---
+Task ID: 20 (documentation product-launch refresh)
+Agent: Super Z (main agent)
+
+Task: Rewrite README.md to product-launch professional grade and bring
+every doc in the project up to the same standard (user: "Every
+documentation inside the project must look professional, like a very
+big product launch").
+
+Work Log:
+- Audited the full doc set: README.md (solid but stale — 126-test
+  claim, v3.4 title, no launch presentation) + 7 docs/ files
+  (CHANGELOG missing v3.4.4/v3.4.5 entirely; DEVELOPMENT stale test
+  count/lab scale/verifier template; ARCHITECTURE missing the
+  YouTube, search/, recording.ts and feed.ts modules entirely; RFC
+  docs without shipped-status banners).
+- README rewritten end-to-end (05e50bb): hero with icon + 6 badges
+  (release/CI/tests/platform/privacy), 8-screenshot launch gallery
+  from download/tsf-ui-screenshots/pixel7-v34 (tracked → renders on
+  GitHub), two-catalog comparison table, productized feature sections
+  (search engine, MINDBEAT table, player, design, privacy/safety),
+  at-a-glance fact table, 6-layer architecture diagram, build/CI/QA
+  sections, documentation index, release-history table. All facts
+  verified: 261/261 tests green, v3.4.5, versionCode 165, 79.4 MB,
+  93-checkpoint lab.
+- CHANGELOG: prepended full v3.4.5 (four field fixes, gauntlet 3
+  rounds, live-probe evidence) and v3.4.4 (WebView root cause, two
+  belts, 9 locks, user confirmation) entries — the changelog now
+  covers every release through current.
+- ARCHITECTURE: module diagram + API section now document youtube.ts
+  (InnerTube ladder, PO-token bridge, kill-switch), search/ (S0–S5
+  pipeline files + ytAppend), recording.ts (credit-set reconciliation,
+  count twins), feed.ts (EndlessFeedPager); webmock parity table gained
+  the youtube row. Structural accident from a partially-applied
+  MultiEdit (feed.ts section had landed over the MINDBEAT header) was
+  repaired — final layout verified section by section.
+- DEVELOPMENT: 74→261 tests, lab 28-check/2-device → 5 viewports
+  (93×3), gauntlet lock-suite inventory updated, verifier template
+  → verify_v345_apk.py (pyaxmlparser, UTF-8/UTF-16 markers,
+  red-on-previous-APK discriminator check), new house rules
+  (recording-reconciliation at every merge point; YouTube failures
+  retryable, never terminal).
+- RFC banners: SEARCH-INTENT-RESCUE-PLAN + YOUTUBE-INTEGRATION-PLAN now
+  open with "STATUS: SHIPPED — v3.4.0 (hardened through v3.4.5)" notes
+  framing them as engineering history (also fixed an Add-free→Ad-free
+  typo). MINDBEAT.md and LAB-TESTING-GUIDE.md already carry proper
+  framing — untouched.
+- Verification: bun test 261/261 green twice; all 16 local README
+  image/doc references resolve on disk; assertion count rendered as
+  "1,640+" (one conditional perf assertion varies 1640/1641).
+- Committed 05e50bb (README + 5 docs files), rebased onto remote
+  c3deebb, pushed to main. Docs-only change — no app code touched,
+  no tag (CI builds main but no release is published).
+- Note: Task 19's worklog entry had been written in the prior session
+  but was never committed; the inter-session environment reset dropped
+  it. Reconstructed verbatim here from the session context (lesson:
+  commit worklog entries in the same turn they're written).
+
+Stage Summary:
+- The project's documentation now reads as a coherent product-launch
+  set: launch-grade README, complete changelog through v3.4.5, a module
+  map that actually covers the v3.4 codebase, current dev guide, and
+  clearly-framed engineering RFCs. Zero app-code churn.
