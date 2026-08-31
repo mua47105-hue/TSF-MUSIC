@@ -28,6 +28,7 @@
 
 import type { Collection, Track } from '../types';
 import { filterClean } from '../safety';
+import { recordingKey } from './recording';
 
 export interface FeedFetchers {
   searchSongs: (q: string, page: number, signal?: AbortSignal) => Promise<Track[]>;
@@ -102,6 +103,7 @@ export class EndlessFeedPager {
   private songLadder: string[];
   private albumLadder: string[];
   private seenSongIds = new Set<string>();
+  private seenSongKeys = new Set<string>();
   private seenAlbumIds = new Set<string>();
   private lastWasSongs = false;
   private failures = 0;
@@ -163,11 +165,22 @@ export class EndlessFeedPager {
       } catch {
         return 'error'; // network failure — NOT a dry page, no budget burn
       }
-      const fresh = (rows as Array<{ id: string }>).filter((r) => !seen.has(r.id));
-      for (const r of fresh) seen.add(r.id);
-      if (fresh.length >= minRows) {
+      // R8-P4 recording-level dedup: songs collapse by id AND by
+      // title+primary-artist key (kept INSIDE one page too — the same
+      // page can carry "Zalima" 5x with 5 different ids). Albums stay
+      // id-only (a re-issued album shelf is legitimately distinct).
+      const freshRows: Array<{ id: string }> = [];
+      for (const r of rows as Array<{ id: string }>) {
+        if (seen.has(r.id)) continue;
+        const key = kind === 'songs' ? recordingKey(r as Track) : r.id;
+        if (kind === 'songs' && this.seenSongKeys.has(key)) continue;
+        seen.add(r.id);
+        if (kind === 'songs') this.seenSongKeys.add(key);
+        freshRows.push(r);
+      }
+      if (freshRows.length >= minRows) {
         cursor.page += 1; // next call goes deeper into this query
-        return { rows: fresh as unknown as T[], title: titleCase(q) };
+        return { rows: freshRows as unknown as T[], title: titleCase(q) };
       }
       // dry: move to the next query, restart at page 1
       cursor.queryIdx += 1;
@@ -258,9 +271,14 @@ export class EndlessFeedPager {
     return { kind: 'retry' };
   }
 
-  /** Register ids already on screen (fixed shelves) so the feed never repeats them. */
+  /** Register ids AND recording keys already on screen (fixed shelves)
+   *  so the feed never repeats them — "Trending now" showing Zalima also
+   *  suppresses every compilation re-list of Zalima below (R8-P4). */
   prime(seen: { songs?: Track[]; albums?: Collection[] }): void {
-    for (const t of seen.songs ?? []) this.seenSongIds.add(t.id);
+    for (const t of seen.songs ?? []) {
+      this.seenSongIds.add(t.id);
+      this.seenSongKeys.add(recordingKey(t));
+    }
     for (const c of seen.albums ?? []) this.seenAlbumIds.add(c.id);
   }
 }

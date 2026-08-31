@@ -10,6 +10,7 @@
 import CryptoJS from 'crypto-js';
 import type { Collection, Track } from '../types';
 import { filterClean, isClean } from '../safety';
+import { recordingKey } from './recording';
 
 const API = 'https://www.jiosaavn.com/api.php';
 const DES_KEY = CryptoJS.enc.Utf8.parse('38346591');
@@ -188,21 +189,49 @@ export async function searchSaavn(
     signal,
   );
   const results = Array.isArray(data?.results) ? data.results : [];
-  return results.map(mapSaavnSong).filter(Boolean) as Track[];
+  // R8-P4: a raw JioSaavn page re-lists the SAME recording under many
+  // ids (movie album + compilations + regional presses — the "Zalima
+  // 5-6 times in one Top Songs list" bug). Collapse by id AND by
+  // recording key, keep the provider's order.
+  return dedupeRecordings(results.map(mapSaavnSong).filter(Boolean) as Track[]);
+}
+
+/** Collapse rows that share a recording key (normalized title + primary
+ *  artist), keeping first occurrence and the input order. Pure — locked
+ *  in tests/ai/search_paging_locks + feed_pager. */
+export function dedupeRecordings(tracks: Track[]): Track[] {
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const out: Track[] = [];
+  for (const t of tracks) {
+    if (seenIds.has(t.id)) continue;
+    const key = recordingKey(t);
+    if (seenKeys.has(key)) continue;
+    seenIds.add(t.id);
+    seenKeys.add(key);
+    out.push(t);
+  }
+  return out;
 }
 
 /**
  * Merge a fetched page into an existing result list, dropping rows whose
  * id is already present — including duplicates that arrive INSIDE one
- * page (JioSaavn pages overlap ~7%). Order-preserving, allocation-free
- * when nothing is new. Pure — unit-tested (F1).
+ * page (JioSaavn pages overlap ~7%) — and rows that are the SAME
+ * RECORDING under a different id (compilation re-lists, R8-P4).
+ * Order-preserving, allocation-free when nothing is new. Pure —
+ * unit-tested (F1).
  */
 export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
   const seen = new Set(prev.map((t) => t.id));
+  const seenKeys = new Set(prev.map((t) => recordingKey(t)));
   const fresh: Track[] = [];
   for (const t of next) {
     if (seen.has(t.id)) continue;
+    const key = recordingKey(t);
+    if (seenKeys.has(key)) continue;
     seen.add(t.id);
+    seenKeys.add(key);
     fresh.push(t);
   }
   return fresh.length ? [...prev, ...fresh] : prev;

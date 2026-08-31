@@ -26,7 +26,7 @@ function gradientFor(seed: string): [string, string] {
   return GRADIENTS[h % GRADIENTS.length] as [string, string];
 }
 
-export function Artwork({
+export const Artwork = React.memo(function Artwork({
   uri,
   seed,
   size,
@@ -107,7 +107,7 @@ export function Artwork({
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   imageWrap: { backgroundColor: colors.surface },

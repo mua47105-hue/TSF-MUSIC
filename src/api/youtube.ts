@@ -22,6 +22,7 @@
  */
 
 import type { Track } from '../types';
+import { recordingKey } from './recording';
 
 // ── client registry (ONE place to update when YouTube rotates shapes) ──
 // Refreshed 2026-02 against the OSS playback ecosystem (yt-dlp PO-Token-Guide
@@ -127,9 +128,15 @@ let sessionVisitorData: string | null = null;
 let sessionVisitorAt = 0;
 const SESSION_TTL_MS = 3 * 60 * 60 * 1000; // visitorData lives long; refresh 3h
 
+let sessionInFlight: Promise<string> | null = null;
+
 async function ensureSession(): Promise<string> {
   const now = Date.now();
   if (sessionVisitorData && now - sessionVisitorAt < SESSION_TTL_MS) return sessionVisitorData;
+  // CRITIC P2-2: ytSearchMusic's two parallel probes both land here —
+  // single-flight the visitor_id POST so a cold search warms ONE session.
+  if (sessionInFlight) return sessionInFlight;
+  sessionInFlight = (async () => {
   try {
     const res = await ytFetch(`${YTI}/visitor_id?prettyPrint=false`, {
       method: 'POST',
@@ -158,8 +165,12 @@ async function ensureSession(): Promise<string> {
     }
   } catch {
     /* offline — proceed without a visitor; rungs handle it */
+  } finally {
+    sessionInFlight = null;
   }
   return sessionVisitorData ?? '';
+  })();
+  return sessionInFlight;
 }
 export function peekYtVisitorData(): string {
   return sessionVisitorData ?? '';
@@ -264,7 +275,37 @@ function clientNameIndex(name: string): string {
   return map[name] ?? '1';
 }
 
-// ── search (WEB_REMIX catalog; WEB video fallback) ──
+// ── search v2 (R8-P2/P3: the songs-filter catalog, like YouTube Music) ──
+//
+// Ground truth (scripts/probe_yt_search_v2.ts, live WEB_REMIX probes):
+//   • The GENERAL search's "top result" card (musicCardShelfRenderer)
+//     carries lo-fi mixes / remixes / lyric videos for fuzzy queries —
+//     "tu chaiye" put "TU CHAHIYE (Lo-Fi Mix): DJ Moody" at rank 1.
+//     The old walker collected those rows first and toTrack's
+//     kind-detection defaulted every unprefixed row to "song", so the
+//     lo-fi mix outranked the real song. The card is now SKIPPED.
+//   • The SONGS-FILTER search (the `params` YouTube Music itself sends
+//     when the user taps the "Songs" chip) returns YouTube Music's
+//     ranked catalog list — official recording first, 20 rows/page,
+//     with a continuation token for page 2+. That list is the primary
+//     result; the general search only supplements (videos, albums,
+//     spell corrections, and the rotation-proof chip params).
+
+/** Params for the Songs filter (ytmusicapi's pinned value, proven live
+ *  2026-08 in the probe). If YouTube ever rotates it, the chip-params
+ *  harvest below re-derives the current value from the response. */
+const SONGS_FILTER_PARAMS = 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D';
+
+/** Subtitle shapes WEB_REMIX emits (probe-verified):
+ *   general rows : "Song • Pritam, Atif Aslam & Amitabh Bhattacharya • 3:51"
+ *                  "Video • LYRICAL BAM HINDI • 6.2M views • 4:28"
+ *   filtered rows: "Pritam, Atif Aslam & Amitabh Bhattacharya • Bajrangi Bhaijaan • 4:25"
+ *                  (NO kind prefix — the first segment IS the artist) */
+const KIND_WORDS = new Set([
+  'song', 'video', 'album', 'single', 'ep', 'artist', 'playlist',
+  'episode', 'podcast', 'profile', 'movie', 'radio',
+]);
+const VIDEO_KIND_WORDS = new Set(['video', 'episode', 'podcast', 'movie', 'radio']);
 
 function parseDuration(text: string | undefined): number {
   if (!text) return 0;
@@ -309,7 +350,8 @@ function thumbFrom(renderer: any): string {
   return best ? best.replace(/^\/\//, 'https://') : '';
 }
 
-/** Map one YT-Music list item to a Track (Song/Video rows only). */
+/** Map one YT-Music list item to a Track. Handles BOTH subtitle shapes:
+ *  kind-prefixed (general search) and artist-first (songs filter). */
 function toTrack(item: any): Track | null {
   const r = item?.musicResponsiveListItemRenderer;
   if (!r) return null;
@@ -321,12 +363,19 @@ function toTrack(item: any): Track | null {
   const subtitle = runs(1)
     .map((x: any) => x.text ?? '')
     .join('');
-  const kindWord = subtitle.split('•')[0]?.trim().toLowerCase() ?? '';
-  const ytKind: 'song' | 'video' = kindWord === 'video' ? 'video' : 'song';
-  // "Song • Pritam, Atif Aslam & Amitabh Bhattacharya · 3:51" /
-  // "Video • LYRICAL BAM HINDI • 6.2M views • 4:28"
   const segs = subtitle.split('•').map((s: string) => s.trim());
-  const artistSeg = segs[1] ?? '';
+  const firstSeg = segs[0] ?? '';
+  const kindPrefixed = KIND_WORDS.has(firstSeg.toLowerCase());
+  const kindWord = kindPrefixed ? firstSeg.toLowerCase() : '';
+  const ytKind: 'song' | 'video' = VIDEO_KIND_WORDS.has(kindWord) ? 'video' : 'song';
+  // kind-prefixed: "Song • ARTIST • duration" — artist is seg 1
+  // artist-first  : "ARTIST • ALBUM • duration" — artist is seg 0
+  const artistSeg = kindPrefixed ? (segs[1] ?? '') : firstSeg;
+  // CRITIC P3-3: only the artist-first (filtered shelf) rows carry a real
+  // ALBUM segment — kind-prefixed general rows are "Song • Artist • 3:51"
+  // (seg 2 is the DURATION) or "Video • Channel • 6.2M views • 4:28"
+  // (views) — writing those into track.album showed "Artist • 3:51".
+  const albumSeg = !kindPrefixed ? segs[1] ?? '' : '';
   const durationSeg = [...segs].reverse().find((s: string) => /^\d{1,2}:\d{2}(:\d{2})?$/.test(s));
   const playsSeg = segs.find((s: string) => /views|plays/i.test(s));
   return {
@@ -335,7 +384,10 @@ function toTrack(item: any): Track | null {
     ytKind,
     title,
     artist: artistSeg || 'YouTube',
-    artistsFull: artistSeg ? artistSeg.split(/,|&/).map((a: string) => a.trim()).filter(Boolean) : undefined,
+    artistsFull: artistSeg
+      ? artistSeg.split(/,|&/).map((a: string) => a.trim()).filter(Boolean)
+      : undefined,
+    album: albumSeg || undefined,
     artwork: thumbFrom(r),
     duration: parseDuration(durationSeg),
     source: 'youtube',
@@ -344,73 +396,285 @@ function toTrack(item: any): Track | null {
   } as unknown as Track;
 }
 
+/** Harvest the CURRENT filter-chip params from a general search response
+ *  (rotation-proof: whatever YouTube serves today IS the right value). */
+function chipParamsFor(data: any, labelRe: RegExp): string | undefined {
+  const walk = (node: any): string | undefined => {
+    if (!node || typeof node !== 'object') return undefined;
+    if (Array.isArray(node)) {
+      for (const x of node) {
+        const hit = walk(x);
+        if (hit) return hit;
+      }
+      return undefined;
+    }
+    if (node.chipCloudRenderer) {
+      for (const c of node.chipCloudRenderer.chips ?? []) {
+        const cr = c?.chipCloudChipRenderer;
+        const label = cr?.text?.runs?.[0]?.text ?? '';
+        if (labelRe.test(label)) {
+          const params = cr?.navigationEndpoint?.searchEndpoint?.params;
+          if (typeof params === 'string') return params;
+        }
+      }
+      return undefined;
+    }
+    for (const k of Object.keys(node)) {
+      if (k === 'musicResponsiveListItemRenderer') continue;
+      const hit = walk(node[k]);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  return walk(data);
+}
+
+/** YouTube's spell corrections:
+ *  showingResultsFor → already applied to these results
+ *  didYouMean        → NOT applied; surfaced for a "did you mean" note */
+function spellCorrections(data: any): { correctedTo?: string; didYouMean?: string } {
+  const out: { correctedTo?: string; didYouMean?: string } = {};
+  const runs = (x: any) => (x?.runs ?? []).map((r: any) => r.text).join('');
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node.showingResultsForRenderer) {
+      out.correctedTo = runs(node.showingResultsForRenderer.correctedQuery) || out.correctedTo;
+    }
+    if (node.didYouMeanRenderer) {
+      out.didYouMean = runs(node.didYouMeanRenderer.correctedQuery) || out.didYouMean;
+    }
+    for (const k of Object.keys(node)) walk(node[k]);
+  };
+  walk(data);
+  return out;
+}
+
+/** Continuation token of the songs shelf (page 2+ of the filtered list). */
+function songsContinuation(data: any): string | undefined {
+  let token: string | undefined;
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object' || token) return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node.musicShelfRenderer) {
+      for (const c of node.musicShelfRenderer.continuations ?? []) {
+        const t = c?.nextContinuationData?.continuation;
+        if (typeof t === 'string') {
+          token = t;
+          return;
+        }
+      }
+    }
+    for (const k of Object.keys(node)) walk(node[k]);
+  };
+  walk(data);
+  return token;
+}
+
+/** Collect musicResponsiveListItemRenderer rows EXCLUDING the top-result
+ *  card (musicCardShelfRenderer) — the card is the lo-fi/remix polluter
+ *  on fuzzy queries, and every usable card row also appears in the
+ *  songs/videos shelves (probe-verified). Returns raw rows. */
+function collectRows(root: any): any[] {
+  const rows: any[] = [];
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const x of node) walk(x);
+      return;
+    }
+    if (node.musicCardShelfRenderer) return; // skip the lo-fi polluter (R8-P2)
+    if (node.musicResponsiveListItemRenderer) {
+      rows.push(node);
+      return;
+    }
+    for (const k of Object.keys(node)) walk(node[k]);
+  };
+  walk(root);
+  return rows;
+}
+
 export interface YtSearchResult {
   tracks: Track[];
   albums: Array<{ title: string; browseId?: string; artist?: string }>;
   latencyMs: number;
+  /** Continuation for `ytSearchMusicMore` — absent when the catalog is
+   *  exhausted. Presence = the list can keep scrolling (R8-P3). */
+  continuation?: string;
+  /** YouTube already searched for this spelling ("showing results for"). */
+  correctedTo?: string;
+  /** YouTube suggests this spelling but did not use it ("did you mean"). */
+  didYouMean?: string;
 }
 
-/** YT-Music catalog search — Songs first, then videos; Albums surfaced separately.
- *  Kill-switch gated (P1-3): a soft-disabled source answers empty
- *  immediately — no requests, honest fast degradation. */
-export async function ytSearchMusic(query: string, limit = 20, signal?: AbortSignal): Promise<YtSearchResult> {
-  const t0 = Date.now();
-  if (!ytAvailable()) return { tracks: [], albums: [], latencyMs: 0 };
-  const remix = YT_CLIENTS.find((c) => c.name === 'WEB_REMIX')!;
-  let data: any = null;
-  try {
-    data = await innertube('search', remix, { query }, signal);
-  } catch {
-    return { tracks: [], albums: [], latencyMs: Date.now() - t0 };
-  }
+/** Parse a WEB_REMIX search response into tracks + albums. */
+function parseSearchRows(data: any): { tracks: Track[]; albums: YtSearchResult['albums'] } {
   const tracks: Track[] = [];
   const albums: YtSearchResult['albums'] = [];
   const shelves =
     data?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content
       ?.sectionListRenderer?.contents ?? [];
-  const collect = (node: any) => {
-    if (!node || typeof node !== 'object') return;
-    if (node.musicResponsiveListItemRenderer) {
-      const t = toTrack(node);
-      if (t) tracks.push(t);
-      const kind = (node.musicResponsiveListItemRenderer?.flexColumns?.[1]
-        ?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text ?? '').toLowerCase();
-      if (kind.startsWith('album') || kind.startsWith('single')) {
-        const browse =
-          node.musicResponsiveListItemRenderer?.navigationEndpoint?.browseEndpoint?.browseId;
-        if (browse) {
-          albums.push({
-            title:
-              node.musicResponsiveListItemRenderer?.flexColumns?.[0]
-                ?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text ?? '',
-            browseId: browse,
-          });
-        }
+  const rows = shelves.length ? shelves.flatMap(collectRows) : collectRows(data);
+  for (const row of rows) {
+    const t = toTrack(row);
+    if (t) tracks.push(t);
+    const r = row.musicResponsiveListItemRenderer;
+    const kind = (r?.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text ?? '')
+      .split('•')[0]
+      .trim()
+      .toLowerCase();
+    if (kind.startsWith('album') || kind.startsWith('single')) {
+      const browse = r?.navigationEndpoint?.browseEndpoint?.browseId;
+      if (browse) {
+        albums.push({
+          title:
+            r?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text ?? '',
+          browseId: browse,
+        });
       }
     }
-    for (const k of Object.keys(node)) collect(node[k]);
-  };
-  // YouTube morphs shelf containers (musicShelfRenderer → itemSection/
-  // musicCardShelf variants) — seed the recursive walker from EVERY
-  // section so shape changes degrade to the same item set, never zero.
-  for (const shelf of shelves) collect(shelf);
-  // songs first, videos after; drop non-music junk (news/date-only rows
-  // leak through the recursive walker — a real music row has either a
-  // song badge or a parseable duration); cap videos at 15 min
-  const songs = tracks.filter((t) => t.ytKind === 'song');
-  const videos = tracks.filter(
-    (t) => t.ytKind !== 'song' && (t.duration ?? 0) > 0 && (t.duration ?? 0) <= 15 * 60,
-  );
-  const seen = new Set<string>();
-  const merged = [...songs, ...videos].filter((t) => {
-    const id = t.youtubeId!;
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-  return { tracks: merged.slice(0, limit), albums: albums.slice(0, 6), latencyMs: Date.now() - t0 };
+  }
+  return { tracks, albums };
 }
 
+/** YT-Music catalog search — the songs-filter list first (YouTube Music's
+ *  own ranked answer: official recording at rank 1), the general search's
+ *  videos after, albums surfaced separately. Recording-level dedup keeps
+ *  one row per performance ("Tum Hi Ho • Aashiqui 2" absorbs the
+ *  "Greatest Hits 3" re-list). Kill-switch gated (P1-3): a soft-disabled
+ *  source answers empty immediately — no requests, honest fast degradation.
+ *
+ *  Both probes fire in PARALLEL (one round-trip of latency). If the pinned
+ *  songs-filter params ever rot (0 rows) but the general response carries
+ *  current chip params, one rotation retry re-fires with those. */
+export async function ytSearchMusic(query: string, limit = 30, signal?: AbortSignal): Promise<YtSearchResult> {
+  const t0 = Date.now();
+  if (!ytAvailable()) return { tracks: [], albums: [], latencyMs: 0 };
+  const remix = YT_CLIENTS.find((c) => c.name === 'WEB_REMIX')!;
+
+  const [songsProbe, generalProbe] = await Promise.allSettled([
+    innertube('search', remix, { query, params: SONGS_FILTER_PARAMS }, signal),
+    innertube('search', remix, { query }, signal),
+  ]);
+  let songsData = songsProbe.status === 'fulfilled' ? songsProbe.value : null;
+  const generalData = generalProbe.status === 'fulfilled' ? generalProbe.value : null;
+  if (!songsData && !generalData) {
+    return { tracks: [], albums: [], latencyMs: Date.now() - t0 };
+  }
+
+  // parse the songs probe ONCE (critic P3-2: no double full-JSON walk)
+  let songsParsed = songsData ? parseSearchRows(songsData) : { tracks: [], albums: [] };
+
+  // rotation guard (critic P3-1): the pinned params are dead when the
+  // probe answers 0 rows OR rejects outright (HTTP 400 on rotation) — in
+  // both cases the general response's chip params re-derive the current
+  // value and one retry re-fires with those.
+  if ((!songsData || songsParsed.tracks.length === 0) && generalData) {
+    const chipParams = chipParamsFor(generalData, /^songs$/i);
+    if (chipParams && chipParams !== SONGS_FILTER_PARAMS) {
+      try {
+        songsData = await innertube('search', remix, { query, params: chipParams }, signal);
+        songsParsed = parseSearchRows(songsData);
+      } catch {
+        /* general-only is still a valid answer */
+      }
+    }
+  }
+
+  // primary: the ranked songs-filter list (continuation carries page 2+)
+  const continuation = songsData ? songsContinuation(songsData) : undefined;
+
+  // supplement: general search's videos + albums + corrections
+  const generalParsed = generalData ? parseSearchRows(generalData) : { tracks: [], albums: [] };
+  const corrections = generalData ? spellCorrections(generalData) : {};
+
+  // songs first (YouTube Music's order — the official recording leads),
+  // then the general search's videos (≤ 15 min, parseable duration)
+  const songs = songsParsed.tracks.filter((t) => t.ytKind === 'song');
+  const generalSongs = generalParsed.tracks.filter(
+    (t) => t.ytKind === 'song' && (t.duration ?? 0) > 0 && (t.duration ?? 0) <= 15 * 60,
+  );
+  const videos = generalParsed.tracks.filter(
+    (t) => t.ytKind !== 'song' && (t.duration ?? 0) > 0 && (t.duration ?? 0) <= 15 * 60,
+  );
+
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const merged: Track[] = [];
+  for (const t of [...songs, ...generalSongs, ...videos]) {
+    const id = t.youtubeId!;
+    if (seenIds.has(id)) continue;
+    const key = recordingKey(t);
+    if (seenKeys.has(key)) continue; // same performance, other catalog entity
+    seenIds.add(id);
+    seenKeys.add(key);
+    merged.push(t);
+  }
+
+  const tracks = merged.slice(0, limit);
+  // CRITIC P1-1: the continuation belongs to the SONGS SHELF, not to the
+  // post-dedup merged length — key-dedup legitimately trims merged below
+  // 20 ("tum hi ho" collapsed 2 catalog re-lists → 19 rows with a live
+  // continuation). A FULL shelf page (18+) carrying a token means the
+  // catalog goes deeper; the deep list must not silently die.
+  const keepContinuation =
+    !!continuation &&
+    (songsParsed.tracks.length >= 18 || merged.length >= Math.min(limit, 20));
+  return {
+    tracks,
+    albums: generalParsed.albums.slice(0, 6),
+    latencyMs: Date.now() - t0,
+    ...(keepContinuation ? { continuation } : {}),
+    ...(corrections.correctedTo ? { correctedTo: corrections.correctedTo } : {}),
+    ...(corrections.didYouMean ? { didYouMean: corrections.didYouMean } : {}),
+  };
+}
+
+/** Page 2+ of a songs-filter search — the continuation the first call
+ *  returned. Returns fresh rows (id + recording deduped within the page)
+ *  and the next continuation when the catalog goes deeper. */
+export async function ytSearchMusicMore(
+  continuation: string,
+  limit = 30,
+  signal?: AbortSignal,
+): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number }> {
+  const t0 = Date.now();
+  if (!ytAvailable()) return { tracks: [], latencyMs: 0 };
+  const remix = YT_CLIENTS.find((c) => c.name === 'WEB_REMIX')!;
+  let data: any;
+  try {
+    data = await innertube('search', remix, { continuation }, signal);
+  } catch {
+    return { tracks: [], latencyMs: Date.now() - t0 };
+  }
+  // continuation responses omit the tabbed wrapper — rows sit directly
+  // in continuationItems; the walker handles both shapes.
+  const parsed = parseSearchRows(data);
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const tracks: Track[] = [];
+  for (const t of parsed.tracks) {
+    const id = t.youtubeId!;
+    if (seenIds.has(id)) continue;
+    const key = recordingKey(t);
+    if (seenKeys.has(key)) continue;
+    seenIds.add(id);
+    seenKeys.add(key);
+    tracks.push(t);
+  }
+  const next = songsContinuation(data);
+  return {
+    tracks: tracks.slice(0, limit),
+    ...(next ? { continuation: next } : {}),
+    latencyMs: Date.now() - t0,
+  };
+}
 // ── stream resolution (client ladder + health + diagnostics) ──
 
 const streamCache = new Map<string, PlayerAudio>();

@@ -247,12 +247,12 @@ def run_device(pw, name, cfg):
                 break
         shot(page, name, "09b-endless-feed")
         log(name, "v341-endless-feed-batches", feed_sections >= 1, f"{feed_sections} song sections loaded")
-        feed_rows = page.locator('[data-testid="endless-feed-songs"] [data-testid="track-row"]').count()
+        feed_rows = page.locator('[data-testid="endless-feed-song"]').count()
         log(name, "v341-endless-feed-rows", feed_rows >= 6, f"{feed_rows} playable rows")
 
         # ── v3.4.1 F3: a feed row PLAYS with the full loaded queue ────
         if feed_rows > 0:
-            page.locator('[data-testid="endless-feed-songs"] [data-testid="track-row"]').first.click()
+            page.locator('[data-testid="endless-feed-song"]').first.click()
             page.wait_for_timeout(1800)
             mini = page.locator('[data-testid="mini-player"]').count()
             log(name, "v341-endless-feed-plays", mini >= 1, f"mini-player visible={mini}")

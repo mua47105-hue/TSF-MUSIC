@@ -4,6 +4,11 @@
  * "E" box, animated green equalizer on the active track, sparkle badge
  * for Smart Shuffle picks, optional heart toggle / index / custom right
  * slot / long-press. Spotify lists show no hearts by default.
+ *
+ * React.memo (R8-P1): parent re-renders (feed appends, chip flips) can no
+ * longer re-render every mounted row — only rows whose props actually
+ * changed re-render. onPress IS compared (call sites build closures over
+ * list indexes; a memo that ignored it would go stale on reorder).
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -70,7 +75,7 @@ function ExplicitBadge() {
   );
 }
 
-export function TrackRow({
+export const TrackRow = React.memo(function TrackRow({
   track,
   index,
   onPress,
@@ -177,7 +182,7 @@ export function TrackRow({
         ) : null)}
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {

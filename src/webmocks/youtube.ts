@@ -13,10 +13,26 @@
 import type { Track } from '../types';
 import { YT_TRACKS, ytSearchFixtures } from './fixtures';
 
+/** Synthetic page-2+ rows for the YouTube continuation (R8-P3 harness
+ *  parity) — unique ids so pagination is exercisable, same shape as the
+ *  fixture rows so the UI renders them identically. */
+function ytMoreFixtures(query: string): Track[] {
+  return YT_TRACKS.map((t, i) => ({
+    ...t,
+    id: `yt-more-${i}`,
+    title: i % 3 === 0 ? `${t.title} (Alternate Take)` : `${t.title} ${i}`,
+  }));
+}
+
 export interface YtSearchResult {
   tracks: Track[];
   albums: Array<{ title: string; browseId?: string; artist?: string }>;
   latencyMs: number;
+  /** R8-P3 parity: page-2 continuation token for ytSearchMusicMore. */
+  continuation?: string;
+  /** R8-P2 parity: "showing results for" spell correction. */
+  correctedTo?: string;
+  didYouMean?: string;
 }
 
 export interface ResolveOutcome {
@@ -99,6 +115,9 @@ export function setPoTokenProvider(): void {
 
 // ── search ──
 
+/** R8-P3 parity: the first page answers with a continuation whenever
+ *  there are more fixture rows than the limit — so the harness exercises
+ *  the SearchScreen YouTube load-more path exactly like production. */
 export async function ytSearchMusic(
   query: string,
   limit = 20,
@@ -115,7 +134,36 @@ export async function ytSearchMusic(
           { title: 'Singles', browseId: 'MPREb_alb2' },
         ]
       : [];
-  return { tracks, albums, latencyMs: Date.now() - t0 };
+  // spell correction parity: fuzzy "tu chaiye" → "tu chahiye"
+  const correctedTo = /chaiye/i.test(query) && !/chahiye/i.test(query) ? 'tu chahiye' : undefined;
+  const more = ytMoreFixtures(query).length;
+  const continuation = tracks.length > 0 && more > 0 ? `cont:${query}:1` : undefined;
+  return { tracks, albums, latencyMs: Date.now() - t0, ...(continuation ? { continuation } : {}), ...(correctedTo ? { correctedTo } : {}) };
+}
+
+/** R8-P3 parity: continuation page 2+ — deterministic synthetic rows. */
+export async function ytSearchMusicMore(
+  continuation: string,
+  limit = 30,
+  _signal?: AbortSignal,
+): Promise<{ tracks: Track[]; continuation?: string; latencyMs: number }> {
+  const t0 = Date.now();
+  if (!ytAvailable()) return { tracks: [], latencyMs: 0 };
+  await new Promise((r) => setTimeout(r, 200));
+  const m = /^cont:(.*):(\d+)$/.exec(continuation);
+  if (!m) return { tracks: [], latencyMs: Date.now() - t0 };
+  const query = m[1];
+  const page = parseInt(m[2], 10) + 1;
+  const rows = ytMoreFixtures(query)
+    .slice((page - 2) * limit, (page - 1) * limit)
+    .map((t, i) => ({ ...t, id: `${t.id}-p${page}-${i}` }));
+  const total = ytMoreFixtures(query).length;
+  const next = (page - 1) * limit < total ? `cont:${query}:${page}` : undefined;
+  return {
+    tracks: rows,
+    latencyMs: Date.now() - t0,
+    ...(next ? { continuation: next } : {}),
+  };
 }
 
 // ── stream resolution: always resolvable in the harness ──

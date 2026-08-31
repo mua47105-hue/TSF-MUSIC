@@ -202,6 +202,13 @@ const pending = new Map<string, Pending>();
 let webviewRef: { current: any } | null = null;
 let pageLive = false;
 let cachedPair: { visitorData: string; webPot: string; expiresAt: number } | null = null;
+/** CRITIC P2-2 — single-flight mint: ytSearchMusic fires TWO parallel
+ *  WEB_REMIX probes; both await poTokenProvider(). Without this mutex
+ *  a cold session minted the session pair TWICE (2× homepage fetch,
+ *  2× BotGuard VM, 2× GenerateIT) and the failure path of one mint
+ *  reset state mid-flight of the other. Concurrent callers now share
+ *  ONE in-flight promise. */
+let mintInFlight: Promise<void> | null = null;
 let reqSeq = 0;
 
 function callPage(payload: Record<string, unknown>): void {
@@ -254,12 +261,21 @@ export function YtPoTokenBridge(): JSX.Element | null {
       try {
         const now = Date.now();
         if (!cachedPair || now >= cachedPair.expiresAt) {
-          const s = await request({ type: 'yt-mint-session' }, 20000);
-          cachedPair = { visitorData: String(s.visitorData ?? ''), webPot: String(s.webPot ?? ''), expiresAt: now + 11 * 60 * 60 * 1000 };
+          mintInFlight ??= (async () => {
+            try {
+              const s = await request({ type: 'yt-mint-session' }, 20000);
+              cachedPair = { visitorData: String(s.visitorData ?? ''), webPot: String(s.webPot ?? ''), expiresAt: Date.now() + 11 * 60 * 60 * 1000 };
+            } finally {
+              mintInFlight = null;
+            }
+          })();
+          await mintInFlight;
         }
+        const pair = cachedPair;
+        if (!pair) return null; // mint failed — callers run tokenless (ladder handles it)
         return {
-          visitorData: cachedPair.visitorData,
-          webPot: cachedPair.webPot,
+          visitorData: pair.visitorData,
+          webPot: pair.webPot,
           mintPlayerPot: async (videoId: string) => {
             try {
               if (!pageLive) return null;
@@ -330,5 +346,6 @@ export function resetYtPoTokenBridge(): void {
   pending.clear();
   pageLive = false;
   cachedPair = null;
+  mintInFlight = null; // CRITIC P2-2: a stale in-flight mint must not resolve into the reset state
   webviewRef = null;
 }

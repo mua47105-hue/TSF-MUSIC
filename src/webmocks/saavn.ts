@@ -6,6 +6,7 @@
 import type { Collection, Track } from '../types';
 import { isClean } from '../safety';
 import { art, CHARTS, TRACKS, SEARCH_EXTRA, searchFixtures } from './fixtures';
+import { recordingKey } from '../api/recording';
 
 function filterClean(list: Track[]): Track[] {
   return list.filter((t) => isClean({ title: t.title, artist: t.artist, explicit: t.explicit }));
@@ -39,13 +40,13 @@ export async function searchSaavn(
   // browse/feed queries (the endless-home-feed ladder + genre cards)
   // return a realistic full page — on the real provider these broad
   // queries always answer. Junk queries ("zzqqxx") still honestly fail.
-  if (isBrowseQuery(query)) return browsePage(query, page, limit);
+  if (isBrowseQuery(query)) return dedupeRecordings(browsePage(query, page, limit));
   // page 1 = the real fixture rows; pages 2+ = deterministic synthetic
   // rows unique per (query, page) so pagination UI is fully exercisable;
   // pages beyond PAGE_DEPTH come back empty (honest end in the harness)
-  if (page <= 1) return searchFixtures(query, limit);
+  if (page <= 1) return dedupeRecordings(searchFixtures(query, limit));
   if (page > PAGE_DEPTH) return [];
-  return syntheticPage(query, page, limit);
+  return dedupeRecordings(syntheticPage(query, page, limit));
 }
 
 /** Mirrors src/api/feed.ts SONG_QUERIES (kept in sync for the harness). */
@@ -121,16 +122,39 @@ function titleSeed(q: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-/** Mirrors src/api/saavn.ts (kept in sync for the web harness). */
+/** Mirrors src/api/saavn.ts (kept in sync for the web harness) — id AND
+ *  recording-key dedup (R8-P4). */
 export function mergeUniqueTracks(prev: Track[], next: Track[]): Track[] {
-  const seen = new Set(prev.map((t) => t.id));
+  const seenIds = new Set(prev.map((t) => t.id));
+  const seenKeys = new Set(
+    prev.map((t) => recordingKey({ title: t.title, artist: t.artist, artistsFull: t.artistsFull })),
+  );
   const fresh: Track[] = [];
   for (const t of next) {
-    if (seen.has(t.id)) continue;
-    seen.add(t.id);
+    if (seenIds.has(t.id)) continue;
+    const key = recordingKey({ title: t.title, artist: t.artist, artistsFull: t.artistsFull });
+    if (seenKeys.has(key)) continue;
+    seenIds.add(t.id);
+    seenKeys.add(key);
     fresh.push(t);
   }
   return fresh.length ? [...prev, ...fresh] : prev;
+}
+
+/** Mirrors src/api/saavn.ts (R8-P4). */
+export function dedupeRecordings(tracks: Track[]): Track[] {
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const out: Track[] = [];
+  for (const t of tracks) {
+    if (seenIds.has(t.id)) continue;
+    const key = recordingKey({ title: t.title, artist: t.artist, artistsFull: t.artistsFull });
+    if (seenKeys.has(key)) continue;
+    seenIds.add(t.id);
+    seenKeys.add(key);
+    out.push(t);
+  }
+  return out;
 }
 
 /** Mirrors src/api/saavn.ts. */

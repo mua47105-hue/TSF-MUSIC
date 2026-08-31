@@ -12,7 +12,7 @@ import { colors, fonts, radius, spacing } from '../theme';
 import { Artwork } from './Artwork';
 import { PressableScale } from './PressableScale';
 
-export function ShelfCard({
+export const ShelfCard = React.memo(function ShelfCard({
   title,
   subtitle,
   artwork,
@@ -60,7 +60,7 @@ export function ShelfCard({
       </View>
     </PressableScale>
   );
-}
+});
 
 export function Shelf({
   title,
@@ -99,7 +99,7 @@ export function Shelf({
  * QuickTile — Spotify home shortcut: #2A2A2A tile, rounded-square artwork
  * flush-left, bold white single-line label.
  */
-export function QuickTile({
+export const QuickTile = React.memo(function QuickTile({
   title,
   subtitle,
   artwork,
@@ -152,7 +152,7 @@ export function QuickTile({
       </View>
     </PressableScale>
   );
-}
+});
 
 const styles = StyleSheet.create({
   shelf: { gap: 12, marginBottom: 32 },

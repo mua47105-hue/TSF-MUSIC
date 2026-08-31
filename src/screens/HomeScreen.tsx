@@ -14,13 +14,11 @@
  * filtered; every editorial shelf renders through collectionIsClean.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  FlatList,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -264,10 +262,6 @@ export function HomeScreen() {
     load();
   }, [load]);
 
-  // ── Endless feed (F2) — Spotify's scroll-forever tail ───────────────
-  /** Distance from the bottom (px) that triggers prefetching the next batch. */
-  const FEED_TRIGGER_PX = 600;
-
   const resetFeed = useCallback(() => {
     feedEpochRef.current += 1; // in-flight old-pager batches are void now
     pagerRef.current = null;
@@ -370,22 +364,287 @@ export function HomeScreen() {
   const loading = mixes === null && trending === null;
   const showAI = chip !== 'music'; // AI surfaces under All + AI chips
 
-  // ── Endless feed scroll trigger (F2) ─────────────────────────────
-  const onFeedScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      // never prefetch while the skeleton is up (content height is a lie)
-      if (loading) return;
-      const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-      if (contentSize.height === 0) return;
-      const distanceFromBottom =
-        contentSize.height - (layoutMeasurement.height + contentOffset.y);
-      if (distanceFromBottom < FEED_TRIGGER_PX) void loadFeedMore();
+
+  const openArtist = useCallback(
+    (artist: string) =>
+      nav.navigate('Collection', {
+        collection: {
+          id: `artist-${artist}`,
+          title: artist,
+          subtitle: 'Artist',
+          artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
+          kind: 'search',
+          query: artist,
+        },
+      }),
+    [nav, popularArtists],
+  );
+  const openCollection = useCallback(
+    (c: Collection) => nav.navigate('Collection', { collection: c }),
+    [nav],
+  );
+  const onGoAI = useCallback(() => nav.navigate('AI'), [nav]);
+
+  // ── Endless feed → windowed FlatList rows (R8-P1) ──────────────────
+  // The old ScrollView mounted EVERY feed row forever — scrolling deep
+  // left hundreds of image rows in the tree and every feed-state flip
+  // re-rendered them all (the "scrolls fine, then lags" report). The
+  // FlatList unmounts far rows (windowing) and the memo'd row wrappers
+  // keep feed appends from re-rendering the rows above.
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [];
+    feedBatches.forEach((batch, bi) => {
+      if (batch.kind === 'songs') {
+        items.push({ k: 'header', key: `fh-${bi}`, title: batch.title });
+        batch.songs.forEach((t) => items.push({ k: 'song', key: t.id, track: t }));
+      } else if (batch.kind === 'albums') {
+        items.push({ k: 'albumShelf', key: `fa-${bi}`, title: batch.title, albums: batch.albums });
+      }
+    });
+    return items;
+  }, [feedBatches]);
+
+  const feedKeyExtractor = useCallback((item: FeedItem) => item.key, []);
+  const renderFeedItem = useCallback(
+    ({ item }: { item: FeedItem }) => {
+      if (item.k === 'header') return <FeedHeaderRow title={item.title} />;
+      if (item.k === 'song') return <FeedSongRow track={item.track} onPlay={playFeedSong} />;
+      return <FeedAlbumShelf title={item.title} albums={item.albums} onOpen={openCollection} />;
     },
-    [loading, loadFeedMore],
+    [playFeedSong, openCollection],
   );
 
-  /* Spotify's 8-tile shortcut grid: pinned first (Liked Songs), then
-   * mixes, trending, recents, and the AI tile filling slot 8. */
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <FlatList
+        data={feedItems}
+        keyExtractor={feedKeyExtractor}
+        renderItem={renderFeedItem}
+        ListHeaderComponent={
+          <HomeHeader
+            chip={chip}
+            setChip={setChip}
+            userName={userName}
+            offline={offline}
+            loading={loading}
+            showAI={showAI}
+            hasMixes={hasMixes}
+            mixes={mixes}
+            favorites={favorites}
+            nowSound={nowSound}
+            recents={recents}
+            popularArtists={popularArtists}
+            trending={trending}
+            onTheRise={onTheRise}
+            because={because}
+            newAlbums={newAlbums}
+            featured={featured}
+            charts={charts}
+            winWidth={winWidth}
+            play={play}
+            openTrackCollection={openTrackCollection}
+            openArtist={openArtist}
+            onGoAI={onGoAI}
+          />
+        }
+        ListFooterComponent={
+          <FeedFooter
+            loading={loading}
+            feedState={feedState}
+            onRetry={retryFeed}
+            showEmpty={!hasMixes && recents.length === 0 && (!trending || trending.length === 0)}
+            onGoAI={onGoAI}
+          />
+        }
+        onEndReached={() => {
+          // never prefetch while the skeleton is up (content height is a lie)
+          if (!loading) void loadFeedMore();
+        }}
+        onEndReachedThreshold={1}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              resetFeed();
+              load(true).finally(() => setRefreshing(false));
+            }}
+            tintColor={colors.accentBright}
+            colors={[colors.accentBright]}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 190 }}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={9}
+        updateCellsBatchingPeriod={40}
+      />
+    </View>
+  );
+}
+
+// ── R8-P1 windowed-feed primitives ─────────────────────────────────────────
+// Every wrapper is React.memo'd with STABLE props (track refs, stable
+// callbacks) so a feed append re-renders ONLY the new rows — the rows
+// above keep their mounted views. ShelfCard/Artwork/QuickTile (in their
+// own modules) are memo'd too; their onPress closures capture per-card
+// data objects, so ignoring closure identity is safe there.
+
+/** One flattened feed row (FlatList data element). */
+type FeedItem =
+  | { k: 'header'; key: string; title: string }
+  | { k: 'song'; key: string; track: Track }
+  | { k: 'albumShelf'; key: string; title: string; albums: Collection[] };
+
+/** "Top Songs" section header — same look as the old batch wrapper. */
+const FeedHeaderRow = React.memo(function FeedHeaderRow({ title }: { title: string }) {
+  return (
+    <View style={styles.feedSection}>
+      <Text style={styles.feedHeader} testID="endless-feed-songs">
+        {title}
+      </Text>
+    </View>
+  );
+});
+
+/** A feed song row — memo holds across feed appends (stable track ref +
+ *  stable onPlay), so TrackRow re-renders only on player changes. */
+const FeedSongRow = React.memo(function FeedSongRow({
+  track,
+  onPlay,
+}: {
+  track: Track;
+  onPlay: (t: Track) => void;
+}) {
+  return (
+    <View testID="endless-feed-song">
+      <TrackRow track={track} onPress={() => onPlay(track)} />
+    </View>
+  );
+});
+
+/** A feed album shelf batch (cards in a horizontal rail). */
+const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
+  title,
+  albums,
+  onOpen,
+}: {
+  title: string;
+  albums: Collection[];
+  onOpen: (c: Collection) => void;
+}) {
+  return (
+    <Shelf title={title}>
+      {albums.map((c) => (
+        <ShelfCard
+          key={c.id}
+          title={c.title}
+          subtitle={c.subtitle}
+          artwork={c.artwork}
+          seed={`feed-album-${c.id}`}
+          size={150}
+          onPress={() => onOpen(c)}
+        />
+      ))}
+    </Shelf>
+  );
+});
+
+/** Spinner / retry row / honest end marker + the quiet footer. */
+const FeedFooter = React.memo(function FeedFooter({
+  loading,
+  feedState,
+  onRetry,
+  showEmpty,
+  onGoAI,
+}: {
+  loading: boolean;
+  feedState: 'idle' | 'loading' | 'retry' | 'exhausted';
+  onRetry: () => void;
+  showEmpty: boolean;
+  onGoAI: () => void;
+}) {
+  if (loading) return null;
+  return (
+    <>
+      {feedState === 'loading' ? (
+        <ActivityIndicator color={colors.accentBright} style={styles.feedSpinner} />
+      ) : null}
+      {feedState === 'retry' ? (
+        <PressableScale haptic style={styles.feedRetry} onPress={onRetry}>
+          <Ionicons name="refresh" size={15} color={colors.textDim} />
+          <Text style={styles.feedRetryText}>Couldn't load more — tap to retry</Text>
+        </PressableScale>
+      ) : null}
+      {feedState === 'exhausted' ? (
+        <Text style={styles.feedEnd} testID="endless-feed-end">
+          You've reached the end
+        </Text>
+      ) : null}
+      {showEmpty ? <EmptyHome onGoAI={onGoAI} /> : null}
+      <View style={styles.footerDivider}>
+        <View style={styles.footerRule} />
+        <Text style={styles.footerText}>TSF Music · Music for everyone</Text>
+      </View>
+    </>
+  );
+});
+
+/** The fixed shelves (everything above the endless feed). Memo'd: feed
+ *  appends and feed-state flips CANNOT re-render this subtree — only
+ *  actual shelf data changes do (each settles exactly once per load). */
+const HomeHeader = React.memo(function HomeHeader({
+  chip,
+  setChip,
+  userName,
+  offline,
+  loading,
+  showAI,
+  hasMixes,
+  mixes,
+  favorites,
+  nowSound,
+  recents,
+  popularArtists,
+  trending,
+  onTheRise,
+  because,
+  newAlbums,
+  featured,
+  charts,
+  winWidth,
+  play,
+  openTrackCollection,
+  openArtist,
+  onGoAI,
+}: {
+  chip: Chip;
+  setChip: (c: Chip) => void;
+  userName: string;
+  offline: boolean;
+  loading: boolean;
+  showAI: boolean;
+  hasMixes: boolean;
+  mixes: DailyMix[] | null;
+  favorites: Track[];
+  nowSound: NowSoundCard | null;
+  recents: Track[];
+  popularArtists: ArtistInfo[];
+  trending: Track[] | null;
+  onTheRise: OnTheRiseCard | null;
+  because: Array<{ artist: string; seedTrack?: Track }>;
+  newAlbums: Collection[];
+  featured: Collection[];
+  charts: Collection[];
+  winWidth: number;
+  play: (tracks: Track[], index: number) => void;
+  openTrackCollection: (title: string, tracks: Track[]) => void;
+  openArtist: (artist: string) => void;
+  onGoAI: () => void;
+}) {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
   const quickTiles: Array<{
     title: string;
     subtitle?: string;
@@ -444,362 +703,274 @@ export function HomeScreen() {
     });
   const quickTileList = quickTiles.slice(0, 8);
 
-  const openArtist = (artist: string) =>
-    nav.navigate('Collection', {
-      collection: {
-        id: `artist-${artist}`,
-        title: artist,
-        subtitle: 'Artist',
-        artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
-        kind: 'search',
-        query: artist,
-      },
-    });
-
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 190 }}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={64}
-        onScroll={onFeedScroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              resetFeed();
-              load(true).finally(() => setRefreshing(false));
-            }}
-            tintColor={colors.accentBright}
-            colors={[colors.accentBright]}
-          />
-        }
+    <>
+    {/* ── Header: avatar far-left + chips (genuine Spotify order) ── */}
+    <View style={styles.header}>
+      <PressableScale
+        scaleTo={0.92}
+        haptic
+        onPress={() => nav.navigate('Stats')}
+        style={styles.avatar}
       >
-        {/* ── Header: avatar far-left + chips (genuine Spotify order) ── */}
-        <View style={styles.header}>
+        <Text style={styles.avatarText}>{(userName || 'T').slice(0, 1).toUpperCase()}</Text>
+      </PressableScale>
+      <View style={styles.chipRow}>
+        {(['all', 'music', 'ai'] as Chip[]).map((c) => (
           <PressableScale
-            scaleTo={0.92}
+            key={c}
+            scaleTo={0.94}
             haptic
-            onPress={() => nav.navigate('Stats')}
-            style={styles.avatar}
+            onPress={() => setChip(c)}
+            style={[styles.chip, chip === c && styles.chipActive]}
           >
-            <Text style={styles.avatarText}>{(userName || 'T').slice(0, 1).toUpperCase()}</Text>
+            <Text style={[styles.chipText, chip === c && styles.chipTextActive]}>
+              {c === 'all' ? 'All' : c === 'music' ? 'Music' : 'AI'}
+            </Text>
           </PressableScale>
-          <View style={styles.chipRow}>
-            {(['all', 'music', 'ai'] as Chip[]).map((c) => (
-              <PressableScale
-                key={c}
-                scaleTo={0.94}
-                haptic
-                onPress={() => setChip(c)}
-                style={[styles.chip, chip === c && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, chip === c && styles.chipTextActive]}>
-                  {c === 'all' ? 'All' : c === 'music' ? 'Music' : 'AI'}
-                </Text>
-              </PressableScale>
-            ))}
-          </View>
-        </View>
+        ))}
+      </View>
+    </View>
 
-        {offline ? (
-          <View style={styles.offlineChip}>
-            <Ionicons name="cloud-offline-outline" size={13} color={colors.textDim} />
-            <Text style={styles.offlineText}>Offline — pull to retry</Text>
-          </View>
-        ) : null}
+    {offline ? (
+      <View style={styles.offlineChip}>
+        <Ionicons name="cloud-offline-outline" size={13} color={colors.textDim} />
+        <Text style={styles.offlineText}>Offline — pull to retry</Text>
+      </View>
+    ) : null}
 
-        {/* ── Quick shortcuts — Spotify 8-tile grid, #2A2A2A ──────────── */}
-        {quickTileList.length > 0 && (
-          <View style={styles.quickGrid}>
-            {quickTileList.map((t) => (
-              <QuickTile
-                key={t.seed}
-                title={t.title}
-                subtitle={t.subtitle}
-                artwork={t.artwork}
-                seed={t.seed}
-                icon={t.icon}
-                liked={t.liked}
-                width={quickTileWidth(winWidth)}
-                onPress={t.onPress}
+    {/* ── Quick shortcuts — Spotify 8-tile grid, #2A2A2A ──────────── */}
+    {quickTileList.length > 0 && (
+      <View style={styles.quickGrid}>
+        {quickTileList.map((t) => (
+          <QuickTile
+            key={t.seed}
+            title={t.title}
+            subtitle={t.subtitle}
+            artwork={t.artwork}
+            seed={t.seed}
+            icon={t.icon}
+            liked={t.liked}
+            width={quickTileWidth(winWidth)}
+            onPress={t.onPress}
+          />
+        ))}
+      </View>
+    )}
+
+    {loading ? (
+      <ShelfSkeleton />
+    ) : (
+      <>
+        {/* ── Made for you / Made for {name} (AI Daily Mixes) ────── */}
+        {hasMixes && showAI ? (
+          <Shelf title={userName ? `Made for ${userName}` : 'Made for you'}>
+            {mixes!.map((mix) => (
+              <ShelfCard
+                key={mix.id}
+                title={mix.title}
+                subtitle={mix.subtitle}
+                artwork={mix.artwork}
+                seed={mix.id}
+                size={150}
+                onPress={() => openTrackCollection(mix.title, mix.tracks)}
               />
             ))}
-          </View>
-        )}
+            <AICreateCard onPress={() => nav.navigate('AI')} />
+          </Shelf>
+        ) : null}
 
-        {loading ? (
-          <ShelfSkeleton />
-        ) : (
-          <>
-            {/* ── Made for you / Made for {name} (AI Daily Mixes) ────── */}
-            {hasMixes && showAI ? (
-              <Shelf title={userName ? `Made for ${userName}` : 'Made for you'}>
-                {mixes!.map((mix) => (
-                  <ShelfCard
-                    key={mix.id}
-                    title={mix.title}
-                    subtitle={mix.subtitle}
-                    artwork={mix.artwork}
-                    seed={mix.id}
-                    size={150}
-                    onPress={() => openTrackCollection(mix.title, mix.tracks)}
-                  />
-                ))}
-                <AICreateCard onPress={() => nav.navigate('AI')} />
-              </Shelf>
-            ) : null}
+        {/* ── Now Sound (daylist §9.4) — the time-aware shelf ─────── */}
+        {nowSound && nowSound.tracks.length > 0 && showAI ? (
+          <Shelf title="Now Sound">
+            <ShelfCard
+              title={nowSound.title}
+              subtitle={nowSound.subtitle}
+              artwork={nowSound.tracks[0]?.artwork ?? ''}
+              seed={nowSound.id}
+              size={150}
+              onPress={() =>
+                openTrackCollection(nowSound.title, nowSound.tracks as unknown as Track[])
+              }
+            />
+            <AICreateCard onPress={() => nav.navigate('AI')} />
+          </Shelf>
+        ) : null}
 
-            {/* ── Now Sound (daylist §9.4) — the time-aware shelf ─────── */}
-            {nowSound && nowSound.tracks.length > 0 && showAI ? (
-              <Shelf title="Now Sound">
-                <ShelfCard
-                  title={nowSound.title}
-                  subtitle={nowSound.subtitle}
-                  artwork={nowSound.tracks[0]?.artwork ?? ''}
-                  seed={nowSound.id}
-                  size={150}
-                  onPress={() =>
-                    openTrackCollection(nowSound.title, nowSound.tracks as unknown as Track[])
-                  }
-                />
-                <AICreateCard onPress={() => nav.navigate('AI')} />
-              </Shelf>
-            ) : null}
-
-            {/* ── Jump back in ───────────────────────────────────────── */}
-            {recents.length > 0 ? (
-              <Shelf title="Jump back in">
-                {recents.slice(0, 10).map((t) => (
-                  <ShelfCard
-                    key={t.id}
-                    title={t.title}
-                    subtitle={t.album ? `Album · ${t.artist}` : t.artist}
-                    artwork={t.artwork}
-                    seed={t.id}
-                    size={150}
-                    onPress={() => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id)))}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Popular artists — REAL photos, circular rail ─────────── */}
-            {popularArtists.length > 0 ? (
-              <Shelf title="Popular artists">
-                {popularArtists.map((a) => (
-                  <PressableScale
-                    key={a.name}
-                    haptic
-                    testID="home-artist"
-                    onPress={() => openArtist(a.name)}
-                    style={styles.artistCell}
-                  >
-                    <Artwork
-                      uri={a.image}
-                      seed={a.name}
-                      initials={a.name}
-                      size={124}
-                      variant="circle"
-                    />
-                    <View style={{ gap: 2 }}>
-                      <Text style={styles.artistName} numberOfLines={1}>
-                        {a.name}
-                      </Text>
-                      <Text style={styles.artistSub}>Artist</Text>
-                    </View>
-                  </PressableScale>
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Trending now ───────────────────────────────────────── */}
-            {trending && trending.length > 0 ? (
-              <Shelf
-                title="Trending now"
-                actionLabel="Show all"
-                onAction={() => openTrackCollection('Trending now', trending)}
-              >
-                {trending.slice(0, 10).map((t) => (
-                  <ShelfCard
-                    key={t.id}
-                    title={t.title}
-                    subtitle={t.album ? `Album · ${t.artist}` : t.artist}
-                    artwork={t.artwork}
-                    seed={t.id}
-                    size={150}
-                    onPress={() => play(trending, Math.max(0, trending.findIndex((x) => x.id === t.id)))}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── On the Rise (§9.6) — the weekly discovery flagship ──── */}
-            {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
-              <Shelf title="On the Rise">
-                {onTheRise.tracks.slice(0, 10).map((t) => (
-                  <ShelfCard
-                    key={t.id}
-                    title={t.title}
-                    subtitle={`via ${t.viaArtist}`}
-                    artwork={t.artwork}
-                    seed={`rise-${t.id}`}
-                    size={150}
-                    onPress={() =>
-                      openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
-                    }
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Because you listened ───────────────────────────────── */}
-            {because.map(({ artist, seedTrack }) => (
-              <Shelf key={artist} title={`Because you listened to ${artist}`}>
-                <ArtistRadioCard
-                  artist={artist}
-                  image={popularArtists.find((a) => a.name === artist)?.image}
-                  onPress={() => openArtist(artist)}
-                />
-                {seedTrack ? (
-                  <ShelfCard
-                    title={seedTrack.title}
-                    subtitle={seedTrack.artist}
-                    artwork={seedTrack.artwork}
-                    seed={`because-${seedTrack.id}`}
-                    size={150}
-                    onPress={() =>
-                      nav.navigate('Collection', {
-                        collection: {
-                          id: `artist-${artist}`,
-                          title: artist,
-                          subtitle: 'Artist radio',
-                          artwork: seedTrack.artwork,
-                          kind: 'search',
-                          query: artist,
-                        },
-                      })
-                    }
-                  />
-                ) : null}
-              </Shelf>
+        {/* ── Jump back in ───────────────────────────────────────── */}
+        {recents.length > 0 ? (
+          <Shelf title="Jump back in">
+            {recents.slice(0, 10).map((t) => (
+              <ShelfCard
+                key={t.id}
+                title={t.title}
+                subtitle={t.album ? `Album · ${t.artist}` : t.artist}
+                artwork={t.artwork}
+                seed={t.id}
+                size={150}
+                onPress={() => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id)))}
+              />
             ))}
+          </Shelf>
+        ) : null}
 
-            {/* ── New releases (JioSaavn editorial albums) ─────────────── */}
-            {newAlbums.length > 0 ? (
-              <Shelf title="New releases">
-                {newAlbums.map((c) => (
-                  <ShelfCard
-                    key={c.id}
-                    title={c.title}
-                    subtitle={c.subtitle}
-                    artwork={c.artwork}
-                    seed={`album-${c.id}`}
-                    size={150}
-                    onPress={() => nav.navigate('Collection', { collection: c })}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Featured playlists (editorial) ───────────────────────── */}
-            {featured.length > 0 ? (
-              <Shelf title="Featured playlists">
-                {featured.map((c) => (
-                  <ShelfCard
-                    key={c.id}
-                    title={c.title}
-                    subtitle={c.subtitle}
-                    artwork={c.artwork}
-                    seed={`feat-${c.id}`}
-                    size={150}
-                    onPress={() => nav.navigate('Collection', { collection: c })}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Popular charts ─────────────────────────────────────── */}
-            {charts.length > 0 ? (
-              <Shelf title="Popular charts">
-                {charts.map((c) => (
-                  <ShelfCard
-                    key={c.id}
-                    title={c.title}
-                    subtitle={c.subtitle}
-                    artwork={c.artwork}
-                    seed={c.id}
-                    size={150}
-                    onPress={() => nav.navigate('Collection', { collection: c })}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-
-            {/* ── Endless feed (F2) — keep scrolling, keep finding music ── */}
-            {feedBatches.map((batch, bi) =>
-              batch.kind === 'songs' ? (
-                <View
-                  key={`feed-songs-${bi}`}
-                  style={styles.feedSection}
-                  testID="endless-feed-songs"
-                >
-                  <Text style={styles.feedHeader}>{batch.title}</Text>
-                  {batch.songs.map((t) => (
-                    <TrackRow
-                      key={t.id}
-                      track={t}
-                      onPress={() => playFeedSong(t)}
-                    />
-                  ))}
+        {/* ── Popular artists — REAL photos, circular rail ─────────── */}
+        {popularArtists.length > 0 ? (
+          <Shelf title="Popular artists">
+            {popularArtists.map((a) => (
+              <PressableScale
+                key={a.name}
+                haptic
+                testID="home-artist"
+                onPress={() => openArtist(a.name)}
+                style={styles.artistCell}
+              >
+                <Artwork
+                  uri={a.image}
+                  seed={a.name}
+                  initials={a.name}
+                  size={124}
+                  variant="circle"
+                />
+                <View style={{ gap: 2 }}>
+                  <Text style={styles.artistName} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                  <Text style={styles.artistSub}>Artist</Text>
                 </View>
-              ) : batch.kind === 'albums' ? (
-                <Shelf key={`feed-albums-${bi}`} title={batch.title}>
-                  {batch.albums.map((c) => (
-                    <ShelfCard
-                      key={c.id}
-                      title={c.title}
-                      subtitle={c.subtitle}
-                      artwork={c.artwork}
-                      seed={`feed-album-${c.id}`}
-                      size={150}
-                      onPress={() => nav.navigate('Collection', { collection: c })}
-                    />
-                  ))}
-                </Shelf>
-              ) : null,
-            )}
-            {feedState === 'loading' ? (
-              <ActivityIndicator color={colors.accentBright} style={styles.feedSpinner} />
-            ) : null}
-            {feedState === 'retry' ? (
-              <PressableScale haptic style={styles.feedRetry} onPress={retryFeed}>
-                <Ionicons name="refresh" size={15} color={colors.textDim} />
-                <Text style={styles.feedRetryText}>Couldn't load more — tap to retry</Text>
               </PressableScale>
-            ) : null}
-            {feedState === 'exhausted' ? (
-              <Text style={styles.feedEnd} testID="endless-feed-end">
-                You've reached the end
-              </Text>
-            ) : null}
+            ))}
+          </Shelf>
+        ) : null}
 
-            {!hasMixes && recents.length === 0 && (!trending || trending.length === 0) ? (
-              <EmptyHome onGoAI={() => nav.navigate('AI')} />
-            ) : null}
+        {/* ── Trending now ───────────────────────────────────────── */}
+        {trending && trending.length > 0 ? (
+          <Shelf
+            title="Trending now"
+            actionLabel="Show all"
+            onAction={() => openTrackCollection('Trending now', trending)}
+          >
+            {trending.slice(0, 10).map((t) => (
+              <ShelfCard
+                key={t.id}
+                title={t.title}
+                subtitle={t.album ? `Album · ${t.artist}` : t.artist}
+                artwork={t.artwork}
+                seed={t.id}
+                size={150}
+                onPress={() => play(trending, Math.max(0, trending.findIndex((x) => x.id === t.id)))}
+              />
+            ))}
+          </Shelf>
+        ) : null}
 
-            {/* ── Footer — Spotify's quiet end-of-feed divider ─────────── */}
-            <View style={styles.footerDivider}>
-              <View style={styles.footerRule} />
-              <Text style={styles.footerText}>TSF Music · Music for everyone</Text>
-            </View>
-          </>
-        )}
-      </ScrollView>
-    </View>
+        {/* ── On the Rise (§9.6) — the weekly discovery flagship ──── */}
+        {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
+          <Shelf title="On the Rise">
+            {onTheRise.tracks.slice(0, 10).map((t) => (
+              <ShelfCard
+                key={t.id}
+                title={t.title}
+                subtitle={`via ${t.viaArtist}`}
+                artwork={t.artwork}
+                seed={`rise-${t.id}`}
+                size={150}
+                onPress={() =>
+                  openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
+                }
+              />
+            ))}
+          </Shelf>
+        ) : null}
+
+        {/* ── Because you listened ───────────────────────────────── */}
+        {because.map(({ artist, seedTrack }) => (
+          <Shelf key={artist} title={`Because you listened to ${artist}`}>
+            <ArtistRadioCard
+              artist={artist}
+              image={popularArtists.find((a) => a.name === artist)?.image}
+              onPress={() => openArtist(artist)}
+            />
+            {seedTrack ? (
+              <ShelfCard
+                title={seedTrack.title}
+                subtitle={seedTrack.artist}
+                artwork={seedTrack.artwork}
+                seed={`because-${seedTrack.id}`}
+                size={150}
+                onPress={() =>
+                  nav.navigate('Collection', {
+                    collection: {
+                      id: `artist-${artist}`,
+                      title: artist,
+                      subtitle: 'Artist radio',
+                      artwork: seedTrack.artwork,
+                      kind: 'search',
+                      query: artist,
+                    },
+                  })
+                }
+              />
+            ) : null}
+          </Shelf>
+        ))}
+
+        {/* ── New releases (JioSaavn editorial albums) ─────────────── */}
+        {newAlbums.length > 0 ? (
+          <Shelf title="New releases">
+            {newAlbums.map((c) => (
+              <ShelfCard
+                key={c.id}
+                title={c.title}
+                subtitle={c.subtitle}
+                artwork={c.artwork}
+                seed={`album-${c.id}`}
+                size={150}
+                onPress={() => nav.navigate('Collection', { collection: c })}
+              />
+            ))}
+          </Shelf>
+        ) : null}
+
+        {/* ── Featured playlists (editorial) ───────────────────────── */}
+        {featured.length > 0 ? (
+          <Shelf title="Featured playlists">
+            {featured.map((c) => (
+              <ShelfCard
+                key={c.id}
+                title={c.title}
+                subtitle={c.subtitle}
+                artwork={c.artwork}
+                seed={`feat-${c.id}`}
+                size={150}
+                onPress={() => nav.navigate('Collection', { collection: c })}
+              />
+            ))}
+          </Shelf>
+        ) : null}
+
+        {/* ── Popular charts ─────────────────────────────────────── */}
+        {charts.length > 0 ? (
+          <Shelf title="Popular charts">
+            {charts.map((c) => (
+              <ShelfCard
+                key={c.id}
+                title={c.title}
+                subtitle={c.subtitle}
+                artwork={c.artwork}
+                seed={c.id}
+                size={150}
+                onPress={() => nav.navigate('Collection', { collection: c })}
+              />
+            ))}
+          </Shelf>
+        ) : null}
+      </>
+    )}
+
+    </>
   );
-}
+});
 
 // Quick-tile grid math is window-reactive: the two-column width is computed
 // per render from the CURRENT window width (W2 — tablets, split-screen,

@@ -36,7 +36,7 @@ import {
   type EngineDeps,
   type SearchV2Result,
 } from '../api/music';
-import { ytSearchMusic, ytAvailable } from '../api/youtube';
+import { ytSearchMusic, ytSearchMusicMore, ytAvailable } from '../api/youtube';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
@@ -125,6 +125,8 @@ export function SearchScreen() {
     partialTitle?: string;
     /** YouTube source cooling down after repeated failures (P1-3 note) */
     ytUnavailable?: boolean;
+    /** YouTube already searched this spelling ("showing results for") */
+    ytCorrectedTo?: string;
   }>({ degraded: false });
   const [loading, setLoading] = useState(false);
   // ── infinite results pagination (F1) ─────────────────────────────
@@ -140,6 +142,9 @@ export function SearchScreen() {
   useEffect(() => {
     resultsRef.current = results;
   }, [results]);
+  /** YouTube search continuation token — page 2+ of the songs-filter
+   *  catalog (R8-P3: the deep list, not 6-8 rows and done). */
+  const ytContRef = useRef<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [browseArt, setBrowseArt] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
@@ -206,14 +211,54 @@ export function SearchScreen() {
 
   /**
    * Infinite scroll (F1): catalog keyword searches append JioSaavn page
-   * p+1 as the user approaches the end. Rows are deduped by id, muted
-   * artists are honored (engine parity), the top-result card never moves,
-   * and the feed stops HONESTLY (empty / <25% fresh page → end marker).
-   * YouTube + vibe modes never paginate (bounded result sets).
+   * p+1 as the user approaches the end. Rows are deduped by id AND
+   * recording key (R8-P4), muted artists are honored (engine parity),
+   * the top-result card never moves, and the feed stops HONESTLY (empty /
+   * <25% fresh page → end marker). YouTube mode walks the songs-filter
+   * continuation (R8-P3) — page 2+ of YouTube Music's catalog list.
    */
   const loadMoreResults = useCallback(async () => {
     if (loadingMore || !hasMore || loading || resultsRef.current.length === 0) return;
-    if (vibe || source !== 'catalog') return;
+    if (vibe) return;
+    if (source === 'youtube') {
+      // R8-P3: YouTube deep-list pagination — continuation of the
+      // songs-filter catalog (fresh rows only, id + recording deduped).
+      const cont = ytContRef.current;
+      if (!cont) {
+        setHasMore(false);
+        setEndNote("That's everything YouTube found");
+        return;
+      }
+      const q = query.trim();
+      if (!q) return;
+      const gen = searchGen.current;
+      setLoadingMore(true);
+      try {
+        const more = await ytSearchMusicMore(cont, 30, abortRef.current?.signal);
+        if (gen !== searchGen.current) return; // stale — new query won
+        if (more.tracks.length) {
+          const merged = mergeUniqueTracks(resultsRef.current, more.tracks);
+          resultsRef.current = merged;
+          setResults(merged);
+        }
+        ytContRef.current = more.continuation ?? null;
+        if (more.continuation) {
+          setHasMore(true);
+        } else {
+          setHasMore(false);
+          setEndNote("That's everything YouTube found");
+        }
+      } catch {
+        if (gen === searchGen.current) {
+          setHasMore(false);
+          setEndNote("Couldn't load more — check your connection");
+        }
+      } finally {
+        if (gen === searchGen.current) setLoadingMore(false);
+      }
+      return;
+    }
+    if (source !== 'catalog') return;
     const q = query.trim();
     if (!q) return;
     const gen = searchGen.current;
@@ -298,11 +343,18 @@ export function SearchScreen() {
           const ytr = await ytSearchMusic(q, 25, ctrl.signal);
           if (gen !== searchGen.current) return;
           setResults(ytr.tracks);
-          setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: ytr.tracks.length === 0 && !ytAvailable() });
+          setMeta({
+            degraded: false,
+            sigState: undefined,
+            partialArtists: undefined,
+            ytUnavailable: ytr.tracks.length === 0 && !ytAvailable(),
+            ytCorrectedTo: ytr.correctedTo,
+          });
           setVibeChips([]);
-          // YouTube mode never paginates — honest end marker instead
-          setHasMore(false);
-          setEndNote(ytr.tracks.length ? "That's everything YouTube found" : null);
+          // R8-P3: the catalog list goes deeper — keep scrolling
+          ytContRef.current = ytr.continuation ?? null;
+          setHasMore(!!ytr.continuation);
+          setEndNote(null);
           void mindbeat.searchQueried(q, ytr.tracks.length);
           await pushRecentSearch(q);
           setRecentSearches(await getRecentSearches());
@@ -848,6 +900,11 @@ export function SearchScreen() {
               {meta.ytUnavailable && source === 'youtube' ? (
                 <Text style={styles.sigRescuedNote}>
                   YouTube is taking a break after repeated failures — try Catalog
+                </Text>
+              ) : null}
+              {meta.ytCorrectedTo && source === 'youtube' ? (
+                <Text style={styles.relaxedNote} numberOfLines={1}>
+                  Showing results for “{meta.ytCorrectedTo}”
                 </Text>
               ) : null}
               {meta.sigState === 'rescued' && results[0]?.rescueRung === 'youtube' ? (
