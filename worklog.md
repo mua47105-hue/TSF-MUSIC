@@ -1204,3 +1204,41 @@ Stage Summary:
   independent levels with 9 regression locks (proven red on the old
   code). Pending: CI completion + APK binary verification + one field
   screenshot from the user as final confirmation.
+
+---
+Task ID: 15 (v3.4.4 ship + binary verification)
+Agent: Super Z (main agent)
+
+Task: Ship the R7 half-screen fix and binary-verify the shipped APK.
+
+Work Log:
+- Commit 23a0e8c (fix + 9 locks + suite hygiene) pushed; first tag
+  build succeeded but its binary marker for belt 1 ("containerStyle")
+  was proven non-unique (the string ships inside react-native-webview's
+  own bundled code — present in v3.4.3 too). Added testID=
+  "yt-po-token-webview" to the mount (unique, minification-safe,
+  doubles as a UI-automation hook), locked it in the source contract,
+  re-tagged v3.4.4 (commit b0093f3), rebuilt.
+- CI #59 (main) + #60 (tag v3.4.4) both SUCCESS — 236-test + tsc gate
+  ran inside the build.
+- verify_v344_apk.py on the SHIPPED APK: 13/13 OK — versionName 3.4.4,
+  versionCode 160 (>155, in-place upgrade over 3.4.3), belt 1 testID
+  marker + belt 2 poTokenHost in the Hermes bundle, YtPoTokenBridge/
+  YouTube source intact, all four PROPERTY_COMPAT opt-outs +
+  maxAspectRatio 2.6 + resizeable + no orientation lock retained,
+  WhatsNew v3_4_4 key present. Verifier AXML reads go through
+  pyaxmlparser (compiled-manifest string search is nonsense); sanity
+  re-run: all 3 R7 markers correctly FAIL on the v3.4.3 APK.
+- Release live: https://github.com/mua47105-hue/TSF-MUSIC/releases/tag/v3.4.4
+  (app-release.apk 79.4 MB, same keystore -> installs over 3.4.x).
+- Local copies kept in download/ (v3.4.4 + v3.4.3 sanity APK);
+  /tmp/lab clone removed; workspace clean.
+
+Stage Summary:
+- v3.4.4 SHIPPED and binary-verified. The half-screen bug (four
+  releases, every Android device, both orientations) is root-caused to
+  the invisible react-native-webview v14 flex:1 wrapper and shut out by
+  a two-level fix with 9 regression locks (proven red on the old code).
+  User action: update over 3.4.3 and just open the app — no settings
+  changes, no cold-start rituals. One field screenshot (portrait home
+  screen) closes the loop definitively.

@@ -54,8 +54,16 @@ def hermes_strings(apk_path):
 
 
 def manifest_xml(apk_path):
+    """Compiled AXML -> real XML via pyaxmlprinter (binary string-pool
+    search would be nonsense; the v3.4.3 verifier proved this parser)."""
     with zipfile.ZipFile(apk_path) as z:
-        return z.read("AndroidManifest.xml").decode("utf-8", errors="ignore")
+        raw = z.read("AndroidManifest.xml")
+    try:
+        from pyaxmlprinter.axmlprinter import AXMLPrinter
+    except Exception:
+        from pyaxmlparser.axmlprinter import AXMLPrinter
+    xml = AXMLPrinter(raw).get_xml()
+    return xml.decode("utf-8", "replace") if isinstance(xml, bytes) else str(xml)
 
 
 def verify(apk_path):
@@ -63,8 +71,8 @@ def verify(apk_path):
 
     # ── 1. version stamps ────────────────────────────────────────────────
     axml = manifest_xml(apk_path)
-    check("versionName 3.4.4", 'versionName="3.4.4"' in axml)
-    m = re.search(r'versionCode="(\d+)"', axml)
+    check("versionName 3.4.4", 'android:versionName="3.4.4"' in axml)
+    m = re.search(r'android:versionCode="(\d+)"', axml)
     code = int(m.group(1)) if m else 0
     check("versionCode > 155 (monotonic over 3.4.3)", code > 155, f"got {code}")
 
@@ -95,9 +103,16 @@ def verify(apk_path):
         "android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE",
         "android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES",
     ]:
-        check(f"manifest keeps {prop.split('PROPERTY_COMPAT_ALLOW_')[1]}=false", prop in axml)
-    check("manifest keeps maxAspectRatio 2.6", 'maxAspectRatio="2.6"' in axml or "2.600000" in axml)
-    check("manifest keeps resizeableActivity=true", 'resizeableActivity="true"' in axml)
+        ok = bool(
+            re.search(r'<property[^>]*android:name="' + re.escape(prop) + r'"[^>]*android:value="false"', axml)
+            or re.search(r'<property[^>]*android:value="false"[^>]*android:name="' + re.escape(prop) + r'"', axml)
+        )
+        check(f"manifest keeps {prop.split('PROPERTY_COMPAT_ALLOW_')[1]}=false", ok)
+    check(
+        "manifest keeps maxAspectRatio 2.6",
+        re.search(r'android:maxAspectRatio="2\.6\d*"', axml) is not None,
+    )
+    check("manifest keeps resizeableActivity=true", 'android:resizeableActivity="true"' in axml)
     check("manifest still has NO screenOrientation lock", "screenOrientation" not in axml)
 
     # ── 4. WhatsNew ──────────────────────────────────────────────────────
