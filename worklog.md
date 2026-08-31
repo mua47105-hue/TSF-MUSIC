@@ -1131,3 +1131,76 @@ Stage Summary:
   LANDSCAPE screenshot (4:3 clamp => ~800x600 window with side mattes;
   split-align override => 480x600; desktop host => floating chrome) —
   one image discriminates every residual mechanism.
+
+---
+Task ID: 14 (gauntlet R7 — the real half-screen fix)
+Agent: Super Z (main agent)
+
+Task: The user reported the half-screen split on BOTH the itel P55
+phone and the OPPO Pad Air tablet (screenshots in upload/), said all
+previous fixes did nothing, demanded a deep dive + universal fix +
+end-to-end tests.
+
+Work Log:
+- Unzipped and forensically analyzed all 6 field screenshots (VLM +
+  pixel row-profiles): itel 429x960 FULL-SCREEN window, OPPO 576x960 /
+  960x576 FULL-SCREEN — the v3.4.3 window-policy fix DID land (rotation
+  works, window fills display), but app content ends at EXACTLY 50.0%
+  of window height on every device/orientation; void below = RGB(10,10,10)
+  = the app's own windowBackground #0A0A0B (RN renders NOTHING there).
+  Onboarding screens (native Modal) unaffected; main tab screens split.
+  This also retroactively falsifies R6's "4:3 OS clamp" theory: a 4:3
+  clamp on a 2.24-aspect phone ends content at ~33.5%, never 50.0% —
+  R6's "600x450 window" was numerology on the same 50% split.
+- Root cause hunt: v3.3.0 App.tsx is structurally identical to v3.4.0
+  (only tab-bar insets changed) — but v3.4.0's own commit message says
+  withWindowPolicy was added to kill a pre-existing "split-screen
+  half-window wedge", and lab's MAIN-BUILDER-HANDOVER.md pins the bug's
+  birth to lab.3 — the commit that added the BotGuard WebView minter.
+  Only new dependency in v3.4.0: react-native-webview@14.
+- ROOT CAUSE (verified in node_modules source): react-native-webview
+  v14 renders <View style={[{flex:1,overflow:'hidden'}, containerStyle]>
+  wrapping the native WebView (whose style is [{flex:1},{#fff},style]).
+  The caller's `style` lands ONLY on the inner native view. The bridge
+  mounted its hidden WebView with position:absolute on `style` alone →
+  the library's wrapper stayed flex:1 IN-FLOW as a sibling of the whole
+  app under SafeAreaProvider's flex:1 View → Yoga 50/50 split. Web
+  unaffected (bridge returns null), onboarding unaffected (Modal).
+- FIX (double belt): (1) ytPoToken.tsx now passes containerStyle=
+  {position:absolute,1x1,opacity:0.01} + style={flex:1,transparent};
+  (2) PlayerProvider hosts the bridge inside an absolute sub-pixel
+  touch-transparent View (styles.poTokenHost) — version-proof: ANY
+  child of a 1x1 absolute host cannot split the screen. The native
+  WebView still measures 1x1 → BotGuard runtime conditions unchanged
+  (field-proven playback preserved).
+- LOCKS: tests/ai/po_bridge_layout_locks.test.ts — renders the REAL
+  bridge through a byte-faithful v14-wrapper replica (mock.module +
+  react-dom/server renderToString) asserting the library wrapper is
+  OUT-OF-FLOW; MECHANISM locks document why style-only mounting is
+  in-flow (the bug) vs containerStyle (the fix); source-contract locks
+  pin the double belt; library-drift guard asserts the INSTALLED
+  webview still has the assumed wrapper shape. Verified red-on-old:
+  5 locks fail on the pre-fix mount (git stash round-trip), 9/9 green.
+- Suite hygiene: root-caused 2 order-dependent failures (youtube.test
+  leaked its last setYtFetch stub; sig_e2e leaks globalThis.fetch) —
+  rescue tests degraded 'rescued'→'partial' depending on file order.
+  Fixed with seam resets on entry + PRISTINE_FETCH restore on exit;
+  both CLI orders + full suite x2 green. Suite 227 → 236, tsc clean.
+- CRITIC (fresh-context, machine-verified all 7 sections A–G): verdict
+  SHIP, 0 P0/P1; its own independent pixel re-analysis reproduced
+  exactly 50.0% boundaries (itel portrait row 480/960, OPPO landscape
+  288/576). P2 nits fixed: isInFlow semantics (relative IS in-flow),
+  replica fidelity (#fff layer), library-drift guard added,
+  package.json version bump.
+- Shipped: commit 23a0e8c pushed to main + tag v3.4.4 → CI runs
+  33353296209 (main) / 33353297499 (tag). scripts/verify_v344_apk.py
+  prepared (belt markers: containerStyle + poTokenHost + WhatsNew
+  v3_4_4 + retained window policy).
+
+Stage Summary:
+- The 4-release half-screen mystery is CLOSED: an invisible
+  react-native-webview v14 flex:1 wrapper (not any OS window policy)
+  was eating the bottom half of every Android screen. Fixed at two
+  independent levels with 9 regression locks (proven red on the old
+  code). Pending: CI completion + APK binary verification + one field
+  screenshot from the user as final confirmation.

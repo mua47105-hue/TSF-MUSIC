@@ -306,6 +306,7 @@ export function YtPoTokenBridge(): JSX.Element | null {
         left: 0,
         opacity: 0.01,
       }}
+      testID="yt-po-token-webview"
       originWhitelist={['*']}
       javaScriptEnabled
       domStorageEnabled

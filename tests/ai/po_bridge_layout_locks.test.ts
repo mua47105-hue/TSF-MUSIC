@@ -193,6 +193,11 @@ describe('R7 — source contracts (the double belt)', () => {
     const cs = src.match(/containerStyle\s*=\s*\{\s*\{?([\s\S]*?)\n?\s*\}\s*\}/)?.[1] ?? '';
     expect(cs).toContain("width: 1");
     expect(cs).toContain("height: 1");
+    // binary-verification marker: the testID survives Hermes minification
+    // as a string literal and is unique to this mount (library prop names
+    // like containerStyle appear in the library's own bundled code and
+    // cannot distinguish our call site)
+    expect(src).toContain('testID="yt-po-token-webview"');
   });
 
   test('ytPoToken.tsx never again carries the broken style-only absolute mount', () => {
