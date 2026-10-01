@@ -11,15 +11,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_0';
+const SEEN_KEY = 'tsf.whatsNew.v4_0_1';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'PULSE — the whole app is redrawn: an editorial, paper-and-ink broadsheet with acid accents, Archivo Black display type and hard shadows. Zero blur, zero rounded corners.',
-  'The Wire is now a full tab: MINDBEAT files narrated 25-track playlists from a typed vibe, with a live pipeline view.',
-  'Every surface got micro-interactions: press-in buttons, the front-page ticker, acid equalizer bars, and a striped seek bar in the broadsheet player.',
-  'Under the hood nothing changed: 320 kbps playback, YouTube rescue, MINDBEAT intelligence, downloads and your library are exactly as v3.4.5 left them.',
+  'Typing is fixed: the Index search field no longer doubles your keystrokes on fast typing — what you type is what you get, on every text surface in the app.',
+  'Artist photos are fixed: artist pages now resolve the real photo, and when none exists you get an honest initials stamp instead of a stranger’s album cover.',
+  'Same-class sweep: On The Rise and stats tiles show true artist artwork, joined credits resolve to the right person, and rename dialogs stay steady under load.',
+  'Nothing else moved: 320 kbps playback, YouTube rescue, downloads and your library are exactly as v4.0.0 left them.',
 ];
 
 export function WhatsNewDialog() {
@@ -62,7 +62,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0 · PULSE — THE BROADSHEET REDESIGN
+            TSF MUSIC 4.0.1 — THE FIX EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
