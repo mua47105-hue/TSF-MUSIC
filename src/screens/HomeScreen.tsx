@@ -40,7 +40,7 @@ import {
   searchSaavn,
 } from '../api/saavn';
 import { EndlessFeedPager, type FeedBatch } from '../api/feed';
-import { ARTIST_SEEDS, lookupArtistPhoto, type ArtistInfo } from '../api/artists';
+import { ARTIST_SEEDS, cleanArtistName, lookupArtistPhoto, type ArtistInfo } from '../api/artists';
 import { getBecauseYouListened, getDailyMixes } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
 import type { NowSoundCard } from '../ai/surfaces/daylist';
@@ -360,7 +360,7 @@ export function HomeScreen() {
           title: artist,
           subtitle: 'Artist',
           artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
-          kind: 'search',
+          kind: 'artist',
           query: artist,
         },
       }),
@@ -626,6 +626,30 @@ const HomeHeader = React.memo(function HomeHeader({
   onGoAI: () => void;
 }) {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  // ── On The Rise wears the ARTIST's photo (v4.0.1) ──────────────────
+  // The cards used to borrow the SONG's album cover while labeled as the
+  // artist — the wrong-image class the sanitize gate rejects everywhere
+  // else. Real photos resolve like the Popular Artists rail (seed cache →
+  // live lookup); artists with no photo wear an honest initials stamp.
+  const [riseArt, setRiseArt] = useState<Record<string, string>>({});
+  const riseKeys = useMemo(
+    () =>
+      (onTheRise?.tracks.slice(0, 10) ?? [])
+        .map((t) => cleanArtistName(t.artist))
+        .filter(Boolean) as string[],
+    [onTheRise],
+  );
+  useEffect(() => {
+    const unique = [...new Set(riseKeys)].slice(0, 6);
+    unique.forEach((name) => {
+      if (riseArt[name] !== undefined) return;
+      lookupArtistPhoto(name)
+        .then((img) => setRiseArt((prev) => ({ ...prev, [name]: img ?? '' })))
+        .catch(() => undefined);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riseKeys]);
 
   const h = new Date().getHours();
   const dayWord = h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening';
@@ -903,18 +927,22 @@ const HomeHeader = React.memo(function HomeHeader({
 
           {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
             <Shelf kicker="DISCOVERY DESK" title="On The Rise">
-              {onTheRise.tracks.slice(0, 10).map((t) => (
-                <ArtistCard
-                  key={t.id}
-                  name={t.artist}
-                  meta={`via ${t.viaArtist}`}
-                  artwork={t.artwork}
-                  seed={`rise-${t.id}`}
-                  onPress={() =>
-                    openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
-                  }
-                />
-              ))}
+              {onTheRise.tracks.slice(0, 10).map((t) => {
+                const key = cleanArtistName(t.artist) || t.artist;
+                const railArt = popularArtists.find((a) => a.name === t.artist)?.image;
+                return (
+                  <ArtistCard
+                    key={t.id}
+                    name={t.artist}
+                    meta={`via ${t.viaArtist}`}
+                    artwork={railArt ?? riseArt[key]}
+                    seed={`rise-${t.id}`}
+                    onPress={() =>
+                      openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
+                    }
+                  />
+                );
+              })}
             </Shelf>
           ) : null}
 
@@ -923,7 +951,7 @@ const HomeHeader = React.memo(function HomeHeader({
               <ArtistCard
                 name={artist}
                 meta="Artist radio"
-                artwork={popularArtists.find((a) => a.name === artist)?.image ?? seedTrack?.artwork}
+                artwork={popularArtists.find((a) => a.name === artist)?.image}
                 seed={`because-${artist}`}
                 onPress={() => openArtist(artist)}
               />
@@ -940,8 +968,8 @@ const HomeHeader = React.memo(function HomeHeader({
                         id: `artist-${artist}`,
                         title: artist,
                         subtitle: 'Artist radio',
-                        artwork: seedTrack.artwork,
-                        kind: 'search',
+                        artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
+                        kind: 'artist',
                         query: artist,
                       },
                     })

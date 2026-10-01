@@ -46,6 +46,7 @@ import {
   searchSaavnArtists,
   type ArtistInfo,
 } from '../api/artists';
+import { useStableField } from '../hooks/useStableField';
 import { mindbeat } from '../ai/mindbeat';
 import { Artwork } from './Artwork';
 import { Brutal, MonoText } from './Brutal';
@@ -111,6 +112,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [catIdx, setCatIdx] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState('');
+  // Uncontrolled field (v4.0.1): the artist-search box used a controlled
+  // value prop that raced result-grid re-renders and duplicated fast
+  // keystrokes — the same class as the SearchScreen "hihiz" bug.
+  const field = useStableField({ onCommit: setQuery });
   const [searchHits, setSearchHits] = useState<ArtistInfo[] | null>(null);
   const [nameFocus, setNameFocus] = useState(false);
   const nameInput = useRef<TextInput>(null);
@@ -171,7 +176,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   }, []);
 
   const doSearch = async () => {
-    const q = query.trim();
+    const q = field.getValue().trim();
     if (!q) {
       setSearchHits(null);
       return;
@@ -372,12 +377,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               <Ionicons name="search" size={16} color={colors.ink60} />
               <TextInput
                 testID="onb-search"
+                ref={field.inputRef}
                 style={styles.searchInput as never}
                 placeholder="SEARCH ARTISTS"
                 placeholderTextColor={colors.ink40}
-                value={query}
                 onChangeText={(t) => {
-                  setQuery(t);
+                  field.handleChange(t);
                   if (!t.trim()) setSearchHits(null);
                 }}
                 returnKeyType="search"
@@ -385,7 +390,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 selectionColor={colors.orange}
               />
               {query.length > 0 ? (
-                <PressableScale haptic onPress={() => { setQuery(''); setSearchHits(null); }} hitSlop={8}>
+                <PressableScale haptic onPress={() => { field.setValue(''); setSearchHits(null); }} hitSlop={8}>
                   <Ionicons name="close" size={16} color={colors.ink60} />
                 </PressableScale>
               ) : null}

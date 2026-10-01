@@ -1,0 +1,117 @@
+{
+  "total_unique_artists": 263,
+  "missing_after_sanitize": 92,
+  "missing_names": [
+    "Jawad Ahmad",
+    "Jxggi",
+    "Jind Universe",
+    "Gargi",
+    "DA REAL INSANE",
+    "Abby Viral",
+    "K King",
+    "Saanwari Yajnik",
+    "Wokal Tanwar",
+    "Ruhani Ikjot",
+    "Posssh",
+    "Siddharth-Garima",
+    "Manoj Yadav",
+    "Madoc",
+    "Виктор Дормидонтов",
+    "Delta 500 Records",
+    "Republica India",
+    "Sufiyat Fiza",
+    "Sultan Ateeq Rehman",
+    "Zakir Ali",
+    "Mukesh Love Vibes",
+    "Harminder Sandhu",
+    "Hitzone",
+    "Fraser Fifield",
+    "Sukhjeet Raja",
+    "Skkyy",
+    "Troup",
+    "Adil Hussaini Hyderabadi",
+    "Jivan Safar Dharmik",
+    "Saif Samejo"
+  ],
+  "recovery_checked": 40,
+  "recovered_by_page_details": 0,
+  "recovery_failures": [
+    {
+      "id": "479493",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "15457860",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "15097944",
+      "image": "https://static.saavncdn.com/_i/share-image-2.png",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "535874",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "11398172",
+      "image": "https://static.saavncdn.com/_i/share-image-2.png",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "6708104",
+      "image": "https://c.saavncdn.com/894/JOKER-DISS-TO-BATMAN-English-2019-20190722182018-150x150.jpg",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "2519849",
+      "image": "https://static.saavncdn.com/_i/share-image-2.png",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "8642815",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "10008305",
+      "image": "https://static.saavncdn.com/_i/share-image-2.png",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "25214327",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "5221722",
+      "image": "https://c.saavncdn.com/489/Pubg-Rap-Anthem-Hindi-2019-20181231124427-150x150.jpg",
+      "reason": "placeholder/default"
+    },
+    {
+      "id": "677149",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "477781",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "1206802",
+      "image": null,
+      "reason": "none"
+    },
+    {
+      "id": "25381278",
+      "image": null,
+      "reason": "none"
+    }
+  ],
+  "cdn_upgrade_checked": 40,
+  "cdn_upgrade_404s": []
+}

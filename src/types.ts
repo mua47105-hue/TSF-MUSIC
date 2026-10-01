@@ -72,7 +72,7 @@ export interface Collection {
   artwork: string;
   trackCount?: number;
   /** How to resolve tracks when none were passed in the route */
-  kind?: 'chart' | 'search' | 'album';
+  kind?: 'chart' | 'search' | 'album' | 'artist';
   /** Search query for kind === 'search' */
   query?: string;
 }

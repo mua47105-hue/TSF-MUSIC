@@ -1,0 +1,75 @@
+{
+  "saavn_api": {
+    "search_getResults_ms": {
+      "samples": [
+        530,
+        226,
+        293,
+        231,
+        277
+      ],
+      "median": 277
+    },
+    "homepage_ms": {
+      "ms": 282,
+      "status": 200
+    },
+    "charts_ms": {
+      "ms": 202,
+      "status": 200
+    }
+  },
+  "saavn_song_sample": {
+    "id": "aRZbUYD7",
+    "title": "Tum Hi Ho",
+    "has320_flag": "true"
+  },
+  "stream_path": {
+    "decrypt_ms": 59.14,
+    "base_url_host": "aac.saavncdn.com",
+    "base_variant": {
+      "status": 200,
+      "ttfb_ms": 52,
+      "len": "3190357"
+    },
+    "upgraded_320": {
+      "status": 200,
+      "ttfb_ms": 592,
+      "len": "10527454"
+    },
+    "throughput_512KB": {
+      "ms": 53,
+      "status": 206,
+      "kbps_effective": 79503
+    }
+  },
+  "has320_audit": {
+    "total": 30,
+    "flag_true": 10,
+    "flag_missing": 0,
+    "flag_false": 0,
+    "missing_but_320_ok": 0,
+    "missing_and_320_dead": 0,
+    "checked": 0
+  },
+  "youtube": {
+    "visitor_id_ms": 63,
+    "search_ms": 386,
+    "search_found_video": "Umqb9KENgmk",
+    "player_visionos": {
+      "status": "LOGIN_REQUIRED",
+      "ms": 105,
+      "audio_formats": 0,
+      "picked_itag": null,
+      "bitrate": null
+    }
+  },
+  "itunes": {
+    "search_ms": 28,
+    "results": 20,
+    "preview_128KB": {
+      "status": 206,
+      "ms": 69
+    }
+  }
+}

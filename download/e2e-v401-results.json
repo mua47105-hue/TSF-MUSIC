@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {
+      "name": "onboarding name: 'hi'+'z' == 'hiz' (user repro)",
+      "ok": true,
+      "detail": "field='hiz'"
+    },
+    {
+      "name": "onboarding name: burst append stays exact",
+      "ok": true,
+      "detail": "field='hizditesh'"
+    },
+    {
+      "name": "onboarding artist search: 'ar'+'jit' == 'arjit'",
+      "ok": true,
+      "detail": "field='arjit'"
+    },
+    {
+      "name": "artist page hero carries photo or initials",
+      "ok": true,
+      "detail": "hero img: ncdn.com/artists/Arijit_Singh_004_20241118063717_500x500.jpg"
+    },
+    {
+      "name": "SearchScreen: 'hi'+'z' == 'hiz' (the reported bug)",
+      "ok": true,
+      "detail": "field='hiz'"
+    },
+    {
+      "name": "SearchScreen: typing during result renders stays exact",
+      "ok": true,
+      "detail": "field='hizsingh'"
+    },
+    {
+      "name": "SearchScreen: clear button empties the field",
+      "ok": true,
+      "detail": "field=''"
+    }
+  ],
+  "passed": 7,
+  "failed": 0
+}

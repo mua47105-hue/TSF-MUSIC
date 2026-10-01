@@ -38,6 +38,7 @@ import { TrackRow } from '../components/TrackRow';
 import { Brutal, MonoText, OutlineText, PulseDot } from '../components/Brutal';
 import { Artwork } from '../components/Artwork';
 import { colors, fonts } from '../theme';
+import { useStableField } from '../hooks/useStableField';
 import type { RootStackParamList } from './navigation';
 
 type Stage = 0 | 1 | 2 | 3 | 4 | 5; // 5 = done
@@ -67,7 +68,12 @@ export function MindbeatWireScreen() {
   const { playQueue } = usePlayer();
   const toast = useToast();
 
+  // Uncontrolled field (v4.0.1): the AI run re-renders this whole screen
+  // when it lands; a controlled value prop raced those renders and
+  // duplicated text typed while the wire was busy (the SearchScreen "hihiz"
+  // class). The native text is the truth; prompt state is a throttled commit.
   const [prompt, setPrompt] = useState('');
+  const promptField = useStableField({ onCommit: setPrompt });
   const [stage, setStage] = useState<Stage>(5);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeneratedPlaylistV2 | null>(null);
@@ -185,16 +191,16 @@ export function MindbeatWireScreen() {
               style={styles.input}
               placeholder="E.G. PUNJABI GYM BANGERS"
               placeholderTextColor={colors.ink40}
-              value={prompt}
-              onChangeText={setPrompt}
+              ref={promptField.inputRef}
+              onChangeText={promptField.handleChange}
               returnKeyType="go"
-              onSubmitEditing={() => run(prompt)}
+              onSubmitEditing={() => run(promptField.getValue())}
               editable={!busy}
               autoCapitalize="none"
             />
           </View>
           <Brutal
-            onPress={() => (prompt.trim() ? run(prompt, variant + (result ? 1 : 0)) : toast.show({ message: 'FILE A VIBE FIRST' }))}
+            onPress={() => (promptField.getValue().trim() ? run(promptField.getValue(), variant + (result ? 1 : 0)) : toast.show({ message: 'FILE A VIBE FIRST' }))}
             onInk
             shadow={3}
             haptic
@@ -211,7 +217,9 @@ export function MindbeatWireScreen() {
             <Brutal
               key={idea}
               onPress={() => {
-                setPrompt(idea);
+                // write the FIELD (not just state) — the uncontrolled input
+                // needs the native text set too, or field/state diverge
+                promptField.setValue(idea);
                 run(idea);
               }}
               shadow={2}

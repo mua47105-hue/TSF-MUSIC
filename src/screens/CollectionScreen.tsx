@@ -16,6 +16,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import type { Track } from '../types';
 import { getAlbumTracks, getCollectionTracks, searchSaavnClean } from '../api/saavn';
+import { lookupArtistPhoto } from '../api/artists';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
@@ -37,10 +38,36 @@ export function CollectionScreen() {
 
   const [tracks, setTracks] = useState<Track[] | null>(routeTracks ?? null);
   const [loading, setLoading] = useState(
-    !routeTracks && !!(collection.kind === 'chart' || collection.kind === 'search' || collection.kind === 'album'),
+    !routeTracks && !!(collection.kind === 'chart' || collection.kind === 'search' || collection.kind === 'album' || collection.kind === 'artist'),
   );
   const [failed, setFailed] = useState(false);
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
+
+  // ── Artist pages carry the artist's PHOTO (v4.0.1 fix) ────────────
+  // The route often arrives with artwork: '' (the home rail only resolved
+  // a handful of photos), and the old hero fell back to the FIRST SONG's
+  // album cover — an unrelated image — or a blank hatch. Artist pages now
+  // resolve the real photo by name (seed cache → live id lookup) and wear
+  // an initials stamp only when the provider genuinely has none (probe:
+  // ~35% of JioSaavn artists are photo-less).
+  const isArtist = collection.kind === 'artist' || collection.subtitle?.toLowerCase().startsWith('artist');
+  const [artistPhoto, setArtistPhoto] = useState('');
+  useEffect(() => {
+    if (!isArtist) return;
+    if (collection.artwork) {
+      setArtistPhoto(collection.artwork);
+      return;
+    }
+    let cancelled = false;
+    lookupArtistPhoto(collection.title)
+      .then((img) => {
+        if (!cancelled && img) setArtistPhoto(img);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isArtist, collection.artwork, collection.title]);
 
   useEffect(() => {
     if (routeTracks) return;
@@ -52,7 +79,7 @@ export function CollectionScreen() {
           list = await getCollectionTracks(collection.id);
         } else if (collection.kind === 'album') {
           list = await getAlbumTracks(collection.id);
-        } else if (collection.kind === 'search' && collection.query) {
+        } else if ((collection.kind === 'search' || collection.kind === 'artist') && collection.query) {
           list = await searchSaavnClean(collection.query, 40);
         }
         if (!cancelled) {
@@ -84,7 +111,12 @@ export function CollectionScreen() {
     nav.navigate('Player');
   };
 
-  const heroArt = tracks?.[0]?.artwork || collection.artwork;
+  // Artist pages wear the ARTIST's photo — never the first track's album
+  // art (the old `tracks[0].artwork ||` chain put an unrelated cover on
+  // artist pages). Loading state falls to the initials stamp via Artwork.
+  const heroArt = isArtist
+    ? collection.artwork || artistPhoto
+    : tracks?.[0]?.artwork || collection.artwork;
   const isLiked = collection.title === 'Liked Songs';
   // every collection wears its own artwork's colors (Spotify-style tint)
   const palette = useTrackPalette(isLiked ? undefined : heroArt, collection.id);
@@ -99,7 +131,7 @@ export function CollectionScreen() {
         pointerEvents="none"
       />
       <View style={styles.topBar}>
-        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn} testID="collection-back">
           <Ionicons name="chevron-back" size={16} color={colors.ink} />
         </Brutal>
         <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2, flex: 1, textAlign: 'center' }} numberOfLines={1}>
@@ -124,6 +156,7 @@ export function CollectionScreen() {
                   seed={collection.id}
                   size={180}
                   bordered={false}
+                  initials={isArtist ? collection.title : undefined}
                   style={styles.art}
                 />
               )}

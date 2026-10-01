@@ -36,6 +36,20 @@ export const Artwork = React.memo(function Artwork({
 }) {
   const [failed, setFailed] = React.useState(false);
   const radius = variant === 'circle' ? size / 2 : 0;
+  // WORD initials (v4.0.1): first letters of the first two words —
+  // "Arijit Singh" → "AS", never the raw first two characters ("AR",
+  // or "A," for joined credits).
+  const stamp = React.useMemo(() => {
+    if (!initials) return '';
+    const words = initials
+      .replace(/[^A-Za-z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+    return words
+      .slice(0, 2)
+      .map((w) => w[0]!.toUpperCase())
+      .join('');
+  }, [initials]);
 
   if (liked) {
     return (
@@ -61,9 +75,9 @@ export const Artwork = React.memo(function Artwork({
           style,
         ]}
       >
-        {initials ? (
+        {stamp ? (
           <Text style={[styles.initials, { fontSize: Math.max(12, size * 0.3) }]} allowFontScaling={false}>
-            {initials.slice(0, 2).toUpperCase()}
+            {stamp}
           </Text>
         ) : (
           <Ionicons name="musical-notes" size={Math.max(12, size * 0.3)} color={colors.ink60} />

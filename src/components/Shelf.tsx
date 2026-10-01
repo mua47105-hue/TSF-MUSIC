@@ -157,7 +157,7 @@ export const ArtistCard = React.memo(function ArtistCard({
           pressed && { shadowColor: colors.orange },
         ]}
       >
-        <Artwork uri={artwork} seed={seed} size={size - 6} variant="square" bordered={false} style={{ opacity: pressed ? 1 : 0.88 }} />
+        <Artwork uri={artwork} seed={seed} size={size - 6} variant="square" bordered={false} initials={name} style={{ opacity: pressed ? 1 : 0.88 }} />
       </View>
       <Text style={styles.artistName} numberOfLines={1}>
         {name}

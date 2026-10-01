@@ -42,6 +42,7 @@ import {
 } from '../api/music';
 import { ytSearchMusic, ytSearchMusicMore, ytAvailable } from '../api/youtube';
 import { YtAppendController, YT_END_NOTE } from '../search/ytAppend';
+import { useStableField } from '../hooks/useStableField';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
@@ -111,12 +112,13 @@ export function SearchScreen() {
   const browseCols = browseColumnsFor(winWidth);
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
+  // ── the field is UNCONTROLLED (v4.0.1 "hihiz" fix) ────────────────
+  // Native text is the source of truth while typing; `query` state is a
+  // throttled commit (useStableField) that drives the search debounce and
+  // UI conditions. A controlled value prop raced its own commits under
+  // load and duplicated fast keystrokes — see src/hooks/useStableField.ts.
   const [query, setQuery] = useState('');
-  const queryRef = useRef('');
-  const setQueryBoth = useCallback((v: string) => {
-    queryRef.current = v;
-    setQuery(v);
-  }, []);
+  const field = useStableField({ onCommit: setQuery });
   const [results, setResults] = useState<Track[]>([]);
   const [meta, setMeta] = useState<{
     degraded: boolean;
@@ -289,13 +291,13 @@ export function SearchScreen() {
         setEndNote(YT_END_NOTE);
         return;
       }
-      const q = queryRef.current.trim();
+      const q = field.getValue().trim();
       if (!q) return;
       void appendYtPage(searchGen.current);
       return;
     }
     if (source !== 'catalog') return;
-    const q = queryRef.current.trim();
+    const q = field.getValue().trim();
     if (!q) return;
     const gen = searchGen.current;
     setLoadingMore(true);
@@ -517,6 +519,13 @@ export function SearchScreen() {
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
     const q = query;
+    // KNOWN TRADE-OFF (v4.0.1 triage): pressing Enter inside the field's
+    // 120ms commit window runs the search immediately (fresh text), then
+    // the pending commit lands, flips `query`, and THIS effect schedules
+    // one identical re-run 700ms later. Harmless: runSearch is
+    // generation-guarded (stale gens drop), same query → same results —
+    // only the spinner restarts. Not worth a same-text skip that would
+    // also suppress legitimate "edited away and back" re-searches.
     debounce.current = setTimeout(() => runSearch(q), DEBOUNCE_MS);
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
@@ -597,7 +606,7 @@ export function SearchScreen() {
             testID="search-suggest-row"
             style={({ pressed }) => [styles.suggestRow, pressed && { backgroundColor: colors.paper2 }]}
             onPress={() => {
-              setQueryBoth(r.title);
+              field.setValue(r.title);
             }}
           >
             <View style={[styles.suggestArt, r.kind === 'artist' && styles.suggestArtSquare]}>
@@ -670,18 +679,19 @@ export function SearchScreen() {
           <Ionicons name="search" size={18} color={colors.ink60} />
           <TextInput
             style={styles.input}
+            testID="search-input"
             placeholder="TYPE A SONG, ARTIST, OR A LINE YOU REMEMBER"
             placeholderTextColor={colors.ink40}
-            value={query}
-            onChangeText={setQueryBoth}
+            ref={field.inputRef}
+            onChangeText={field.handleChange}
             returnKeyType="search"
-            onSubmitEditing={() => runSearch(query)}
+            onSubmitEditing={() => runSearch(field.getValue())}
             autoCorrect={false}
             onFocus={() => setFieldFocus(true)}
             onBlur={() => setFieldFocus(false)}
           />
           {query.length > 0 ? (
-            <Pressable hitSlop={8} onPress={() => setQueryBoth('')}>
+            <Pressable hitSlop={8} testID="search-clear" onPress={() => field.setValue('')}>
               <Ionicons name="close" size={18} color={colors.ink60} />
             </Pressable>
           ) : null}
@@ -718,7 +728,10 @@ export function SearchScreen() {
                 onPress={() => {
                   if (active) return;
                   setSource(opt.key);
-                  if (query.trim()) runSearch(query.trim(), opt.key);
+                  // read the FRESH field text — committed `query` can lag a
+                  // throttle cycle behind the visible field (v4.0.1)
+                  const q = field.getValue().trim();
+                  if (q) runSearch(q, opt.key);
                 }}
                 style={[styles.sourceChip, active && styles.chipOn]}
               >
@@ -761,7 +774,7 @@ export function SearchScreen() {
                   </View>
                   <View style={styles.recentsChips}>
                     {recentSearches.slice(0, 6).map((s) => (
-                      <Brutal key={s} shadow={2} haptic onPress={() => setQueryBoth(s)} style={styles.recentChip}>
+                      <Brutal key={s} shadow={2} haptic onPress={() => field.setValue(s)} style={styles.recentChip}>
                         <MonoText size={10.5} bold color={colors.ink60} style={{ letterSpacing: 0.4 }}>
                           {s}
                         </MonoText>
@@ -821,7 +834,7 @@ export function SearchScreen() {
                 .filter((s) => s.toLowerCase().includes(query.trim().toLowerCase()))
                 .slice(0, 3)
                 .map((s) => (
-                  <Pressable key={s} style={styles.suggestRow} onPress={() => setQueryBoth(s)}>
+                  <Pressable key={s} style={styles.suggestRow} onPress={() => field.setValue(s)}>
                     <Ionicons name="time-outline" size={16} color={colors.ink40} />
                     <Text style={styles.suggestTitle} numberOfLines={1}>
                       {s}
@@ -848,7 +861,7 @@ export function SearchScreen() {
               </MonoText>
               <View style={styles.dymChips}>
                 {didYouMean.slice(0, 2).map((c) => (
-                  <Brutal key={c.to} haptic shadow={2} style={styles.dymChip} onPress={() => setQueryBoth(c.to)}>
+                  <Brutal key={c.to} haptic shadow={2} style={styles.dymChip} onPress={() => field.setValue(c.to)}>
                     <MonoText size={10.5} bold color={colors.ink}>
                       {c.to.toUpperCase()}
                     </MonoText>
@@ -898,7 +911,7 @@ export function SearchScreen() {
                           onPress={() => {
                             const base = meta.partialTitle?.trim() || planSearch(query).titleTokens.join(' ');
                             const q2 = `${base} ${a}`.trim();
-                            setQueryBoth(q2);
+                            field.setValue(q2);
                             runSearch(q2);
                           }}
                         >
@@ -939,7 +952,7 @@ export function SearchScreen() {
                 <RescueNote>SHOWING RESULTS FOR “{meta.relaxedQuery.toUpperCase()}”</RescueNote>
               ) : null}
               {meta.corrected && meta.corrected !== query.trim().toLowerCase() ? (
-                <Pressable style={styles.sigRescuedNote} onPress={() => setQueryBoth(meta.corrected ?? query)}>
+                <Pressable style={styles.sigRescuedNote} onPress={() => field.setValue(meta.corrected ?? query)}>
                   <MonoText size={9.5} bold color={colors.orangeDeep} style={{ letterSpacing: 1 }} numberOfLines={1}>
                     DID YOU MEAN “{meta.corrected.toUpperCase()}”? TAP TO SEARCH
                   </MonoText>

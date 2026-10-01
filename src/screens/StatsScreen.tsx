@@ -23,6 +23,7 @@ import { getStats } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
 import { usePlayer } from '../player/PlayerProvider';
 import { Artwork } from '../components/Artwork';
+import { lookupArtistPhoto } from '../api/artists';
 import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
@@ -104,7 +105,10 @@ export function StatsScreen() {
         topArtists: (ledger?.topArtists?.length ? ledger.topArtists : legacy?.topArtists ?? []).map((a) => ({
           artist: a.artist,
           plays: a.plays,
-          artwork: (a as { artwork?: string }).artwork,
+          // the stored artwork is the first-PLAYED TRACK's cover, not the
+          // artist's photo (v4.0.1: real photos resolve below via
+          // lookupArtistPhoto; no borrowed album covers on artist rows)
+          artwork: undefined as string | undefined,
         })),
         topTracks: (ledger?.topTracks?.length
           ? ledger.topTracks
@@ -115,6 +119,25 @@ export function StatsScreen() {
         sessions: ledgerUsable ? ledger?.sessions : undefined,
       };
       setStats(merged);
+      // resolve REAL artist photos for the top rows (seed cache → live
+      // lookup, cached); photo-less artists keep the initials stamp.
+      merged.topArtists.slice(0, 8).forEach((a) => {
+        lookupArtistPhoto(a.artist)
+          .then((img) => {
+            if (!img) return;
+            setStats((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    topArtists: prev.topArtists.map((x) =>
+                      x.artist === a.artist ? { ...x, artwork: img } : x,
+                    ),
+                  }
+                : prev,
+            );
+          })
+          .catch(() => undefined);
+      });
     })();
   }, []);
 
@@ -218,7 +241,7 @@ export function StatsScreen() {
                 <MonoText size={10} bold color={colors.ink40} style={styles.rank}>
                   {String(i + 1).padStart(2, '0')}
                 </MonoText>
-                <Artwork uri={a.artwork} seed={a.artist} size={44} />
+                <Artwork uri={a.artwork} seed={a.artist} size={44} initials={a.artist} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.artistName} numberOfLines={1}>
                     {a.artist.toUpperCase()}

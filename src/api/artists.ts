@@ -183,13 +183,19 @@ const nameToSeed = new Map<string, ArtistInfo>(ARTIST_SEEDS.map((a) => [norm(a.n
  * Photo by artist NAME — seeds first (instant), then a live id lookup
  * (cached across calls). Used by Home's "Popular artists" rail and any
  * surface that knows a name from the listening profile.
+ *
+ * v4.0.1: joined credits ("A, B") resolve against the PRIMARY name only
+ * (a search for the full joined string returns a different artist), and
+ * the live hit must match the requested name EXACTLY — the old first-
+ * result fallback could put a stranger's face on the hero.
  */
 export async function lookupArtistPhoto(name: string): Promise<string> {
-  const seed = nameToSeed.get(norm(name));
-  if (seed?.image) return seed.image;
   if (!name.trim()) return '';
-  const found = await searchSaavnArtists(name, 5);
-  const hit = found.find((a) => norm(a.name) === norm(name)) ?? found[0];
+  const primary = name.split(',')[0]!.trim();
+  const seed = nameToSeed.get(norm(primary));
+  if (seed?.image) return seed.image;
+  const found = await searchSaavnArtists(primary, 5);
+  const hit = found.find((a) => norm(a.name) === norm(primary));
   if (hit?.image) return hit.image;
   if (hit?.id) return getArtistPhoto(hit.id);
   return '';
