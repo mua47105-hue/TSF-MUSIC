@@ -1,18 +1,17 @@
 /**
- * Player — authentic Spotify Android now-playing screen:
- *   artwork-colored gradient background (the app repaints per song —
- *   exactly like Spotify's extracted-color player) · large rounded
- *   artwork card · title/artist with green library-check · draggable
- *   thin progress bar · shuffle/prev/white-circle-play/next/repeat ·
- *   devices + share + queue row · tinted lyrics card · Spotify queue
- *   sheet (Now playing / Next up) with Smart Shuffle + Autoplay chips.
- *
- * Performance: static gradient views, one PanResponder, no blur, no
- * loops — the screen stays 60fps-light on low-end devices.
+ * Player — PULSE broadsheet now-playing (v4.0):
+ *   paper canvas with the artwork as a 14% grayscale-style wash ·
+ *   square chevron buttons + kicker · bordered artwork with the hard
+ *   8px ink shadow and the rotated acid "TSF 320 KBPS" stamp · huge
+ *   display title · striped ink-on-orange progress bar with drag-seek ·
+ *   square controls (66px ink play + orange shadow) · lyrics card ·
+ *   CAST/SHARE/SAVE foot · ink-ruled queue sheet with square-switch
+ *   pills. One PanResponder, no blur, no loops — 60fps-light.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Image,
   Modal,
   PanResponder,
   Pressable,
@@ -30,15 +29,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
+import { fetchPlainLyrics } from '../api/lrclib';
 import { usePlayer } from '../player/PlayerProvider';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
-import { PressableScale } from '../components/PressableScale';
+import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
-import { colors, fonts, radius } from '../theme';
+import { colors, fonts } from '../theme';
 import { useDynamicPalette } from '../theme/DynamicThemeProvider';
-import { boostForPlayer } from '../theme/dynamic';
+import { withAlpha } from '../theme/dynamic';
 import { playerArtSize } from '../ui/windowing';
 import type { RootStackParamList } from './navigation';
 
@@ -49,7 +49,9 @@ function fmt(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/* ── Spotify progress bar: 4px, white fill, full drag-seek ─────────── */
+/* ── The striped progress bar: bordered track, ink stripes on acid ── */
+
+const STRIPES = Array.from({ length: 90 }, (_, i) => i);
 
 function ProgressBar({
   duration,
@@ -104,18 +106,20 @@ function ProgressBar({
       {...pan.panHandlers}
     >
       <View style={styles.barTrack}>
-        <View style={[styles.barFill, { width: `${ratio * 100}%` }]} />
-        {scrubbing ? <View style={[styles.barKnob, { left: `${ratio * 100}%` }]} /> : null}
+        {/* the fill: acid with hard ink stripes (the prototype's hatch) */}
+        <View style={[styles.barFillWrap, { width: `${ratio * 100}%` }]}>
+          <View style={styles.barFillStripes}>
+            {STRIPES.map((i) => (
+              <View key={i} style={styles.stripe} />
+            ))}
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
 export function PlayerScreen() {
-  // window-reactive artwork (W2 + R5): tablets / split-screen / pop-up /
-  // DeX / landscape windows re-measure instead of freezing the phone-width
-  // module constant. R5: also cap by window HEIGHT so a wide landscape
-  // window can't produce an oversized square (see src/ui/windowing.ts).
   const { width: winWidth, height: winHeight } = useWindowDimensions();
   const artSize = playerArtSize(winWidth, winHeight);
   const insets = useSafeAreaInsets();
@@ -154,6 +158,30 @@ export function PlayerScreen() {
   const [showQueue, setShowQueue] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [radioLoading, setRadioLoading] = useState(false);
+  // real lyrics (LRCLIB, on-device catalog lookup) — the broadsheet
+  // card prints the actual words, never a fabricated byline
+  const [lyricExcerpt, setLyricExcerpt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLyricExcerpt(null);
+    if (!active) return undefined;
+    const ctrl = new AbortController();
+    fetchPlainLyrics(active.title, active.artist, ctrl.signal)
+      .then((lyrics) => {
+        if (cancelled || !lyrics) return;
+        const lines = lyrics
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith('['));
+        if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [active?.id]);
 
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
@@ -165,15 +193,15 @@ export function PlayerScreen() {
   const startRadio = async () => {
     if (!active || radioLoading) return;
     setRadioLoading(true);
-    toast.show({ message: 'Building your radio…', icon: 'radio-outline' });
+    toast.show({ message: 'BUILDING YOUR RADIO…', icon: 'radio-outline' });
     try {
       const radio = await getRadio(active, 12);
       if (radio.length) {
         await playQueue([active, ...radio], 0);
-        toast.show({ message: `Radio started · ${radio.length + 1} songs`, icon: 'radio' });
+        toast.show({ message: `RADIO STARTED · ${radio.length + 1} SONGS`, icon: 'radio' });
       } else {
         toast.show({
-          message: 'Not enough songs for a radio — try another track',
+          message: 'NOT ENOUGH SONGS FOR A RADIO',
           icon: 'alert-circle-outline',
         });
       }
@@ -186,7 +214,7 @@ export function PlayerScreen() {
     if (!active) return;
     try {
       await Share.share({
-        message: `🎶 ${active.title} — ${active.artist}\nPlaying on TSF Music`,
+        message: `${active.title} — ${active.artist}\nPlaying on TSF Music`,
       });
     } catch {
       /* user cancelled */
@@ -197,10 +225,17 @@ export function PlayerScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Spotify's signature: a gradient built from the artwork's own color */}
+      {/* the artwork wash — 14% under a paper gradient (the prototype's
+          playerBg), carrying a whisper of the song's palette hue */}
+      <Image
+        source={{ uri: active?.artwork }}
+        style={[styles.bgArt, { opacity: 0.14 }]}
+        resizeMode="cover"
+        blurRadius={0}
+      />
       <LinearGradient
-        colors={[boostForPlayer(palette.dominant), palette.wash, '#121212']}
-        locations={[0, 0.42, 0.85]}
+        colors={[colors.paper, withAlpha(palette.wash, 0.55), colors.paper]}
+        locations={[0, 0.45, 1]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -208,55 +243,61 @@ export function PlayerScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
+          { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 16 },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── top bar: collapse + more ─────────────────────────────── */}
+        {/* ── top bar: collapse + kicker + queue ───────────────────── */}
         <View style={styles.topRow}>
-          <Pressable hitSlop={12} onPress={() => nav.goBack()} testID="player-dismiss">
-            <Ionicons name="chevron-down" size={30} color={colors.text} />
-          </Pressable>
-          <Pressable hitSlop={12} onPress={() => setShowMore(true)}>
-            <Ionicons name="ellipsis-horizontal" size={26} color={colors.text} />
-          </Pressable>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} testID="player-dismiss" style={styles.chevBtn}>
+            <Ionicons name="chevron-down" size={16} color={colors.ink} />
+          </Brutal>
+          <MonoText size={9} bold color={colors.ink60} style={{ letterSpacing: 2.2, flex: 1, textAlign: 'center' }} numberOfLines={1}>
+            NOW PLAYING · <MonoText size={9} bold color={colors.orange}>TSF MUSIC</MonoText>
+          </MonoText>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShowQueue(true)} testID="player-queue-btn" style={styles.chevBtn}>
+            <Ionicons name="list" size={16} color={colors.ink} />
+          </Brutal>
         </View>
 
-        {/* ── artwork card ─────────────────────────────────────────── */}
-        <View style={styles.artWrap}>
+        {/* ── artwork + the 320 kbps stamp ─────────────────────────── */}
+        <View style={[styles.artWrap, { width: artSize, height: artSize }]}>
           <Artwork
             uri={active?.artwork}
             seed={trackKey}
             size={artSize}
-            variant="card"
+            bordered={false}
             style={styles.artCard}
           />
-        </View>
-
-        {/* ── title + library check ───────────────────────────────── */}
-        <View style={styles.titleSection}>
-          <View style={{ flex: 1, gap: 4, paddingRight: 12 }}>
-            <Text style={styles.title} numberOfLines={2}>
-              {active?.title ?? 'Nothing playing'}
-            </Text>
-            <Text style={styles.artist} numberOfLines={1}>
-              {active?.artist ?? '—'}
-            </Text>
+          <View style={styles.stamp}>
+            <MonoText size={8} bold color={colors.ink} style={{ letterSpacing: 0.8, textAlign: 'center', lineHeight: 11 }}>
+              TSF{'\n'}320{'\n'}KBPS
+            </MonoText>
           </View>
-          <PressableScale hitSlop={8} haptic onPress={() => active && toggleLike(active)}>
-            {isFav ? (
-              <View style={styles.libCheck}>
-                <Ionicons name="checkmark" size={17} color={colors.black} />
-              </View>
-            ) : (
-              <View style={styles.libPlus}>
-                <Ionicons name="add" size={18} color={colors.white} />
-              </View>
-            )}
-          </PressableScale>
         </View>
 
-        {/* ── progress ────────────────────────────────────────────── */}
+        {/* ── title + like ─────────────────────────────────────────── */}
+        <View style={styles.titleSection}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.title} numberOfLines={2} allowFontScaling={false}>
+              {(active?.title ?? 'NOTHING PLAYING').toUpperCase()}
+            </Text>
+            <MonoText size={11} color={colors.ink60} style={{ marginTop: 8, letterSpacing: 0.8 }} numberOfLines={1}>
+              {active ? `${active.artist.toUpperCase()} · ${(active.album ?? '').toUpperCase()}` : '—'}
+            </MonoText>
+          </View>
+          <Brutal
+            haptic
+            shadow={0}
+            pressOffset={1}
+            onPress={() => active && toggleLike(active)}
+            style={[styles.likeBtn, isFav && { backgroundColor: colors.orange }]}
+          >
+            <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={17} color={colors.ink} />
+          </Brutal>
+        </View>
+
+        {/* ── striped progress ─────────────────────────────────────── */}
         <View style={styles.progressSection}>
           <ProgressBar
             duration={Math.max(1, duration)}
@@ -274,145 +315,142 @@ export function PlayerScreen() {
             }}
           />
           <View style={styles.times}>
-            <Text style={styles.time}>{fmt(scrubbing ? scrubValue : position)}</Text>
-            <Text style={styles.time}>-{fmt(Math.max(0, duration - (scrubbing ? scrubValue : position)))}</Text>
+            <MonoText size={10} color={colors.ink60}>
+              {fmt(scrubbing ? scrubValue : position)}
+            </MonoText>
+            <MonoText size={10} color={colors.ink60}>
+              -{fmt(Math.max(0, duration - (scrubbing ? scrubValue : position)))}
+            </MonoText>
           </View>
         </View>
 
-        {/* ── controls: shuffle · prev · play · next · repeat ─────── */}
+        {/* ── controls ─────────────────────────────────────────────── */}
         <View style={styles.controls}>
-          <PressableScale hitSlop={8} onPress={() => setShuffle(!shuffle)}>
-            <Ionicons
-              name="shuffle"
-              size={26}
-              color={shuffle ? colors.accentBright : colors.text}
-            />
-          </PressableScale>
-          <PressableScale hitSlop={8} onPress={prev}>
-            <Ionicons name="play-skip-back" size={34} color={colors.text} />
-          </PressableScale>
-          <PressableScale
-            scaleTo={0.92}
-            haptic
-            onPress={togglePlay}
-            style={styles.playBtn}
-          >
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShuffle(!shuffle)} style={[styles.smlBtn, shuffle && styles.smlOn]}>
+            <Ionicons name="shuffle" size={19} color={colors.ink} />
+          </Brutal>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => prev()} style={styles.smlBtn}>
+            <Ionicons name="play-skip-back" size={22} color={colors.ink} />
+          </Brutal>
+          <Brutal haptic onInk shadow={4} onPress={togglePlay} style={styles.playBtn}>
             {loading ? (
               <View style={styles.spinner} />
             ) : (
               <Ionicons
                 name={isPlaying ? 'pause' : 'play'}
-                size={62}
-                color={colors.text}
-                style={{ marginLeft: isPlaying ? 0 : 4 }}
+                size={26}
+                color={colors.acid}
+                style={{ marginLeft: isPlaying ? 0 : 3 }}
               />
             )}
-          </PressableScale>
-          <PressableScale hitSlop={8} onPress={next}>
-            <Ionicons name="play-skip-forward" size={34} color={colors.text} />
-          </PressableScale>
-          <PressableScale hitSlop={8} onPress={cycleRepeat}>
+          </Brutal>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => next()} style={styles.smlBtn}>
+            <Ionicons name="play-skip-forward" size={22} color={colors.ink} />
+          </Brutal>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={cycleRepeat} style={[styles.smlBtn, repeat !== 'off' && styles.smlOn]}>
             <View>
-              <Ionicons
-                name="repeat"
-                size={26}
-                color={repeat !== 'off' ? colors.accentBright : colors.text}
-              />
+              <Ionicons name="repeat" size={19} color={colors.ink} />
               {repeat === 'track' ? <View style={styles.repeatOne} /> : null}
             </View>
-          </PressableScale>
+          </Brutal>
         </View>
 
-        {/* ── devices · share · queue ─────────────────────────────── */}
-        <View style={styles.subRow}>
-          <PressableScale hitSlop={8} onPress={() => toast.show({ message: 'Playing on this phone', icon: 'phone-portrait-outline' })}>
-            <Ionicons name="tv-outline" size={20} color={colors.accentBright} />
-          </PressableScale>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 22 }}>
-            <PressableScale hitSlop={8} onPress={onShare}>
-              <Ionicons name="share-outline" size={21} color={colors.text} />
-            </PressableScale>
-            <PressableScale hitSlop={8} onPress={() => setShowQueue(true)} testID="player-queue-btn">
-              <Ionicons name="list" size={22} color={colors.text} />
-            </PressableScale>
-          </View>
-        </View>
-
-        {/* ── lyrics card, tinted by the song's color ─────────────── */}
-        <View style={[styles.lyricsCard, { backgroundColor: boostForPlayer(palette.vibrant) }]}>
-          <Text style={styles.lyricsTitle}>Lyrics</Text>
-          <Text style={styles.lyricsSub} numberOfLines={1}>
-            {active ? `${active.title} — ${active.artist}` : 'Nothing playing'}
-          </Text>
+        {/* ── lyrics card — the real words via LRCLIB ──────────────── */}
+        <View style={styles.lyricsCard}>
+          <MonoText size={8.5} bold color={colors.orange} style={{ letterSpacing: 2 }}>
+            LYRICS · VIA LRCLIB
+          </MonoText>
+          {lyricExcerpt ? (
+            <Text style={styles.lyricsLine} numberOfLines={3}>
+              {lyricExcerpt}
+            </Text>
+          ) : (
+            <Text style={[styles.lyricsLine, { color: colors.ink40 }]} numberOfLines={2}>
+              {active
+                ? `${active.title} — ${active.artist}`
+                : 'The words land here once the catalog resolves this track'}
+            </Text>
+          )}
+          <MonoText size={9.5} color={colors.ink40} style={{ marginTop: 5, letterSpacing: 0.8 }}>
+            {lyricExcerpt ? 'PLAIN LYRICS · ON DEVICE LOOKUP' : 'FETCHING FROM THE LYRICS DESK…'}
+          </MonoText>
         </View>
       </ScrollView>
 
-      {/* ── queue sheet (Spotify: Now playing / Next up) ──────────── */}
+      {/* ── CAST / SHARE / SAVE foot ────────────────────────────────── */}
+      <View style={[styles.foot, { paddingBottom: insets.bottom + 14 }]}>
+        <FootBtn icon="desktop-outline" label="CAST" onPress={() => toast.show({ message: 'NO CAST DEVICES NEARBY', icon: 'desktop-outline' })} />
+        <FootBtn icon="share-outline" label="SHARE" onPress={() => void onShare()} />
+        <FootBtn icon="download-outline" label="SAVE" onPress={() => setShowMore(true)} />
+      </View>
+
+      {/* ── queue sheet (the prototype's #queueSheet) ───────────────── */}
       <Modal visible={showQueue} transparent animationType="slide" onRequestClose={() => setShowQueue(false)}>
         <Pressable style={styles.queueBackdrop} onPress={() => setShowQueue(false)}>
           <Pressable style={styles.queueSheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.queueGrabber} />
             <View style={styles.queueHeaderRow}>
-              <Text style={styles.queueHeader}>Now playing</Text>
-              <Pressable hitSlop={10} onPress={() => setShowQueue(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </Pressable>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.queueHeader}>The Queue</Text>
+                <MonoText size={9.5} color={colors.ink60} style={{ marginTop: 3, letterSpacing: 0.8 }} numberOfLines={1}>
+                  {upNext.length + 1} TRACKS · SMART SHUFFLE {smartShuffle ? 'ON' : 'OFF'}
+                </MonoText>
+              </View>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShowQueue(false)} style={styles.chevBtn}>
+                <Ionicons name="close" size={16} color={colors.ink} />
+              </Brutal>
+            </View>
+
+            {/* square-switch pills */}
+            <View style={styles.queueToggles}>
+              <QueuePill label="SMART SHUFFLE" active={smartShuffle} onPress={() => setSmartShuffle(!smartShuffle)} />
+              <QueuePill label="AUTOPLAY" active={autoplay} onPress={() => setAutoplay(!autoplay)} />
             </View>
 
             {active ? (
               <View style={styles.queueCurrentRow}>
-                <Artwork uri={active.artwork} seed={active.id} size={44} variant="mini" />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={styles.queueActiveTitle} numberOfLines={1}>
-                      {active.title}
-                    </Text>
-                    <EqualizerBars playing={isPlaying} size={12} />
-                  </View>
-                  <Text style={styles.queueSub} numberOfLines={1}>
-                    {active.artist}
-                  </Text>
+                <View style={styles.eqBlock}>
+                  <EqualizerBars playing={isPlaying} size={16} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 0.8 }} numberOfLines={1}>
+                    {active.title.toUpperCase()}
+                  </MonoText>
+                  <MonoText size={9.5} style={{ marginTop: 2 }} numberOfLines={1}>
+                    {active.artist.toUpperCase()}
+                  </MonoText>
                 </View>
               </View>
             ) : null}
 
-            {/* Smart Shuffle + Autoplay — Spotify queue toggle chips */}
-            <View style={styles.queueToggles}>
-              <QueueChip
-                label="Smart Shuffle"
-                icon="sparkles"
-                active={smartShuffle}
-                onPress={() => setSmartShuffle(!smartShuffle)}
-              />
-              <QueueChip
-                label="Autoplay"
-                icon="infinite"
-                active={autoplay}
-                onPress={() => setAutoplay(!autoplay)}
-              />
-            </View>
-
-            <Text style={styles.queueNextHeader}>Next up</Text>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
+              <View style={styles.secLabel}>
+                <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+                  NEXT UP
+                </MonoText>
+                <View style={styles.secRule} />
+              </View>
               {upNext.length === 0 ? (
-                <Text style={styles.queueEmpty}>
-                  Nothing queued — songs you add will appear here
-                </Text>
+                <MonoText size={10} color={colors.ink60} style={{ paddingVertical: 20, textAlign: 'center', letterSpacing: 0.6 }}>
+                  NOTHING QUEUED — SONGS YOU ADD WILL APPEAR HERE
+                </MonoText>
               ) : (
-                upNext.map((t) => (
+                upNext.map((t, i) => (
                   <View key={t.id} style={styles.queueRow}>
-                    <Artwork uri={t.artwork} seed={t.id} size={44} variant="mini" />
-                    <View style={{ flex: 1, gap: 2, paddingRight: 8 }}>
+                    <MonoText size={10} bold color={colors.ink40} style={{ width: 22 }}>
+                      {String(i + 1).padStart(2, '0')}
+                    </MonoText>
+                    <Artwork uri={t.artwork} seed={t.id} size={40} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.queueTitle} numberOfLines={1}>
-                        {t.isRecommended ? '✦ ' : ''}
-                        {t.title}
+                        {t.isRecommended ? '\u2726 ' : ''}
+                        {t.title.toUpperCase()}
                       </Text>
-                      <Text style={styles.queueSub} numberOfLines={1}>
-                        {t.artist}
-                      </Text>
+                      <MonoText size={9.5} style={{ marginTop: 2 }} numberOfLines={1}>
+                        {t.artist.toUpperCase()}
+                      </MonoText>
                     </View>
                     <Pressable hitSlop={10} onPress={() => removeFromQueue(t.id)}>
-                      <Ionicons name="close" size={20} color={colors.textDim} />
+                      <Ionicons name="close" size={17} color={colors.ink40} />
                     </Pressable>
                   </View>
                 ))
@@ -422,7 +460,7 @@ export function PlayerScreen() {
         </Pressable>
       </Modal>
 
-      {/* more menu (download / radio / playlist actions) */}
+      {/* more menu (download / radio / share) */}
       <TrackMenu
         track={active}
         visible={showMore}
@@ -454,231 +492,274 @@ export function PlayerScreen() {
   );
 }
 
-function QueueChip({
-  label,
-  icon,
-  active,
-  onPress,
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  active: boolean;
-  onPress: () => void;
-}) {
+function FootBtn({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
   return (
-    <PressableScale
-      onPress={onPress}
-      haptic
-      style={[styles.qChip, active && styles.qChipActive]}
-    >
-      <Ionicons
-        name={icon}
-        size={15}
-        color={active ? colors.accentDeep : colors.accentBright}
-      />
-      <Text style={[styles.qChipText, active && styles.qChipTextActive]}>{label}</Text>
-    </PressableScale>
+    <Pressable hitSlop={8} onPress={onPress} style={({ pressed }) => [styles.footBtn, pressed && { opacity: 0.6 }]}>
+      <Ionicons name={icon} size={17} color={colors.ink60} />
+      <MonoText size={8.5} bold color={colors.ink60} style={{ letterSpacing: 1.4, marginTop: 3 }}>
+        {label}
+      </MonoText>
+    </Pressable>
+  );
+}
+
+function QueuePill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Brutal haptic shadow={0} pressOffset={1} onPress={onPress} style={[styles.qPill, active && { backgroundColor: colors.acid }]}>
+      <View style={[styles.qSw, active && { backgroundColor: colors.orange }]} />
+      <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 0.8 }}>
+        {label}
+      </MonoText>
+    </Brutal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingHorizontal: 16 },
+  root: { flex: 1, backgroundColor: colors.paper },
+  bgArt: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  scroll: { paddingHorizontal: 24 },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 18,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+    paddingBottom: 10,
+    marginHorizontal: -24,
+    paddingHorizontal: 18,
   },
-  artWrap: { alignItems: 'center', marginBottom: 20 },
+  chevBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper,
+  },
+  artWrap: {
+    alignSelf: 'center',
+    marginTop: 6,
+  },
   artCard: {
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
+    borderWidth: 2.5,
+    borderColor: colors.ink,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 8, height: 8 }, elevation: 8 } as object),
+  },
+  stamp: {
+    position: 'absolute',
+    top: -14,
+    right: -14,
+    width: 58,
+    height: 58,
+    backgroundColor: colors.acid,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '8deg' }],
   },
   titleSection: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-    minHeight: 64,
+    alignItems: 'flex-end',
+    marginTop: 22,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+    paddingBottom: 14,
   },
   title: {
-    color: colors.text,
-    fontSize: 23,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 28,
     lineHeight: 28,
-    letterSpacing: -0.3,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
   },
-  artist: {
-    color: colors.textDim,
-    fontSize: 17,
-    fontFamily: fonts.regular,
-    lineHeight: 22,
-  },
-  libCheck: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.accentBright,
+  likeBtn: {
+    width: 40,
+    height: 40,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  libPlus: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 1.5,
-    borderColor: colors.textFaint,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressSection: { marginBottom: 12 },
-  barHit: { paddingVertical: 8 },
+  progressSection: { marginTop: 18 },
+  barHit: { paddingVertical: 8, marginVertical: -4 },
   barTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    overflow: 'visible',
+    height: 14,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    overflow: 'hidden',
   },
-  barFill: { height: 4, borderRadius: 2, backgroundColor: colors.text },
-  barKnob: {
+  barFillWrap: {
     position: 'absolute',
-    top: -4,
-    marginLeft: -7,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.text, // Spotify: white thumb
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.orange,
+    overflow: 'hidden',
+    maxWidth: '100%',
   },
-  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
-  time: { color: colors.textDim, fontSize: 11.5, fontFamily: fonts.medium },
+  barFillStripes: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    height: '100%',
+  },
+  stripe: {
+    width: 6,
+    marginRight: 2,
+    backgroundColor: colors.ink,
+    height: '100%',
+  },
+  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 7 },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-evenly',
-    marginBottom: 18,
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  smlBtn: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  smlOn: {
+    backgroundColor: colors.acid,
+    borderColor: colors.ink,
   },
   playBtn: {
-    width: 68,
-    height: 68,
+    width: 66,
+    height: 66,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   spinner: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderTopColor: colors.text,
+    width: 22,
+    height: 22,
+    borderWidth: 2.5,
+    borderColor: 'rgba(244,241,234,0.3)',
+    borderTopColor: colors.acid,
   },
   repeatOne: {
     position: 'absolute',
-    bottom: -2,
-    right: -4,
+    bottom: -3,
+    right: -5,
     width: 7,
     height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.accentBright,
+    backgroundColor: colors.orange,
   },
-  subRow: {
+  lyricsCard: {
+    marginTop: 16,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    padding: 13,
+  },
+  lyricsLine: {
+    color: colors.ink,
+    fontSize: 14.5,
+    fontFamily: fonts.semibold,
+    lineHeight: 21,
+    marginTop: 6,
+  },
+  foot: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    marginBottom: 20,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    borderTopWidth: 2,
+    borderTopColor: colors.ink,
+    backgroundColor: colors.paper,
   },
-  lyricsCard: {
-    borderRadius: radius.lg,
-    padding: 16,
-    gap: 6,
-    opacity: 0.95,
-  },
-  lyricsTitle: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: -0.3,
-  },
-  lyricsSub: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontFamily: fonts.medium },
-
+  footBtn: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   /* queue sheet */
-  queueBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  queueBackdrop: { flex: 1, backgroundColor: 'rgba(22,21,19,0.45)', justifyContent: 'flex-end' },
   queueSheet: {
-    height: '72%',
-    backgroundColor: colors.elevated, // Spotify sheet surface #282828
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 8,
-    paddingHorizontal: 16,
+    height: '78%',
+    backgroundColor: colors.paper,
+    borderTopWidth: 3,
+    borderTopColor: colors.ink,
+    paddingTop: 16,
+    paddingHorizontal: 20,
     paddingBottom: 12,
-  },
-  queueGrabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginBottom: 10,
   },
   queueHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+    paddingBottom: 10,
   },
-  queueHeader: { color: colors.text, fontSize: 17, fontWeight: '700', fontFamily: fonts.bold },
-  queueCurrentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  queueActiveTitle: {
-    color: colors.accentBright,
-    fontSize: 15,
-    fontWeight: '500',
-    fontFamily: fonts.medium,
-    flexShrink: 1,
+  queueHeader: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 18,
+    textTransform: 'uppercase',
   },
   queueToggles: {
     flexDirection: 'row',
     gap: 8,
-    marginVertical: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
   },
-  qChip: {
+  qPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 13,
     paddingVertical: 7,
   },
-  qChipActive: { backgroundColor: colors.accentBright, borderColor: colors.accentBright },
-  qChipText: { color: colors.text, fontSize: 12.5, fontWeight: '600', fontFamily: fonts.semibold },
-  qChipTextActive: { color: colors.accentDeep },
-  queueNextHeader: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
+  qSw: { width: 8, height: 8, backgroundColor: colors.ink40 },
+  queueCurrentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  eqBlock: {
+    width: 40,
+    height: 40,
+    backgroundColor: colors.ink,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    paddingBottom: 10,
+    paddingRight: 10,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
+  },
+  queueTitle: {
+    color: colors.ink,
+    fontSize: 12.5,
     fontFamily: fonts.bold,
-    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
-  queueRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  queueTitle: { color: colors.text, fontSize: 15, fontFamily: fonts.medium, flexShrink: 1 },
-  queueSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
-  queueEmpty: {
-    color: colors.textDim,
-    fontSize: 14,
-    fontFamily: fonts.regular,
-    paddingVertical: 24,
-    textAlign: 'center',
+  secLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
+  secRule: { flex: 1, height: 2, backgroundColor: colors.ink },
 });

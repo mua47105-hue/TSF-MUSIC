@@ -1,16 +1,17 @@
 /**
- * Search — authentic Spotify Android search, V3 (Search V2 engine):
- *   #242424 rounded search field ("What do you want to listen to?") →
+ * Search — PULSE "The Index" (v4.0 editorial brutalism), Search V2 engine:
+ *   bordered square field with the hard ink shadow (orange on focus) →
  *   TYPEAHEAD RAIL (recents + "Did you mean" chips at 0 ms; provider
- *   suggestions + "Best guess" topquery row ~250 ms) → results with
- *   truthful reason lines, lyric-match chips, version-cluster captions,
- *   honest zero-state with recovery labels.
+ *   suggestions + "Best guess" topquery row ~250 ms) → `N VERIFIED` tag,
+ *   rows with mono index + acid reason chips + source badges, dashed
+ *   zero-state, numbered Browse-the-stacks grid.
  *
- * Engine behaviors surfaced here:
- *   • 280 ms debounce + per-generation AbortController (dead probes die)
+ * Engine behaviors surfaced here (UNCHANGED — locked by tests):
+ *   • 700 ms debounce + per-generation AbortController
  *   • progressive paint — cached/early results render, final set lands
  *     at max(probes); LRCLIB verification re-renders AFTER paint
  *   • Keyword|Vibe toggle, browse grid, recents — unchanged (lab compat)
+ *   • YouTube continuation pagination via YtAppendController (R8-P3)
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +19,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  ScrollView,
   useWindowDimensions,
   Keyboard,
   Pressable,
@@ -25,6 +27,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -54,8 +58,8 @@ import {
 } from '../storage/store';
 import { Artwork } from '../components/Artwork';
 import { TrackRow } from '../components/TrackRow';
-import { PressableScale } from '../components/PressableScale';
-import { colors, fonts, radius, spacing, genreGradient } from '../theme';
+import { Brutal, MonoText, OutlineText } from '../components/Brutal';
+import { colors, fonts, genreGradient } from '../theme';
 import type { RootStackParamList } from './navigation';
 
 const GENRES: Array<{ label: string; query: string }> = [
@@ -84,9 +88,7 @@ const DEBOUNCE_MS = 700; // search debounce: leaves a visible typeahead
 // lab's 2200 ms settle stays valid with 3× headroom
 const SUGGEST_DEBOUNCE_MS = 120;
 
-/** Engine deps adapter — mindbeat on-device, best-effort everywhere.
- *  artistAffinity uses the REAL decision-engine reader (P1-2 fix): the
- *  profile's artists map holds AffinityEntry objects, not numbers. */
+/** Engine deps adapter — mindbeat on-device, best-effort everywhere. */
 function engineDeps(): EngineDeps {
   return {
     kvGet: (k) => mindbeat.kvGet<any>(k.startsWith('mb.') ? k.slice(3) : k),
@@ -105,13 +107,16 @@ function engineDeps(): EngineDeps {
 
 export function SearchScreen() {
   const insets = useSafeAreaInsets();
-  // window-reactive grid math (R5): wide windows (landscape phones,
-  // tablets, DeX/desktop windows) get 4 browse columns, phones keep 2.
   const { width: winWidth } = useWindowDimensions();
   const browseCols = browseColumnsFor(winWidth);
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
   const [query, setQuery] = useState('');
+  const queryRef = useRef('');
+  const setQueryBoth = useCallback((v: string) => {
+    queryRef.current = v;
+    setQuery(v);
+  }, []);
   const [results, setResults] = useState<Track[]>([]);
   const [meta, setMeta] = useState<{
     degraded: boolean;
@@ -129,11 +134,28 @@ export function SearchScreen() {
     /** YouTube already searched this spelling ("showing results for") */
     ytCorrectedTo?: string;
   }>({ degraded: false });
-  const [loading, setLoading] = useState(false);
+  const [loading, _setLoading] = useState(false);
+  const loadingRef = useRef(false);
+  const setLoading = useCallback((v: boolean) => {
+    loadingRef.current = v;
+    _setLoading(v);
+  }, []);
   // ── infinite results pagination (F1) ─────────────────────────────
   const pageRef = useRef(1); // last appended page (page 1 = the engine set)
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore, _setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const setLoadingMore = useCallback((v: boolean) => {
+    loadingMoreRef.current = v;
+    _setLoadingMore(v);
+  }, []);
   const [hasMore, setHasMore] = useState(true);
+  /** ref mirror — the eager top-up runs from a closure that would
+   *  otherwise read a stale hasMore (PULSE-FIX). */
+  const hasMoreRef = useRef(true);
+  const setHasMoreBoth = useCallback((v: boolean) => {
+    hasMoreRef.current = v;
+    setHasMore(v);
+  }, []);
   const [endNote, setEndNote] = useState<string | null>(null);
   // CRITIC P1-2 fix: live mirror of results — loadMoreResults must merge
   // from the CURRENT rows (LRCLIB verification flag+reorder runs after the
@@ -143,6 +165,11 @@ export function SearchScreen() {
   useEffect(() => {
     resultsRef.current = results;
   }, [results]);
+  /** PULSE-FIX (race): page-2+ rows appended while the ENGINE is still
+   *  settling. The engine's final paint composes these back in instead
+   *  of stomping them (a fast page-2 fetch used to be erased by the
+   *  final setResults, permanently killing the appends for the query). */
+  const appendedPagesRef = useRef<Track[]>([]);
   /** YouTube search continuation token — page 2+ of the songs-filter
    *  catalog (R8-P3: the deep list, not 6-8 rows and done). */
   const ytContRef = useRef<string | null>(null);
@@ -153,6 +180,7 @@ export function SearchScreen() {
   const [source, setSource] = useState<'catalog' | 'youtube'>('catalog');
   const [vibeChips, setVibeChips] = useState<string[]>([]);
   const [suggests, setSuggests] = useState<AutocompleteBundle | null>(null);
+  const [fieldFocus, setFieldFocus] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchGen = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -205,7 +233,8 @@ export function SearchScreen() {
   /** Reset pagination for a fresh query (called at the top of every run). */
   const resetPagination = useCallback(() => {
     pageRef.current = 1;
-    setHasMore(true);
+    appendedPagesRef.current = [];
+    setHasMoreBoth(true);
     setEndNote(null);
     setLoadingMore(false);
   }, []);
@@ -229,7 +258,7 @@ export function SearchScreen() {
         setResults(rows);
       },
       publishState: (s) => {
-        setHasMore(s.hasMore);
+        setHasMoreBoth(s.hasMore);
         setEndNote(s.endNote);
       },
       isCurrentGen: (gen) => gen === searchGen.current,
@@ -246,38 +275,37 @@ export function SearchScreen() {
    * Infinite scroll (F1): catalog keyword searches append JioSaavn page
    * p+1 as the user approaches the end. Rows are deduped by id AND
    * recording key (R8-P4), muted artists are honored (engine parity),
-   * the top-result card never moves, and the feed stops HONESTLY (empty /
-   * <25% fresh page → end marker). YouTube mode walks the songs-filter
-   * continuation (R8-P3) — page 2+ of YouTube Music's catalog list.
+   * the top-result card never moves, and the feed stops HONESTLY.
+   * YouTube mode walks the songs-filter continuation (R8-P3).
    */
   const loadMoreResults = useCallback(async () => {
-    if (loadingMore || !hasMore || loading || resultsRef.current.length === 0) return;
+    // all gate inputs read from refs — this runs from stale closures
+    // (the eager top-up, the scroll probe) and must see FRESH values
+    if (loadingMoreRef.current || !hasMoreRef.current || loadingRef.current || resultsRef.current.length === 0) return;
     if (vibe) return;
     if (source === 'youtube') {
-      // R8-P3: YouTube deep-list pagination — continuation of the
-      // songs-filter catalog (fresh rows only, id + recording deduped).
       if (!ytContRef.current) {
-        setHasMore(false);
+        setHasMoreBoth(false);
         setEndNote(YT_END_NOTE);
         return;
       }
-      const q = query.trim();
+      const q = queryRef.current.trim();
       if (!q) return;
       void appendYtPage(searchGen.current);
       return;
     }
     if (source !== 'catalog') return;
-    const q = query.trim();
+    const q = queryRef.current.trim();
     if (!q) return;
     const gen = searchGen.current;
     setLoadingMore(true);
     try {
       const nextPage = pageRef.current + 1;
-      // CRITIC P1-1 fix: ride the ACTIVE search's abort signal — a stale
-      // page fetch must die with the query that started it, not reject
-      // later and poison the NEXT query's pagination state.
       const page = await searchSaavn(q, 30, abortRef.current?.signal, nextPage);
-      if (gen !== searchGen.current) return; // stale — new query won
+      if (gen !== searchGen.current) {
+        setLoadingMore(false); // PULSE-FIX: never leak a stuck busy flag
+        return; // stale — new query won
+      }
       const muted = engineDeps().mutedArtists?.() ?? new Set<string>();
       const allowed = page.filter(
         (t) =>
@@ -288,28 +316,25 @@ export function SearchScreen() {
       const merged = mergeUniqueTracks(resultsRef.current, allowed);
       const fresh = merged.length - before;
       pageRef.current = nextPage;
+      appendedPagesRef.current = mergeUniqueTracks(appendedPagesRef.current, allowed);
       resultsRef.current = merged; // keep the mirror in sync immediately
       setResults(merged);
       if (!searchHasMore(page.length, fresh)) {
-        setHasMore(false);
-        setEndNote('End of results');
+        setHasMoreBoth(false);
+        setEndNote('END OF RESULTS');
       }
     } catch {
-      // CRITIC P1-1 fix: a REJECTED page fetch for a query the user has
-      // already left must never disable pagination on the live query.
       if (gen !== searchGen.current) return;
-      setHasMore(false);
-      setEndNote("Couldn't load more — check your connection");
+      setHasMoreBoth(false);
+      setEndNote("COULDN'T LOAD MORE — CHECK YOUR CONNECTION");
     } finally {
-      if (gen === searchGen.current) setLoadingMore(false);
+      setLoadingMore(false); // unconditional: false can never disable a newer query
     }
-  }, [loadingMore, hasMore, loading, vibe, source, query, appendYtPage]);
+  }, [vibe, source, appendYtPage]);
 
   const runSearch = useCallback(
     // sourceOverride (P2-1): the source toggle passes the NEW source so the
-    // immediate re-search runs against it — the render-time `source` is
-    // still the old one until the setSource re-render lands, which
-    // otherwise painted ~1s of mislabeled results + double ledger events.
+    // immediate re-search runs against it.
     async (q: string, sourceOverride?: 'catalog' | 'youtube') => {
       const src = sourceOverride ?? source;
       if (!q.trim()) {
@@ -335,16 +360,12 @@ export function SearchScreen() {
       const deps = engineDeps();
       try {
         if (src === 'youtube') {
-          // YOUTUBE SOURCE (YOUTUBE-INTEGRATION-PLAN §3.1): the YT Music
-          // catalog answers directly — Song rows first, then videos.
-          // Kill-switch honesty (P1-3): a cooling-down source says so
-          // instead of painting a bare "no results".
           if (!ytAvailable()) {
             if (gen !== searchGen.current) return;
             setResults([]);
             setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: true });
             setVibeChips([]);
-            setHasMore(false);
+            setHasMoreBoth(false);
             setEndNote(null);
             return;
           }
@@ -359,19 +380,9 @@ export function SearchScreen() {
             ytCorrectedTo: ytr.correctedTo,
           });
           setVibeChips([]);
-          // R8-P3: the catalog list goes deeper — keep scrolling
           ytContRef.current = ytr.continuation ?? null;
-          setHasMore(!!ytr.continuation);
+          setHasMoreBoth(!!ytr.continuation);
           setEndNote(null);
-          // R8-P3 eager top-up: a fuzzy query's first page can land just
-          // under a full shelf page (19 of 20 after catalog-entity dedup).
-          // The user asked for a BIG list — paint immediately, then walk
-          // one continuation page in the background so ~2 pages sit on
-          // screen before any scrolling. Silent: no footer spinner flash.
-          // resultsRef sync is explicit: the mirror effect runs on next
-          // commit, and a near-instant continuation (warm cache / very
-          // fast network) can merge before that commit — merging against
-          // a stale mirror would REPLACE the page-1 rows with page 2.
           if (ytr.continuation && ytr.tracks.length < 20) {
             resultsRef.current = ytr.tracks;
             void appendYtPage(gen, { silent: true });
@@ -390,8 +401,7 @@ export function SearchScreen() {
           if (gen !== searchGen.current) return;
           setResults(r.tracks);
           setMeta({ degraded: false });
-          // vibe sets are AI-bounded — no pagination
-          setHasMore(false);
+          setHasMoreBoth(false);
           setEndNote(null);
           setVibeChips([
             ...r.intent.moods.slice(0, 2),
@@ -403,8 +413,6 @@ export function SearchScreen() {
           const res: SearchV2Result = await searchMusicV2(q, {
             signal: ctrl.signal,
             deps,
-            // PROGRESSIVE PAINT (P0-2): ranked primary pool paints the
-            // moment it exists; the final set replaces it when it lands.
             onEarly: (early) => {
               if (gen !== searchGen.current) return;
               setResults(early.tracks);
@@ -425,7 +433,14 @@ export function SearchScreen() {
             lyricHits: new Set(),
             isLyric: res.plan.kind === 'lyric_fragment',
           };
-          setResults(res.tracks);
+          // PULSE-FIX: compose the final engine set with any page-2+ rows
+          // that already appended while the engine was settling — the final
+          // paint must never erase an append (see appendedPagesRef).
+          const finalTracks = appendedPagesRef.current.length
+            ? mergeUniqueTracks(res.tracks, appendedPagesRef.current)
+            : res.tracks;
+          resultsRef.current = finalTracks;
+          setResults(finalTracks);
           setMeta({
             degraded: res.degraded,
             reason: res.topReason,
@@ -472,7 +487,6 @@ export function SearchScreen() {
               verdicts.forEach((v, id) => {
                 if (v.matched) corrRef.current.lyricHits.add(id);
               });
-              // re-order: verified lyric matches float to the top
               setResults((prev) => {
                 const verified = prev.filter((t) => t.lyricMatch);
                 if (verified.length === 0) return prev;
@@ -480,6 +494,11 @@ export function SearchScreen() {
                 return [...verified, ...rest];
               });
             });
+          }
+          // EAGER TOP-UP (catalog): a thin first page walks page 2 in the
+          // background so the user lands on a BIG list (YouTube parity).
+          if (finalTracks.length < 15 && hasMoreRef.current) {
+            setTimeout(() => void loadMoreResults(), 0);
           }
         }
         await pushRecentSearch(q);
@@ -510,8 +529,7 @@ export function SearchScreen() {
     playQueue(results, index, 'search');
     Keyboard.dismiss();
     nav.navigate('Player');
-    // S5 learn: correlated click (always) + fragment resolution — the
-    // fragment→track cache is scoped to lyric searches (§5.6, P1-3 fix)
+    // S5 learn: correlated click (always) + fragment resolution
     const corr = corrRef.current;
     if (corr.query && !vibe) {
       void mindbeat.searchClickedV2({
@@ -549,15 +567,10 @@ export function SearchScreen() {
   };
 
   const showBrowse = !query && !searched;
-  // Rail shows whenever suggestions exist for the current text (S4 bar:
-  // "typing ≥2 chars shows a rail" — also AFTER a previous search; the
-  // next runSearch clears suggests and swaps to results).
   const showSuggestRail =
     !vibe && !loading && suggests !== null && query.trim().length >= 2;
   const top = results[0];
   const rest = results.slice(1);
-  // did-you-mean chips: memoized — planSearch runs SymSpell, never per
-  // render (P2 fix)
   const didYouMean = useMemo(
     () =>
       !vibe && query.trim().length >= 3 && !loading && results.length === 0
@@ -582,19 +595,19 @@ export function SearchScreen() {
           <Pressable
             key={`${r.kind}-${r.id}-${i}`}
             testID="search-suggest-row"
-            style={styles.suggestRow}
+            style={({ pressed }) => [styles.suggestRow, pressed && { backgroundColor: colors.paper2 }]}
             onPress={() => {
-              setQuery(r.title);
+              setQueryBoth(r.title);
             }}
           >
-            <View style={r.kind === 'artist' ? styles.suggestArtRound : styles.suggestArt}>
+            <View style={[styles.suggestArt, r.kind === 'artist' && styles.suggestArtSquare]}>
               {r.image ? (
                 <Image source={{ uri: r.image }} style={styles.suggestImg} />
               ) : (
                 <Ionicons
                   name={r.kind === 'artist' ? 'person' : 'musical-note'}
                   size={16}
-                  color={colors.textDim}
+                  color={colors.ink60}
                 />
               )}
             </View>
@@ -610,14 +623,12 @@ export function SearchScreen() {
             </View>
             {r.kind === 'topquery' ? (
               <View style={styles.bestGuess} testID="search-suggest-topquery">
-                <Text style={styles.bestGuessText}>Best guess</Text>
+                <MonoText size={8.5} bold color={colors.ink}>
+                  BEST GUESS
+                </MonoText>
               </View>
             ) : (
-              <Ionicons
-                name="arrow-up"
-                size={16}
-                color={colors.textFaint}
-              />
+              <Ionicons name="arrow-up" size={15} color={colors.ink40} />
             )}
           </Pressable>
         ))}
@@ -627,45 +638,51 @@ export function SearchScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Spotify search field + Keyword|Vibe mode toggle (§9.8) */}
+      {/* masthead + field */}
       <View style={styles.searchWrap}>
+        <View style={styles.mastRow}>
+          <OutlineText style={styles.mastTitle} outline={1.5}>
+            The Index
+          </OutlineText>
+        </View>
+        <View style={styles.editionRow}>
+          <View style={styles.edDot} />
+          <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 1.6 }}>
+            TYPO-TOLERANT · LYRIC-VERIFIED · SIX-STAGE ENGINE
+          </MonoText>
+        </View>
         <View style={styles.modeRow}>
           {([false, true] as const).map((v) => (
-            <PressableScale
+            <Brutal
               key={v ? 'vibe' : 'kw'}
-              haptic
-              onPress={() => {
-                setVibe(v);
-                // no direct runSearch — the effect re-fires when runSearch's
-                // identity changes with `vibe`, debouncing once (P2 fix:
-                // the old code double-fired the pipeline)
-              }}
-              style={[styles.modeChip, vibe === v && styles.modeChipOn]}
+              haptic={vibe !== v}
+              shadow={2}
+              onPress={() => setVibe(v)}
+              style={[styles.modeChip, vibe === v && styles.chipOn]}
             >
-              <Ionicons
-                name={v ? 'sparkles' : 'text'}
-                size={12}
-                color={vibe === v ? colors.textOnGreen : colors.textDim}
-              />
-              <Text style={[styles.modeChipText, vibe === v && styles.modeChipTextOn]}>{v ? 'Vibe' : 'Keyword'}</Text>
-            </PressableScale>
+              <MonoText size={10.5} bold color={vibe === v ? colors.ink : colors.ink60} style={{ letterSpacing: 0.8 }}>
+                {v ? 'VIBE' : 'KEYWORD'}
+              </MonoText>
+            </Brutal>
           ))}
         </View>
-        <View style={styles.inputRow}>
-          <Ionicons name="search" size={21} color={colors.textDim} />
+        <View style={[styles.inputRow, fieldFocus && styles.inputRowFocus]}>
+          <Ionicons name="search" size={18} color={colors.ink60} />
           <TextInput
             style={styles.input}
-            placeholder="What do you want to listen to?"
-            placeholderTextColor={colors.textDim}
+            placeholder="TYPE A SONG, ARTIST, OR A LINE YOU REMEMBER"
+            placeholderTextColor={colors.ink40}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={setQueryBoth}
             returnKeyType="search"
             onSubmitEditing={() => runSearch(query)}
             autoCorrect={false}
+            onFocus={() => setFieldFocus(true)}
+            onBlur={() => setFieldFocus(false)}
           />
           {query.length > 0 ? (
-            <Pressable hitSlop={8} onPress={() => setQuery('')}>
-              <Ionicons name="close" size={20} color={colors.textDim} />
+            <Pressable hitSlop={8} onPress={() => setQueryBoth('')}>
+              <Ionicons name="close" size={18} color={colors.ink60} />
             </Pressable>
           ) : null}
         </View>
@@ -676,45 +693,39 @@ export function SearchScreen() {
         <View style={styles.vibeChipsRow}>
           {vibeChips.map((c) => (
             <View key={c} style={styles.vibeChip}>
-              <Text style={styles.vibeChipText} numberOfLines={1}>
-                {c}
-              </Text>
+              <MonoText size={9.5} bold color={colors.ink} numberOfLines={1}>
+                {c.toUpperCase()}
+              </MonoText>
             </View>
           ))}
         </View>
       ) : null}
 
-      {/* ── Source toggle: Catalog | YouTube (YOUTUBE-INTEGRATION-PLAN §3.1) ── */}
+      {/* ── Source toggle: Catalog | YouTube ── */}
       {!showBrowse ? (
         <View style={styles.sourceToggleRow}>
           {([
-            { key: 'catalog', label: 'Catalog', icon: 'disc-outline' as const },
-            { key: 'youtube', label: 'YouTube', icon: 'logo-youtube' as const },
+            { key: 'catalog', label: 'CATALOG' },
+            { key: 'youtube', label: 'YOUTUBE' },
           ] as const).map((opt) => {
             const active = source === opt.key;
             return (
-              <PressableScale
+              <Brutal
                 key={opt.key}
-                haptic
+                haptic={!active}
+                shadow={2}
                 testID={`source-toggle-${opt.key}`}
                 onPress={() => {
                   if (active) return;
                   setSource(opt.key);
-                  // P2-1: search the NEW source immediately, not the stale
-                  // render-time one
                   if (query.trim()) runSearch(query.trim(), opt.key);
                 }}
-                style={[styles.sourceChip, active && styles.sourceChipActive]}
+                style={[styles.sourceChip, active && styles.chipOn]}
               >
-                <Ionicons
-                  name={opt.icon}
-                  size={14}
-                  color={active ? '#101010' : colors.textDim}
-                />
-                <Text style={[styles.sourceChipText, active && styles.sourceChipTextActive]}>
+                <MonoText size={10} bold color={active ? colors.ink : colors.ink60} style={{ letterSpacing: 1 }}>
                   {opt.label}
-                </Text>
-              </PressableScale>
+                </MonoText>
+              </Brutal>
             );
           })}
         </View>
@@ -735,69 +746,67 @@ export function SearchScreen() {
               {recentSearches.length > 0 ? (
                 <View style={styles.recentSection}>
                   <View style={styles.recentHeader}>
-                    <Text style={styles.recentTitle}>Recent searches</Text>
-                    <PressableScale
-                      haptic
+                    <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+                      RECENT SEARCHES
+                    </MonoText>
+                    <Pressable
                       hitSlop={8}
                       onPress={() => {
                         void clearRecentSearches().then(() => setRecentSearches([]));
                       }}
                       accessibilityLabel="Clear recent searches"
                     >
-                      <Ionicons name="trash-outline" size={17} color={colors.textDim} />
-                    </PressableScale>
-                  </View>
-                  {recentSearches.slice(0, 4).map((s) => (
-                    <Pressable
-                      key={s}
-                      style={styles.recentRow}
-                      onPress={() => setQuery(s)}
-                    >
-                      <Ionicons name="time-outline" size={19} color={colors.textDim} />
-                      <Text style={styles.recentText} numberOfLines={1}>
-                        {s}
-                      </Text>
+                      <Ionicons name="trash-outline" size={16} color={colors.ink40} />
                     </Pressable>
-                  ))}
+                  </View>
+                  <View style={styles.recentsChips}>
+                    {recentSearches.slice(0, 6).map((s) => (
+                      <Brutal key={s} shadow={2} haptic onPress={() => setQueryBoth(s)} style={styles.recentChip}>
+                        <MonoText size={10.5} bold color={colors.ink60} style={{ letterSpacing: 0.4 }}>
+                          {s}
+                        </MonoText>
+                      </Brutal>
+                    ))}
+                  </View>
                 </View>
               ) : null}
-              <Text style={styles.browseTitle}>Browse all</Text>
+              <View style={styles.secLabel}>
+                <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+                  BROWSE THE STACKS
+                </MonoText>
+                <View style={styles.secRule} />
+              </View>
             </View>
           }
           renderItem={({ item, index }) => {
-            const [c1] = genreGradient(index);
-            const art = browseArt[index % Math.max(1, browseArt.length)];
             return (
-              <PressableScale
+              <Brutal
                 onPress={() => openGenre(item.label, item.query)}
-                scaleTo={0.97}
+                shadow={3}
                 haptic
-                style={[styles.genreTile, { backgroundColor: c1 }]}
+                style={styles.gcard}
               >
-                <Text style={styles.genreLabel}>{item.label}</Text>
-                {art ? (
-                  <Image source={{ uri: art }} style={styles.genreArt} />
-                ) : null}
-              </PressableScale>
+                <Text style={styles.gcardLabel} numberOfLines={1}>
+                  {item.label}
+                </Text>
+                <MonoText size={9} color={colors.ink40} style={styles.gcardNum}>
+                  {String(index + 1).padStart(2, '0')} STACK
+                </MonoText>
+              </Brutal>
             );
           }}
           ListFooterComponent={
-            <PressableScale
+            <Brutal
               onPress={() => nav.navigate('AI')}
-              scaleTo={0.97}
+              shadow={3}
               haptic
-              style={[styles.genreTile, { backgroundColor: colors.aiStart }]}
+              style={[styles.gcard, styles.gcardWide, { backgroundColor: colors.acid }]}
             >
-              <View style={{ flex: 1, justifyContent: 'center', paddingRight: 40 }}>
-                <Text style={styles.genreLabel}>TSF AI</Text>
-                <Text style={styles.aiTileSub} numberOfLines={2}>
-                  Describe your vibe, get a playlist
-                </Text>
-              </View>
-              <View style={styles.aiTileIcon}>
-                <Ionicons name="sparkles" size={22} color="#fff" />
-              </View>
-            </PressableScale>
+              <Text style={styles.gcardLabel}>MINDBEAT WIRE</Text>
+              <MonoText size={9} color={colors.ink60} style={styles.gcardNum}>
+                TYPE A VIBE · GET 25
+              </MonoText>
+            </Brutal>
           }
         />
       ) : showSuggestRail ? (
@@ -805,13 +814,15 @@ export function SearchScreen() {
           {renderSuggestRail()}
           {recentSearches.length > 0 ? (
             <View style={styles.suggestWrap}>
-              <Text style={styles.suggestSection}>Your recent searches</Text>
+              <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2, paddingVertical: 8 }}>
+                YOUR RECENT SEARCHES
+              </MonoText>
               {recentSearches
                 .filter((s) => s.toLowerCase().includes(query.trim().toLowerCase()))
                 .slice(0, 3)
                 .map((s) => (
-                  <Pressable key={s} style={styles.suggestRow} onPress={() => setQuery(s)}>
-                    <Ionicons name="time-outline" size={17} color={colors.textDim} />
+                  <Pressable key={s} style={styles.suggestRow} onPress={() => setQueryBoth(s)}>
+                    <Ionicons name="time-outline" size={16} color={colors.ink40} />
                     <Text style={styles.suggestTitle} numberOfLines={1}>
                       {s}
                     </Text>
@@ -822,555 +833,476 @@ export function SearchScreen() {
         </View>
       ) : loading ? (
         <View style={styles.centerWrap}>
-          <ActivityIndicator size="large" color={colors.accentBright} />
+          <ActivityIndicator size="large" color={colors.orange} />
+          <MonoText size={10} bold color={colors.ink60} style={{ letterSpacing: 2, marginTop: 12 }}>
+            SEARCHING THE STACKS…
+          </MonoText>
         </View>
       ) : results.length === 0 ? (
-        <View style={styles.centerWrap}>
-          <Ionicons name="musical-notes-outline" size={48} color={colors.textFaint} />
-          <Text style={styles.noResults}>No results for “{query}”</Text>
+        <View style={styles.zero}>
+          <Text style={styles.zeroTitle}>NOT IN THE STACKS</Text>
           {didYouMean.length > 0 ? (
             <View style={styles.dymWrap}>
-              <Text style={styles.dymLabel}>Did you mean</Text>
+              <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+                DID YOU MEAN
+              </MonoText>
               <View style={styles.dymChips}>
                 {didYouMean.slice(0, 2).map((c) => (
-                  <PressableScale
-                    key={c.to}
-                    haptic
-                    style={styles.dymChip}
-                    onPress={() => setQuery(c.to)}
-                  >
-                    <Text style={styles.dymChipText}>{c.to}</Text>
-                  </PressableScale>
+                  <Brutal key={c.to} haptic shadow={2} style={styles.dymChip} onPress={() => setQueryBoth(c.to)}>
+                    <MonoText size={10.5} bold color={colors.ink}>
+                      {c.to.toUpperCase()}
+                    </MonoText>
+                  </Brutal>
                 ))}
               </View>
             </View>
           ) : (
-            <Text style={styles.noResultsSub}>Check the spelling or try something else</Text>
+            <MonoText size={10.5} color={colors.ink60} style={styles.zeroSub}>
+              {'Nothing verified matches that query. MINDBEAT filed it — results may land as the catalog updates.'}
+            </MonoText>
           )}
         </View>
       ) : (
-        <FlatList
-          key="results"
-          data={rest}
-          keyExtractor={(t) => t.id}
-          renderItem={({ item, index }) => (
-            <TrackRow
-              track={item}
-              onPress={() => play(index + 1)}
-              showHeart={false}
-            />
-          )}
+        <ScrollView
+          scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          onEndReachedThreshold={0.4}
-          onEndReached={() => {
-            void loadMoreResults();
+          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            // bottom-of-list probe: results cap at ~3 deep pages, so a plain
+            // scroller beats windowing here (the FlatList contract + its
+            // locks live on the Home endless feed, not search)
+            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 480) {
+              void loadMoreResults();
+            }
           }}
-          ListFooterComponent={
-            loadingMore ? (
-              <View style={styles.loadMoreFooter} testID="search-loading-more">
-                <ActivityIndicator size="small" color={colors.accentBright} />
-              </View>
-            ) : endNote && results.length > 0 ? (
-              <Text style={styles.endNote} testID="search-end-note">
-                {endNote}
-              </Text>
-            ) : null
-          }
           contentContainerStyle={{ paddingBottom: 170 }}
-          ListHeaderComponent={
-            <View>
+        >
+          <View>
               {meta.sigState === 'partial' ? (
                 <View style={styles.sigNote}>
-                  <Text style={styles.sigNoteTitle} numberOfLines={1}>
-                    Songs matching “{query.trim()}”
-                  </Text>
-                  <Text style={styles.sigNoteSub}>
+                  <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 0.8 }} numberOfLines={1}>
+                    SONGS MATCHING “{query.trim().toUpperCase()}”
+                  </MonoText>
+                  <MonoText size={9.5} color={colors.ink60} style={{ marginTop: 4, lineHeight: 15 }}>
                     The artist version isn't available on JioSaavn right now
-                  </Text>
+                  </MonoText>
                   {meta.partialArtists && meta.partialArtists.length > 0 ? (
                     <View style={styles.sigChips}>
                       {meta.partialArtists.slice(0, 5).map((a) => (
-                        <Pressable
+                        <Brutal
                           key={a}
+                          shadow={2}
+                          haptic
                           style={styles.sigChip}
                           onPress={() => {
-                            // P2-2: build from the plan's title side — raw
-                            // query slicing only stripped " of " and let
-                            // "... by atif aslam" queries grow unboundedly
                             const base = meta.partialTitle?.trim() || planSearch(query).titleTokens.join(' ');
                             const q2 = `${base} ${a}`.trim();
-                            setQuery(q2);
+                            setQueryBoth(q2);
                             runSearch(q2);
                           }}
                         >
-                          <Text style={styles.sigChipText} numberOfLines={1}>
-                            {a}
-                          </Text>
-                        </Pressable>
+                          <MonoText size={9.5} bold color={colors.ink} numberOfLines={1}>
+                            {a.toUpperCase()}
+                          </MonoText>
+                        </Brutal>
                       ))}
                     </View>
                   ) : null}
                 </View>
               ) : null}
               {meta.sigState === 'zero' ? (
-                <Text style={styles.sigRescuedNote}>
-                  Nothing on JioSaavn matches well — try the YouTube tab
-                </Text>
+                <RescueNote>NOTHING VERIFIED HERE — TRY THE YOUTUBE TAB</RescueNote>
               ) : null}
               {meta.ytUnavailable && source === 'youtube' ? (
-                <Text style={styles.sigRescuedNote}>
-                  YouTube is taking a break after repeated failures — try Catalog
-                </Text>
+                <RescueNote>YOUTUBE IS COOLING DOWN AFTER FAILURES — TRY CATALOG</RescueNote>
               ) : null}
               {meta.ytCorrectedTo && source === 'youtube' ? (
-                <Text style={styles.relaxedNote} numberOfLines={1}>
-                  Showing results for “{meta.ytCorrectedTo}”
-                </Text>
+                <RescueNote>SHOWING RESULTS FOR “{meta.ytCorrectedTo.toUpperCase()}”</RescueNote>
               ) : null}
               {meta.sigState === 'rescued' && results[0]?.rescueRung === 'youtube' ? (
-                <Text style={styles.sigRescuedNote}>
-                  Found on YouTube · full song, ad-free
-                </Text>
+                <RescueNote acid>FOUND ON YOUTUBE · FULL SONG, AD-FREE</RescueNote>
               ) : null}
               {meta.sigState === 'rescued' && results[0]?.rescueRung === 'itunes' ? (
-                <Text style={styles.sigRescuedNote}>
-                  Found via Apple Music · 30s preview
-                </Text>
+                <RescueNote>FOUND VIA APPLE MUSIC · 30S PREVIEW</RescueNote>
               ) : null}
               {meta.sigState === 'rescued' && results[0]?.rescueRung === 'variant' ? (
-                <Text style={styles.sigRescuedNote}>
-                  Found under a different spelling
-                </Text>
+                <RescueNote>FOUND UNDER A DIFFERENT SPELLING</RescueNote>
               ) : null}
               {meta.sigState === 'rescued' && results[0]?.rescueRung === 'album' ? (
-                <Text style={styles.sigRescuedNote}>
-                  Found via its album · full song
-                </Text>
+                <RescueNote>FOUND VIA ITS ALBUM · FULL SONG</RescueNote>
               ) : null}
               {meta.degraded ? (
-                <Text style={styles.degradedNote}>
-                  Full-length streams unavailable — some results are 30s previews
-                </Text>
+                <RescueNote>FULL STREAMS UNAVAILABLE — SOME RESULTS ARE 30S PREVIEWS</RescueNote>
               ) : null}
               {meta.relaxedQuery ? (
-                <Text style={styles.relaxedNote} numberOfLines={1}>
-                  Showing results for “{meta.relaxedQuery}”
-                </Text>
+                <RescueNote>SHOWING RESULTS FOR “{meta.relaxedQuery.toUpperCase()}”</RescueNote>
               ) : null}
               {meta.corrected && meta.corrected !== query.trim().toLowerCase() ? (
-                <Pressable
-                  style={styles.relaxedNote}
-                  onPress={() => setQuery(meta.corrected ?? query)}
-                >
-                  <Text style={styles.relaxedNoteText} numberOfLines={1}>
-                    Did you mean “{meta.corrected}”? Tap to search
-                  </Text>
+                <Pressable style={styles.sigRescuedNote} onPress={() => setQueryBoth(meta.corrected ?? query)}>
+                  <MonoText size={9.5} bold color={colors.orangeDeep} style={{ letterSpacing: 1 }} numberOfLines={1}>
+                    DID YOU MEAN “{meta.corrected.toUpperCase()}”? TAP TO SEARCH
+                  </MonoText>
                 </Pressable>
               ) : null}
-              {/* ── Top result — Spotify's hero card + truthful reason ── */}
+              {/* ── Top result — the verified hero ── */}
               {top ? (
                 <View style={styles.topResultWrap}>
-                  <Text style={styles.songsHeader}>Top result</Text>
-                  <PressableScale
-                    testID="search-top-result"
-                    haptic
-                    onPress={() => play(0)}
-                    style={styles.topCard}
-                  >
-                    <Artwork uri={top.artwork} seed={top.id} size={92} variant="card" />
+                  <View style={styles.resTag}>
+                    <View style={styles.resTagCount}>
+                      <MonoText size={10} bold color={colors.acid}>
+                        {results.length} VERIFIED
+                      </MonoText>
+                    </View>
+                    <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 0.8 }}>
+                      {' '}FOR “{query.trim().toUpperCase()}”
+                    </MonoText>
+                  </View>
+                  <Brutal testID="search-top-result" haptic shadow={4} onPress={() => play(0)} style={styles.topCard}>
+                    <Artwork uri={top.artwork} seed={top.id} size={92} />
                     <View style={styles.topCardInfo}>
                       <Text style={styles.topCardTitle} numberOfLines={2}>
-                        {top.title}
+                        {top.title.toUpperCase()}
                       </Text>
-                      <View style={styles.topCardMetaRow}>
-                        <View style={styles.topCardType}>
-                          <Text style={styles.topCardTypeText}>
+                      <View style={styles.topTypeRow}>
+                        <View style={styles.topTypeChip}>
+                          <MonoText size={8.5} bold color={colors.ink} style={{ letterSpacing: 1 }}>
                             {top.source === 'youtube'
                               ? top.ytKind === 'video'
-                                ? 'YT Video'
-                                : 'YT Song'
+                                ? 'YT VIDEO'
+                                : 'YT SONG'
                               : top.source === 'itunes'
-                                ? 'Preview'
-                                : 'Song'}
-                          </Text>
+                                ? 'PREVIEW'
+                                : 'SONG'}
+                          </MonoText>
                         </View>
-                        <Text style={styles.topCardArtist} numberOfLines={1}>
-                          {top.artist}
-                        </Text>
+                        <MonoText size={9.5} color={colors.ink60} style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
+                          {top.artist.toUpperCase()}
+                        </MonoText>
                       </View>
                       {top.lyricMatch && top.matchedLine ? (
                         <View style={styles.lyricChip} testID="top-lyric-chip">
-                          <Ionicons name="text-outline" size={11} color={colors.accentBright} />
-                          <Text style={styles.lyricChipText} numberOfLines={1}>
-                            Lyric match · “{top.matchedLine}”
-                          </Text>
+                          <MonoText size={8.5} bold color={colors.ink} numberOfLines={1} style={{ letterSpacing: 0.6 }}>
+                            LYRIC MATCH · “{top.matchedLine.toUpperCase()}”
+                          </MonoText>
                         </View>
                       ) : top.reason ? (
-                        <Text style={styles.reasonLine} numberOfLines={1}>
-                          {top.reason}
-                        </Text>
+                        <View style={styles.reasonChip}>
+                          <MonoText size={8.5} bold color={colors.ink} numberOfLines={1} style={{ letterSpacing: 0.6 }}>
+                            {top.reason.toUpperCase()}
+                          </MonoText>
+                        </View>
                       ) : null}
                     </View>
                     <View style={styles.topPlayFab}>
-                      <Ionicons name="play" size={22} color="#000" />
+                      <Ionicons name="play" size={20} color={colors.acid} />
                     </View>
-                  </PressableScale>
-                  <Text style={styles.songsHeader}>Songs</Text>
+                  </Brutal>
+                  <View style={styles.secLabel}>
+                    <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+                      SONGS
+                    </MonoText>
+                    <View style={styles.secRule} />
+                  </View>
                 </View>
               ) : null}
+          </View>
+          {rest.map((item, index) => (
+            <TrackRow
+              key={item.id}
+              track={item}
+              index={index + 1}
+              showArtwork
+              onPress={() => play(index + 1)}
+              showHeart={false}
+              reasonLabel={item.reason}
+              showSource
+            />
+          ))}
+          {loadingMore ? (
+            <View style={styles.loadMoreFooter} testID="search-loading-more">
+              <ActivityIndicator size="small" color={colors.orange} />
             </View>
-          }
-        />
+          ) : endNote && results.length > 0 ? (
+            <View style={styles.endNoteWrap} testID="search-end-note">
+              <MonoText size={9.5} bold color={colors.ink40} style={{ letterSpacing: 1.6 }}>
+                {endNote.toUpperCase()}
+              </MonoText>
+            </View>
+          ) : null}
+        </ScrollView>
       )}
     </View>
   );
 }
 
+/** Honest state note under the top result. */
+function RescueNote({ children, acid = false }: { children: React.ReactNode; acid?: boolean }) {
+  return (
+    <View style={[styles.sigRescuedNote, acid && { backgroundColor: colors.acid, borderColor: colors.ink }]}>
+      <MonoText size={9.5} bold color={colors.ink} style={{ letterSpacing: 1 }} numberOfLines={2}>
+        {children}
+      </MonoText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  searchWrap: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md - 2 },
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  root: { flex: 1, backgroundColor: colors.paper },
+  searchWrap: { paddingHorizontal: 18, paddingTop: 14 },
+  mastRow: { marginBottom: 8 },
+  mastTitle: {
+    fontFamily: fonts.display,
+    fontSize: 34,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
+    lineHeight: 36,
+  },
+  editionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  edDot: { width: 7, height: 7, backgroundColor: colors.orange },
+  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   modeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: colors.cardDim,
+    paddingVertical: 6,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
   },
-  modeChipOn: { backgroundColor: colors.accentBright },
-  modeChipText: { color: colors.textDim, fontSize: 12, fontFamily: fonts.medium },
-  modeChipTextOn: { color: colors.textOnGreen, fontWeight: '700', fontFamily: fonts.bold },
-  vibeChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: spacing.lg, paddingBottom: 6 },
+  chipOn: { backgroundColor: colors.acid },
+  vibeChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 18, paddingBottom: 6 },
   vibeChip: {
-    backgroundColor: colors.surface,
-    borderRadius: 999,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    paddingVertical: 4,
   },
-  vibeChipText: { color: colors.aiEnd, fontSize: 11, fontFamily: fonts.medium },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.card, // Spotify #242424 field
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.lg,
+    gap: 11,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    paddingHorizontal: 14,
     height: 48,
+    ...{ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 },
   },
-  input: { flex: 1, color: colors.text, fontSize: 15.5, fontFamily: fonts.regular },
-  // ── typeahead rail ───────────────────────────────────────────────────
-  suggestWrap: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    gap: 2,
+  inputRowFocus: {
+    ...({ shadowColor: colors.orange, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 } as object),
   },
-  suggestSection: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
+  input: {
+    flex: 1,
+    color: colors.ink,
+    fontFamily: fonts.monoBold,
+    fontSize: 11.5,
     letterSpacing: 0.6,
-    paddingVertical: 8,
+    textTransform: 'uppercase',
+    paddingVertical: 0,
   },
+  // ── typeahead rail ──
+  suggestWrap: { paddingHorizontal: 18, paddingTop: 8, gap: 2 },
   suggestRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
   },
   suggestArt: {
     width: 34,
     height: 34,
-    borderRadius: 4,
-    backgroundColor: colors.cardDim,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  suggestArtRound: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.cardDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
+  suggestArtSquare: {},
   suggestImg: { width: '100%', height: '100%' },
-  suggestTitle: { color: colors.text, fontSize: 14.5, fontFamily: fonts.medium, flexShrink: 1 },
-  suggestSub: { color: colors.textDim, fontSize: 12, fontFamily: fonts.regular },
+  suggestTitle: { color: colors.ink, fontSize: 13.5, fontFamily: fonts.bold, textTransform: 'uppercase', flexShrink: 1, letterSpacing: 0.2 },
+  suggestSub: { color: colors.ink40, fontSize: 10, fontFamily: fonts.mono, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 2 },
   bestGuess: {
-    backgroundColor: colors.accentBright,
-    borderRadius: 3,
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
-  bestGuessText: {
-    color: colors.textOnGreen,
-    fontSize: 10,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
+  // ── zero-state / did-you-mean ──
+  zero: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.ink40,
+    marginHorizontal: 18,
+    marginTop: 22,
+    padding: 30,
+    alignItems: 'center',
+    gap: 8,
   },
-  // ── zero-state / did-you-mean ────────────────────────────────────────
+  zeroTitle: {
+    fontFamily: fonts.display,
+    fontSize: 17,
+    color: colors.ink,
+    textTransform: 'uppercase',
+  },
+  zeroSub: { textAlign: 'center', lineHeight: 16, letterSpacing: 0.3 },
   dymWrap: { alignItems: 'center', gap: 10, paddingTop: 4 },
-  dymLabel: { color: colors.textDim, fontSize: 13, fontFamily: fonts.medium },
   dymChips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
   dymChip: {
-    backgroundColor: colors.cardDim,
-    borderRadius: 999,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
-  dymChipText: { color: colors.accentBright, fontSize: 13.5, fontFamily: fonts.bold },
-  // ── results chrome ───────────────────────────────────────────────────
-  recentSection: { paddingTop: spacing.md, paddingBottom: spacing.lg, gap: 2 },
-  recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  recentTitle: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    marginBottom: 6,
-  },
-  recentRow: {
+  // ── results chrome ──
+  recentSection: { paddingTop: 12, paddingBottom: 14 },
+  recentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    marginBottom: 10,
   },
-  recentText: { flex: 1, color: colors.text, fontSize: 15, fontFamily: fonts.medium },
-  browseTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: -0.3,
-    paddingBottom: spacing.md,
+  recentsChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 18 },
+  recentChip: {
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  genreRow: { gap: 8, marginBottom: 8 },
-  genreTile: {
-    flex: 1,
-    flexDirection: 'row',
-    height: 100,
-    borderRadius: 8,
-    padding: spacing.md,
-    overflow: 'hidden',
-  },
-  genreLabel: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: -0.3,
-    maxWidth: '80%',
-  },
-  /** Spotify's signature: album art rotated ~25° peeking out the corner */
-  genreArt: {
-    position: 'absolute',
-    bottom: -14,
-    right: -8,
-    width: 74,
-    height: 74,
-    borderRadius: 4,
-    transform: [{ rotate: '25deg' }],
-  },
-  aiTileSub: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 12,
-    fontFamily: fonts.medium,
-    marginTop: 4,
-    maxWidth: '95%',
-  },
-  aiTileIcon: {
-    position: 'absolute',
-    bottom: 10,
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // ── Top result hero ─────────────────────────────────────────────────
-  topResultWrap: { paddingHorizontal: spacing.lg },
-  songsHeader: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
-    letterSpacing: -0.3,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm + 2,
-  },
-  topCard: {
+  secLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#181818',
-    borderRadius: 6,
-    padding: 12,
-    marginBottom: 6,
-    overflow: 'hidden',
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 8,
   },
-  topCardInfo: { flex: 1, gap: 6 },
-  topCardTitle: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
-    letterSpacing: -0.3,
-    lineHeight: 23,
-  },
-  topCardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  topCardType: {
-    backgroundColor: '#2e2e2e',
-    borderRadius: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  topCardTypeText: { color: colors.text, fontSize: 11.5, fontWeight: '700', fontFamily: fonts.bold },
-  topCardArtist: { color: colors.textDim, fontSize: 13, fontFamily: fonts.medium, flexShrink: 1 },
-  topPlayFab: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: colors.accentBright,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-  },
-  reasonLine: {
-    color: colors.textDim,
-    fontSize: 11.5,
-    fontFamily: fonts.medium,
-  },
-  lyricChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(29,185,84,0.12)',
-    borderRadius: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-  },
-  lyricChipText: {
-    color: colors.accentBright,
-    fontSize: 11,
-    fontFamily: fonts.semibold ?? fonts.medium,
-    flexShrink: 1,
-  },
-  relaxedNote: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  relaxedNoteText: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontFamily: fonts.medium,
-  },
-  centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
-  // ── infinite results footer (F1) ─────────────────────────────────────
-  loadMoreFooter: { paddingVertical: 22, alignItems: 'center' },
-  endNote: {
-    color: colors.textFaint,
-    fontSize: 13,
-    fontFamily: fonts.medium,
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  noResults: { color: colors.text, fontSize: 18, fontWeight: '700', fontFamily: fonts.bold },
-  noResultsSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
-  degradedNote: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontFamily: fonts.medium,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  // ── source toggle (Catalog | YouTube) ──
+  secRule: { flex: 1, height: 2, backgroundColor: colors.ink },
   sourceToggleRow: {
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
   },
   sourceChip: {
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+  },
+  genreRow: { gap: 10, marginBottom: 10, paddingHorizontal: 18 },
+  gcard: {
+    flex: 1,
+    aspectRatio: 2.4,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 11,
+    paddingTop: 9,
+    paddingBottom: 7,
+  },
+  gcardWide: { aspectRatio: 2.4 },
+  gcardLabel: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 13.5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  gcardNum: { position: 'absolute', right: 9, bottom: 7 },
+  centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 40 },
+  sigNote: {
+    marginHorizontal: 18,
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    padding: 12,
+  },
+  sigChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  sigChip: {
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  sigRescuedNote: {
+    marginHorizontal: 18,
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignSelf: 'flex-start',
+  },
+  topResultWrap: { paddingTop: 10 },
+  resTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    height: 30,
-    borderRadius: radius.full,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  sourceChipActive: {
-    backgroundColor: colors.accentBright,
-  },
-  sourceChipText: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontFamily: fonts.semibold,
-  },
-  sourceChipTextActive: {
-    color: '#101010',
-  },
-  // ── SIG states (§3.1) ──
-  sigNote: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    padding: 12,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-  },
-  sigNoteTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontFamily: fonts.semibold,
-  },
-  sigNoteSub: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontFamily: fonts.regular,
-    marginTop: 2,
-  },
-  sigChips: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 10,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 10,
   },
-  sigChip: {
-    paddingHorizontal: 10,
-    height: 26,
-    borderRadius: radius.full,
-    backgroundColor: '#2a2a2a',
+  resTagCount: { backgroundColor: colors.ink, paddingHorizontal: 7, paddingVertical: 2 },
+  topCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginHorizontal: 18,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    padding: 12,
+  },
+  topCardInfo: { flex: 1, minWidth: 0 },
+  topCardTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 17,
+    lineHeight: 18,
+    textTransform: 'uppercase',
+  },
+  topTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  topTypeChip: {
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  topPlayFab: {
+    width: 44,
+    height: 44,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sigChipText: {
-    color: colors.text,
-    fontSize: 11,
-    fontFamily: fonts.medium,
+  reasonChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.acid,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 6,
   },
-  sigRescuedNote: {
-    color: colors.accentBright,
-    fontSize: 12,
-    fontFamily: fonts.medium,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
+  lyricChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 6,
   },
+  loadMoreFooter: { paddingVertical: 18, alignItems: 'center' },
+  endNoteWrap: { alignItems: 'center', paddingVertical: 18 },
 });

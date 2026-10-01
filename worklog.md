@@ -1498,3 +1498,92 @@ Stage Summary:
   set: launch-grade README, complete changelog through v3.4.5, a module
   map that actually covers the v3.4 codebase, current dev guide, and
   clearly-framed engineering RFCs. Zero app-code churn.
+
+---
+Task ID: 21 (v4.0.0 PULSE — the complete UI redesign)
+Agent: Super Z (main agent)
+
+Task: Completely redesign the entire UI per prototype-2-pulse.html (the
+user's "PULSE" editorial-brutalist prototype), run the gauntlet loop with
+blind critics, end-to-end test via the device lab, and ship v4.0.0 (CI
+builds the signed APK on tag push).
+
+Work Log:
+- Cloned + understood the full codebase (v3.4.5) and the gauntlet-loop
+  skill; researched neo-brutalism, motion tiers (150-300ms micro /
+  300-500ms sheets), RN animation perf (built-in Animated + native
+  driver only — zero new native deps) and music-app UX patterns.
+- Bar captured first: prototype-2-pulse.html screenshotted at 390x844,
+  834x1120, 1440x900 (scripts/shoot_bar.py) — the reference for every
+  blind comparison.
+- Design system rewrite (src/theme.ts): paper/ink/acid/orange tokens,
+  legacy names re-pointed (v2.3 migration trick), Archivo Black/Archivo/
+  Space Mono (7 TTFs added to assets/fonts), hardShadow()/orangeShadow()
+  helpers, zero-radius geometry, kicker/monoMeta styles. Spec:
+  docs/PULSE-REDESIGN.md.
+- NEW primitives (src/components/Brutal.tsx): Brutal (press-into-the-
+  paper pressable, 100ms, haptic), OutlineText (8-direction zero-radius
+  text-shadow ink stroke — the prototype's -webkit-text-stroke em words),
+  MonoText/Kicker/SourceBadge/PulseDot/Ticker (measured -50% marquee,
+  native driver).
+- Rebuilt EVERY surface: Artwork (square, ink border, hatch fallback),
+  TrackRow (mono index, acid EQ block, reason chips, source badges),
+  Shelf (kicker+rule headers, bordered cards w/ play FAB, grayscale
+  artist stamps), QuickTile (numbered index tiles), MiniPlayer (ink bar,
+  orange shadow, artwork + EQ overlay, real progress), Toast, ShelfSkeleton,
+  TrackMenu, WhatsNewDialog (v4 bulletin), Onboarding (broadsheet nameplate,
+  square stamps, acid checks), App shell (Front/Index/Crates/Wire tab bar —
+  2px ink top border, mono labels, orange navdot; Premium demoted to a
+  Crates banner, MINDBEAT promoted to the 4th tab).
+- Screens: HomeScreen (masthead + edition + outlined name, Now Sound ink
+  hero, ticker, numbered tiles, editorial shelves — FlatList + memo
+  contracts intact), SearchScreen (The Index: bordered field w/ orange
+  focus shadow, numbered browse stacks, N-verified tag, RescueNotes,
+  dashed zero state), LibraryScreen (The Crates: Liked Songs orange hero,
+  index rows, premium banner, brutal dialogs), MindbeatWireScreen (NEW
+  4th tab: pulsing hero, vibe input, 5-stage ink pipeline, dispatch card,
+  Your Sound audit box; AIScreen now wraps it for legacy deep links),
+  PlayerScreen (broadsheet: 14% artwork wash + palette hue, stamped
+  artwork, striped ink-on-orange scrubber, 66px ink transport, real
+  LRCLIB lyrics, CAST/SHARE/SAVE foot, square-switch queue sheet),
+  CollectionScreen/PlaylistScreen (palette whisper + bordered heroes +
+  acid shuffle + ink FABs), StatsScreen (The Audit), TasteScreen
+  (PULSE data tables), PremiumScreen (subscription bulletin).
+- Gauntlet loop (bar = the prototype, judged blind by fresh-context
+  critics): R1 6 pairs — app won Home 9-8, Search 8.5-6, Library 9-7,
+  Player 9-3*, Wire 8.5-7.5 (*bar's player capture was broken = forfeit);
+  prototype won Mini by capture forfeit. R2 (fixed captures): Player app
+  7-6; Mini prototype 6-5 — fixes implemented: real LRCLIB lyrics in the
+  player card (fetchPlainLyrics, 3-line excerpt), mini artwork always
+  visible (EQ as overlay), play-skip glyph, 4px progress, Wire empty-
+  state ("LEDGER WARMING UP" instead of naked dashes). R3 (final): Mini
+  app 8-5 — "compresses the whole PULSE vocabulary into 52 dockpoints".
+  LOOP WON 6/6 blind pairs.
+- Two real bugs found + fixed by the loop: (1) search pagination race —
+  the engine's final paint stomped fast page-2 appends (appendedPagesRef
+  ledger + compose-on-final-paint), plus stale-closure guards (loading/
+  loadingMore/hasMore/query refs) and an eager thin-page top-up;
+  results pivoted from a deadlocking RN-web virtualized list to a plain
+  ScrollView bottom-probe (the FlatList contract lives on Home, which
+  keeps its locked FlatList). (2) RN-web single-scroll-event trap —
+  scrollEventThrottle={16} on the paginated lists.
+- Device lab updated for PULSE labels (Front/Index/Crates/Wire, new
+  placeholder + honest-state copy, scroll jiggle for the virtualized
+  window, mini-player capture after player dismissal). Batch runner
+  (scripts/lab_batch.sh + TSF_DEVICES) for the sandbox's per-invocation
+  process reaping. RESULT: 160/160 checkpoints, ZERO console errors,
+  across pixel7 / iphone13 / tablet / tablet-landscape / desktop-window.
+- Identity suite: PULSE icon/adaptive/splash/favicon (scripts/
+  gen_icon_pulse.py — paper field, ink frame, acid EQ mark, TSF M base
+  slab, hard orange shadows), app.json 4.0.0 + light + paper splash,
+  README product refresh.
+- Final gates: tsc --noEmit CLEAN; 288/288 tests (1,690 assertions);
+  160/160 lab checkpoints; zero console errors.
+
+Stage Summary:
+- v4.0.0 PULSE shipped: the whole app is an editorial broadsheet — every
+  screen, every component, icon and splash — with MINDBEAT, search,
+  playback, downloads and safety logic untouched (contracts preserved:
+  Home FlatList + memo rows, ytAppend wiring, testIDs, window policy).
+- The gauntlet loop is won blind 6/6 against the user's own prototype,
+  with two real behavior bugs fixed along the way.

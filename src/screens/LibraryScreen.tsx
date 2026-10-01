@@ -1,11 +1,12 @@
 /**
- * Your Library — authentic Spotify Android layout:
- *   avatar + "Your Library" title, search & add icons right →
- *   filter chips (Playlists / Artists / Albums / Downloaded) →
- *   sort row ("Recent" + grid toggle) → list rows: 64px artwork
- *   (rounded-square playlists, circle artists), 16px bold title,
- *   13px dim subtitle. Liked Songs leads with the iconic purple→green
- *   gradient heart tile + green pin.
+ * Your Library — PULSE "The Crates" (v4.0 editorial brutalism):
+ *   masthead (display title + avatar) → bordered chips → Liked Songs
+ *   orange hero with the ink play block → index list rows (48px
+ *   bordered art, uppercase titles, mono meta) → Premium banner →
+ *   create/rename dialogs + long-press sheet in ink-on-paper.
+ *
+ * Data logic unchanged from v3.4: chips (Playlists/Artists/Albums/
+ * Downloaded), sort + grid toggle, playlist CRUD, download verification.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -19,11 +20,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, useSafeAreaFrame } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaFrame } from 'react-native-safe-area-context';
 import type { Playlist, Track } from '../types';
 import { usePlayer } from '../player/PlayerProvider';
 import {
@@ -35,11 +35,10 @@ import {
   renamePlaylist,
 } from '../storage/store';
 import { verifyDownloads } from '../storage/downloads';
-import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
-import { PressableScale } from '../components/PressableScale';
+import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { useToast } from '../components/Toast';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
 
 type Chip = 'playlists' | 'artists' | 'albums' | 'downloaded';
@@ -64,7 +63,7 @@ export function LibraryScreen() {
 
   const [chip, setChip] = useState<Chip>('playlists');
   const [sortRecent, setSortRecent] = useState(true);
-  const [grid, setGrid] = useState(false); // genuine Spotify grid/list view toggle
+  const [grid, setGrid] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [favorites, setFavorites] = useState<Track[]>([]);
   const [downloads, setDownloads] = useState<Track[]>([]);
@@ -113,7 +112,7 @@ export function LibraryScreen() {
     setCreateOpen(false);
     setNewName('');
     await reload();
-    toast.show({ message: `Created “${pl.name}”`, icon: 'add-circle' });
+    toast.show({ message: `FILED — ${pl.name.toUpperCase()}`, icon: 'add-circle' });
     nav.navigate('Playlist', { playlistId: pl.id });
   };
 
@@ -122,7 +121,7 @@ export function LibraryScreen() {
     const name = renameText.trim();
     if (name) {
       await renamePlaylist(menuFor.id, name);
-      toast.show({ message: 'Playlist renamed', icon: 'pencil' });
+      toast.show({ message: 'RELABELED', icon: 'pencil' });
     }
     setRenameOpen(false);
     setMenuFor(null);
@@ -132,7 +131,7 @@ export function LibraryScreen() {
   const onDelete = async () => {
     if (!menuFor) return;
     await deletePlaylist(menuFor.id);
-    toast.show({ message: `Deleted “${menuFor.name}”`, icon: 'trash-outline' });
+    toast.show({ message: `STRUCK — ${menuFor.name.toUpperCase()}`, icon: 'trash-outline' });
     setMenuFor(null);
     await reload();
   };
@@ -143,7 +142,7 @@ export function LibraryScreen() {
       tracks,
     });
 
-  /* ── build the Spotify-style item list per chip ──────────────────── */
+  /* ── build the item list per chip ─────────────────────────────────── */
   const items: LibItem[] = [];
   if (chip === 'playlists') {
     items.push({
@@ -172,7 +171,7 @@ export function LibraryScreen() {
         items.push({
           key: p.id,
           title: p.name,
-          subtitle: `${p.aiGenerated ? 'TSF AI · ' : 'Playlist · '}${p.tracks.length} songs`,
+          subtitle: `${p.aiGenerated ? 'MINDBEAT · ' : 'Playlist · '}${p.tracks.length} songs`,
           artwork: p.tracks[0]?.artwork,
           seed: p.id,
           kind: p.aiGenerated ? 'ai' : 'playlist',
@@ -226,33 +225,33 @@ export function LibraryScreen() {
     );
   }
 
-  const renderItem = ({ item }: { item: LibItem }) => {
-    const onRowPress = () => {
-      if (item.kind === 'liked') return openCollection('Liked Songs', item.tracks ?? []);
-      if (item.kind === 'stats') return nav.navigate('Stats');
-      if (item.playlistId) return nav.navigate('Playlist', { playlistId: item.playlistId });
-      if (item.kind === 'artist')
-        return nav.navigate('Collection', {
-          collection: {
-            id: `artist-${item.title}`,
-            title: item.title,
-            subtitle: 'Artist',
-            artwork: '',
-            kind: 'search',
-            query: item.title,
-          },
-        });
-      if (item.kind === 'album' || item.kind === 'track')
-        return nav.navigate('Collection', {
-          collection: {
-            id: `local-${item.title}`,
-            title: item.title,
-            artwork: item.artwork ?? '',
-          },
-          tracks: item.tracks ?? [],
-        });
-      openCollection(item.title, item.tracks ?? []);
-    };
+  const navigateItem = (item: LibItem) => {
+    if (item.kind === 'stats') return nav.navigate('Stats');
+    if (item.playlistId) return nav.navigate('Playlist', { playlistId: item.playlistId });
+    if (item.kind === 'artist')
+      return nav.navigate('Collection', {
+        collection: {
+          id: `artist-${item.title}`,
+          title: item.title,
+          subtitle: 'Artist',
+          artwork: '',
+          kind: 'search',
+          query: item.title,
+        },
+      });
+    if (item.kind === 'album' || item.kind === 'track')
+      return nav.navigate('Collection', {
+        collection: {
+          id: `local-${item.title}`,
+          title: item.title,
+          artwork: item.artwork ?? '',
+        },
+        tracks: item.tracks ?? [],
+      });
+    openCollection(item.title, item.tracks ?? []);
+  };
+
+  const renderItem = ({ item, index }: { item: LibItem; index: number }) => {
     const longPressPlaylist = () => {
       const pl = playlists.find((p) => p.id === item.playlistId);
       if (pl) {
@@ -261,210 +260,213 @@ export function LibraryScreen() {
       }
     };
     return (
-      <PressableScale
-        haptic
-        scaleTo={0.985}
-        style={styles.row}
-        onPress={onRowPress}
+      <Pressable
+        style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.paper2 }]}
+        onPress={() => navigateItem(item)}
         onLongPress={longPressPlaylist}
         delayLongPress={300}
       >
+        <MonoText size={10} bold color={colors.ink40} style={styles.rowIndex}>
+          {String(index + 1).padStart(2, '0')}
+        </MonoText>
         {item.kind === 'liked' ? (
-          <Artwork seed="liked" size={64} liked variant="rounded" />
+          <View style={[styles.kindTile, { backgroundColor: colors.orange }]}>
+            <Ionicons name="heart" size={22} color={colors.ink} />
+          </View>
         ) : item.kind === 'stats' ? (
-          <View style={styles.statsTile}>
-            <Ionicons name="pulse-outline" size={26} color="#fff" />
+          <View style={[styles.kindTile, { backgroundColor: colors.ink }]}>
+            <Ionicons name="pulse" size={22} color={colors.acid} />
           </View>
         ) : item.kind === 'ai' ? (
-          <View style={styles.aiTile}>
-            <Ionicons name="sparkles" size={24} color="#fff" />
+          <View style={[styles.kindTile, { backgroundColor: colors.acid }]}>
+            <Ionicons name="sparkles" size={22} color={colors.ink} />
           </View>
         ) : (
           <Artwork
             uri={item.artwork}
             seed={item.seed}
-            size={64}
-            variant={item.circle ? 'circle' : 'rounded'}
+            size={48}
+            variant={item.circle ? 'circle' : 'square'}
           />
         )}
-        <View style={{ flex: 1, gap: 3, paddingRight: 8 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {item.title}
           </Text>
-          <View style={styles.rowSubWrap}>
-            {item.kind === 'liked' ? (
-              <Ionicons name="pin" size={14} color={colors.accentBright} />
-            ) : null}
-            <Text style={styles.rowSub} numberOfLines={1}>
-              {item.subtitle}
-            </Text>
-          </View>
+          <MonoText size={9.5} style={{ marginTop: 2 }} numberOfLines={1}>
+            {item.subtitle}
+          </MonoText>
         </View>
-        {item.playlistId ? (
-          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-        ) : null}
-      </PressableScale>
+        <Ionicons name="chevron-forward" size={15} color={colors.ink40} />
+      </Pressable>
     );
   };
 
-  /* Grid view — genuine Spotify library grid: 2-col cover tiles. */
+  /* Grid view — 2-col bordered covers. */
   const { width: frameWidth } = useSafeAreaFrame();
-  const gridCell = Math.floor((frameWidth - 16 * 2 - 12) / 2);
-  const renderGridItem = ({ item }: { item: LibItem }) => {
-    const onCellPress = () => {
-      if (item.kind === 'liked') return openCollection('Liked Songs', item.tracks ?? []);
-      if (item.kind === 'stats') return nav.navigate('Stats');
-      if (item.playlistId) return nav.navigate('Playlist', { playlistId: item.playlistId });
-      if (item.kind === 'artist')
-        return nav.navigate('Collection', {
-          collection: {
-            id: `artist-${item.title}`,
-            title: item.title,
-            subtitle: 'Artist',
-            artwork: '',
-            kind: 'search',
-            query: item.title,
-          },
-        });
-      if (item.kind === 'album' || item.kind === 'track')
-        return nav.navigate('Collection', {
-          collection: {
-            id: `local-${item.title}`,
-            title: item.title,
-            artwork: item.artwork ?? '',
-          },
-          tracks: item.tracks ?? [],
-        });
-      openCollection(item.title, item.tracks ?? []);
-    };
-    return (
-      <PressableScale haptic scaleTo={0.97} style={{ width: gridCell, gap: 8 }} onPress={onCellPress}>
-        {item.kind === 'liked' ? (
-          <Artwork seed="liked" size={gridCell} liked variant="rounded" />
-        ) : item.kind === 'stats' ? (
-          <View style={[styles.statsTile, { width: gridCell, height: gridCell }]}>
-            <Ionicons name="pulse-outline" size={40} color="#fff" />
-          </View>
-        ) : item.kind === 'ai' ? (
-          <View style={[styles.aiTile, { width: gridCell, height: gridCell }]}>
-            <Ionicons name="sparkles" size={38} color="#fff" />
-          </View>
-        ) : (
-          <Artwork
-            uri={item.artwork}
-            seed={item.seed}
-            size={gridCell}
-            variant={item.circle ? 'circle' : 'rounded'}
-          />
-        )}
-        <Text style={styles.gridTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.gridSub} numberOfLines={1}>
-          {item.subtitle}
-        </Text>
-      </PressableScale>
-    );
-  };
+  const gridCell = Math.floor((frameWidth - 18 * 2 - 10) / 2);
+  const renderGridItem = ({ item }: { item: LibItem }) => (
+    <Brutal haptic shadow={3} style={{ width: gridCell }} onPress={() => navigateItem(item)}>
+      {item.kind === 'liked' ? (
+        <View style={[styles.kindTile, { width: gridCell, height: gridCell, backgroundColor: colors.orange }]}>
+          <Ionicons name="heart" size={38} color={colors.ink} />
+        </View>
+      ) : item.kind === 'stats' ? (
+        <View style={[styles.kindTile, { width: gridCell, height: gridCell, backgroundColor: colors.ink }]}>
+          <Ionicons name="pulse" size={38} color={colors.acid} />
+        </View>
+      ) : item.kind === 'ai' ? (
+        <View style={[styles.kindTile, { width: gridCell, height: gridCell, backgroundColor: colors.acid }]}>
+          <Ionicons name="sparkles" size={38} color={colors.ink} />
+        </View>
+      ) : (
+        <Artwork
+          uri={item.artwork}
+          seed={item.seed}
+          size={gridCell}
+          variant={item.circle ? 'circle' : 'square'}
+        />
+      )}
+      <Text style={styles.gridTitle} numberOfLines={1}>
+        {item.title}
+      </Text>
+      <MonoText size={9} style={{ marginTop: 2 }} numberOfLines={1}>
+        {item.subtitle}
+      </MonoText>
+    </Brutal>
+  );
 
   const emptyCopy: Record<Chip, { title: string; sub: string }> = {
     playlists: {
-      title: 'Create your first playlist',
+      title: 'Open your first crate',
       sub: "It's easy — we'll help you",
     },
     artists: { title: 'No artists yet', sub: 'Songs you play will show artists here' },
     albums: { title: 'No albums yet', sub: 'Music you play will collect here' },
-    downloaded: { title: 'No downloads', sub: 'Download from the player for offline listening' },
+    downloaded: { title: 'No downloads', sub: 'Save from the player for offline listening' },
   };
 
   const showEmpty = chip === 'playlists' ? items.length <= 2 : items.length === 0;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* header: avatar + title left · search + add right (Spotify) */}
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>T</Text>
-          </View>
-          <Text style={styles.title}>Your Library</Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 4 }}>
-          <PressableScale hitSlop={6} haptic style={styles.iconBtn} onPress={() => toast.show({ message: 'Search your library — coming soon', icon: 'search' })}>
-            <Ionicons name="search" size={22} color={colors.text} />
-          </PressableScale>
-          <PressableScale hitSlop={6} haptic style={styles.iconBtn} onPress={() => setCreateOpen(true)}>
-            <Ionicons name="add" size={26} color={colors.text} />
-          </PressableScale>
-        </View>
-      </View>
-
-      {/* filter chips — genuine Library style: ghost outline, green active */}
-      <View style={styles.chips}>
-        {(['playlists', 'artists', 'albums', 'downloaded'] as Chip[]).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setChip(t)}
-            style={[styles.chip, chip === t && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, chip === t && styles.chipTextActive]}>
-              {t === 'playlists'
-                ? 'Playlists'
-                : t === 'artists'
-                  ? 'Artists'
-                  : t === 'albums'
-                    ? 'Albums'
-                    : 'Downloaded'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* sort row + grid/list view toggle (genuine Spotify) */}
-      <View style={styles.sortRow}>
-        <PressableScale hitSlop={8} haptic onPress={() => setSortRecent((v) => !v)} style={styles.sortBtn}>
-          <Ionicons name="swap-vertical" size={15} color={colors.textDim} />
-          <Text style={styles.sortText}>{sortRecent ? 'Recent' : 'Alphabetical'}</Text>
-          <Ionicons name="chevron-down" size={13} color={colors.textDim} />
-        </PressableScale>
-        <PressableScale
-          hitSlop={8}
-          haptic
-          onPress={() => setGrid((v) => !v)}
-          style={styles.viewToggle}
-          accessibilityLabel={grid ? 'Switch to list view' : 'Switch to grid view'}
-        >
-          <Ionicons
-            name={grid ? 'list' : 'grid'}
-            size={18}
-            color={colors.text}
-          />
-        </PressableScale>
-      </View>
-
       <FlatList
         data={items}
         keyExtractor={(i) => i.key}
         renderItem={grid ? renderGridItem : renderItem}
         numColumns={grid ? 2 : 1}
         key={grid ? 'grid' : 'list'}
-        columnWrapperStyle={grid ? { gap: 12, paddingHorizontal: 16 } : undefined}
+        columnWrapperStyle={grid ? { gap: 10, paddingHorizontal: 18 } : undefined}
         contentContainerStyle={
-          grid ? { paddingBottom: 170, gap: 14, paddingTop: 4 } : { paddingBottom: 170, flexGrow: 1 }
+          grid
+            ? { paddingBottom: 190, gap: 14 }
+            : { paddingBottom: 190, flexGrow: 1 }
+        }
+        ListHeaderComponent={
+          <View>
+            {/* masthead */}
+            <View style={styles.headerRow}>
+              <OutlineText style={styles.title} outline={1.5}>
+                The Crates
+              </OutlineText>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <Brutal haptic shadow={2} style={styles.iconBtn} onPress={() => setCreateOpen(true)}>
+                  <Ionicons name="add" size={18} color={colors.ink} />
+                </Brutal>
+              </View>
+            </View>
+
+            {/* filter chips */}
+            <View style={styles.chips}>
+              {(['playlists', 'artists', 'albums', 'downloaded'] as Chip[]).map((t) => (
+                <Brutal
+                  key={t}
+                  haptic={chip !== t}
+                  shadow={2}
+                  onPress={() => setChip(t)}
+                  style={[styles.chip, chip === t && styles.chipActive]}
+                >
+                  <MonoText size={10.5} bold color={chip === t ? colors.ink : colors.ink60} style={{ letterSpacing: 0.8 }}>
+                    {t === 'playlists'
+                      ? 'Playlists'
+                      : t === 'artists'
+                        ? 'Artists'
+                        : t === 'albums'
+                          ? 'Albums'
+                          : 'Saved'}
+                  </MonoText>
+                </Brutal>
+              ))}
+            </View>
+
+            {/* sort row + view toggle */}
+            <View style={styles.sortRow}>
+              <Pressable hitSlop={8} onPress={() => setSortRecent((v) => !v)} style={styles.sortBtn}>
+                <Ionicons name="swap-vertical" size={13} color={colors.ink60} />
+                <MonoText size={10} bold color={colors.ink60} style={{ letterSpacing: 1 }}>
+                  {sortRecent ? 'RECENT' : 'A-Z'}
+                </MonoText>
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                onPress={() => setGrid((v) => !v)}
+                accessibilityLabel={grid ? 'Switch to list view' : 'Switch to grid view'}
+              >
+                <Ionicons name={grid ? 'list' : 'grid'} size={17} color={colors.ink60} />
+              </Pressable>
+            </View>
+
+            {/* Liked Songs hero (orange block) */}
+            {chip === 'playlists' && favorites.length >= 0 ? (
+              <Brutal haptic shadow={4} style={styles.likedHero} onPress={() => openCollection('Liked Songs', favorites)}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.likedTitle} allowFontScaling={false}>
+                    Liked{'\n'}Songs
+                  </Text>
+                  <MonoText size={10} bold color={colors.ink} style={{ marginTop: 6, letterSpacing: 0.8 }}>
+                    {favorites.length} SONGS · ON DEVICE
+                  </MonoText>
+                </View>
+                <View style={styles.likedPlay}>
+                  <Ionicons name="play" size={17} color={colors.acid} />
+                </View>
+              </Brutal>
+            ) : null}
+          </View>
         }
         ListFooterComponent={
-          <Text style={styles.version}>Version {Constants.expoConfig?.version ?? '3.0.0'}</Text>
+          <>
+            {/* Premium banner */}
+            <Brutal haptic shadow={4} style={styles.premiumBanner} onPress={() => nav.navigate('Premium')}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.premiumTitle}>TSF Premium</Text>
+                <MonoText size={10} color={colors.ink60} style={{ marginTop: 6, lineHeight: 16 }}>
+                  320 kbps stays free forever. Premium adds lossless AAC+ transport, waveform seek and offline artwork caching.
+                </MonoText>
+              </View>
+              <View style={styles.premiumBtn}>
+                <MonoText size={10} bold color={colors.acid} style={{ letterSpacing: 1 }}>
+                  TRY 1 MONTH FREE
+                </MonoText>
+              </View>
+            </Brutal>
+            <MonoText size={9} color={colors.ink40} style={styles.version}>
+              PULSE EDITION · VERSION {Constants.expoConfig?.version ?? '4.0.0'}
+            </MonoText>
+          </>
         }
         ListEmptyComponent={
           chip === 'playlists' ? null : (
             <View style={styles.empty}>
               <Ionicons
-                name={chip === 'downloaded' ? 'arrow-down-circle-outline' : 'musical-notes-outline'}
-                size={48}
-                color={colors.textFaint}
+                name={chip === 'downloaded' ? 'arrow-down-circle-outline' : 'albums-outline'}
+                size={40}
+                color={colors.ink40}
               />
-              <Text style={styles.emptyTitle}>{emptyCopy[chip].title}</Text>
-              <Text style={styles.emptySub}>{emptyCopy[chip].sub}</Text>
+              <Text style={styles.emptyTitle}>{emptyCopy[chip].title.toUpperCase()}</Text>
+              <MonoText size={10} color={colors.ink60} style={{ textAlign: 'center' }}>
+                {emptyCopy[chip].sub.toUpperCase()}
+              </MonoText>
             </View>
           )
         }
@@ -472,15 +474,15 @@ export function LibraryScreen() {
 
       {showEmpty && chip === 'playlists' ? (
         <View style={styles.emptyOverlay}>
-          <Text style={styles.emptyTitle}>{emptyCopy.playlists.title}</Text>
-          <Text style={styles.emptySub}>{emptyCopy.playlists.sub}</Text>
-          <PressableScale
-            haptic
-            onPress={() => setCreateOpen(true)}
-            style={styles.emptyCreateBtn}
-          >
-            <Text style={styles.emptyCreateText}>Create</Text>
-          </PressableScale>
+          <Text style={styles.emptyTitle}>OPEN YOUR FIRST CRATE</Text>
+          <MonoText size={10} color={colors.ink60}>
+            IT'S EASY — WE'LL HELP YOU
+          </MonoText>
+          <Brutal haptic shadow={3} style={styles.emptyCreateBtn} onPress={() => setCreateOpen(true)}>
+            <MonoText size={10.5} bold color={colors.ink}>
+              CREATE
+            </MonoText>
+          </Brutal>
         </View>
       ) : null}
 
@@ -488,23 +490,27 @@ export function LibraryScreen() {
       <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setCreateOpen(false)}>
           <Pressable style={styles.dialog} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.dialogTitle}>New playlist</Text>
+            <Text style={styles.dialogTitle}>New crate</Text>
             <TextInput
               style={styles.dialogInput}
-              placeholder="Playlist name"
-              placeholderTextColor={colors.textFaint}
+              placeholder="CRATE NAME"
+              placeholderTextColor={colors.ink40}
               value={newName}
               onChangeText={setNewName}
               autoFocus
               onSubmitEditing={onCreate}
             />
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-              <PressableScale style={styles.dialogCancel} onPress={() => setCreateOpen(false)} haptic>
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </PressableScale>
-              <PressableScale style={styles.dialogCreate} onPress={onCreate} haptic>
-                <Text style={styles.dialogCreateText}>Create</Text>
-              </PressableScale>
+              <Brutal style={styles.dialogCancel} shadow={0} pressOffset={1} haptic onPress={() => setCreateOpen(false)}>
+                <MonoText size={10.5} bold color={colors.ink}>
+                  CANCEL
+                </MonoText>
+              </Brutal>
+              <Brutal style={[styles.dialogCancel, styles.chipActive]} shadow={0} pressOffset={1} haptic onPress={onCreate}>
+                <MonoText size={10.5} bold color={colors.ink}>
+                  CREATE
+                </MonoText>
+              </Brutal>
             </View>
           </Pressable>
         </Pressable>
@@ -515,20 +521,26 @@ export function LibraryScreen() {
         <Pressable style={styles.modalBackdrop} onPress={() => setMenuFor(null)}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle} numberOfLines={1}>
-              {menuFor?.name}
+              {menuFor?.name.toUpperCase()}
             </Text>
-            <PressableScale style={styles.sheetAction} onPress={() => setRenameOpen(true)} haptic>
-              <Ionicons name="pencil-outline" size={20} color={colors.text} />
-              <Text style={styles.sheetActionText}>Rename</Text>
-            </PressableScale>
-            <PressableScale style={styles.sheetAction} onPress={onDelete} haptic>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
-              <Text style={[styles.sheetActionText, { color: colors.danger }]}>Delete playlist</Text>
-            </PressableScale>
-            <PressableScale style={[styles.sheetAction, { borderBottomWidth: 0 }]} onPress={() => setMenuFor(null)} haptic>
-              <Ionicons name="close" size={20} color={colors.textDim} />
-              <Text style={[styles.sheetActionText, { color: colors.textDim }]}>Cancel</Text>
-            </PressableScale>
+            <Pressable style={({ pressed }) => [styles.sheetAction, pressed && { backgroundColor: colors.paper2 }]} onPress={() => setRenameOpen(true)}>
+              <Ionicons name="pencil-outline" size={18} color={colors.ink} />
+              <MonoText size={10.5} bold color={colors.ink} style={{ letterSpacing: 0.8 }}>
+                RENAME
+              </MonoText>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.sheetAction, pressed && { backgroundColor: colors.paper2 }]} onPress={onDelete}>
+              <Ionicons name="trash-outline" size={18} color={colors.orangeDeep} />
+              <MonoText size={10.5} bold color={colors.orangeDeep} style={{ letterSpacing: 0.8 }}>
+                DELETE CRATE
+              </MonoText>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.sheetAction, pressed && { backgroundColor: colors.paper2 }]} onPress={() => setMenuFor(null)}>
+              <Ionicons name="close" size={18} color={colors.ink60} />
+              <MonoText size={10.5} bold color={colors.ink60} style={{ letterSpacing: 0.8 }}>
+                CANCEL
+              </MonoText>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -537,23 +549,27 @@ export function LibraryScreen() {
       <Modal visible={renameOpen} transparent animationType="fade" onRequestClose={() => setRenameOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setRenameOpen(false)}>
           <Pressable style={styles.dialog} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.dialogTitle}>Rename playlist</Text>
+            <Text style={styles.dialogTitle}>Rename crate</Text>
             <TextInput
               style={styles.dialogInput}
-              placeholder="Playlist name"
-              placeholderTextColor={colors.textFaint}
+              placeholder="CRATE NAME"
+              placeholderTextColor={colors.ink40}
               value={renameText}
               onChangeText={setRenameText}
               autoFocus
               onSubmitEditing={onRename}
             />
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-              <PressableScale style={styles.dialogCancel} onPress={() => setRenameOpen(false)} haptic>
-                <Text style={styles.dialogCancelText}>Cancel</Text>
-              </PressableScale>
-              <PressableScale style={styles.dialogCreate} onPress={onRename} haptic>
-                <Text style={styles.dialogCreateText}>Save</Text>
-              </PressableScale>
+              <Brutal style={styles.dialogCancel} shadow={0} pressOffset={1} haptic onPress={() => setRenameOpen(false)}>
+                <MonoText size={10.5} bold color={colors.ink}>
+                  CANCEL
+                </MonoText>
+              </Brutal>
+              <Brutal style={[styles.dialogCancel, styles.chipActive]} shadow={0} pressOffset={1} haptic onPress={onRename}>
+                <MonoText size={10.5} bold color={colors.ink}>
+                  SAVE
+                </MonoText>
+              </Brutal>
             </View>
           </Pressable>
         </Pressable>
@@ -563,196 +579,227 @@ export function LibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm + 2,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { color: colors.text, fontSize: 15, fontWeight: '800', fontFamily: fonts.extrabold },
   title: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: -0.3,
+    fontFamily: fonts.display,
+    fontSize: 34,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
+    lineHeight: 36,
   },
   iconBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chips: {
     flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.sm + 2,
+    flexWrap: 'wrap',
+    paddingHorizontal: 18,
+    gap: 8,
+    marginBottom: 10,
   },
   chip: {
-    borderRadius: radius.full,
     paddingHorizontal: 13,
     paddingVertical: 7,
-    // genuine Library chips: ghost outline, transparent fill
-    borderWidth: 1,
-    borderColor: colors.chipGhostBorder,
-    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
   },
-  chipActive: {
-    backgroundColor: colors.chipActiveBg,
-    borderWidth: 1,
-    borderColor: colors.chipActiveBg,
-  },
-  chipText: { color: colors.text, fontSize: 13, fontWeight: '600', fontFamily: fonts.semibold },
-  chipTextActive: { color: colors.chipActiveText },
+  chipActive: { backgroundColor: colors.acid },
   sortRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: 18,
+    paddingBottom: 12,
   },
-  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
-  sortText: { color: colors.textDim, fontSize: 13, fontFamily: fonts.medium },
-  viewToggle: { padding: 6 },
+  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  likedHero: {
+    marginHorizontal: 18,
+    marginTop: 4,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.orange,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 14,
+    minHeight: 118,
+  },
+  likedTitle: {
+    fontFamily: fonts.display,
+    fontSize: 30,
+    lineHeight: 29,
+    color: colors.ink,
+    textTransform: 'uppercase',
+  },
+  likedPlay: {
+    width: 48,
+    height: 48,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumBanner: {
+    marginHorizontal: 18,
+    marginTop: 22,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    padding: 16,
+  },
+  premiumTitle: {
+    fontFamily: fonts.display,
+    fontSize: 15,
+    color: colors.ink,
+    textTransform: 'uppercase',
+  },
+  premiumBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    backgroundColor: colors.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
   version: {
-    color: colors.textFaint,
-    fontSize: 11,
-    fontFamily: fonts.regular,
     textAlign: 'center',
     marginTop: 18,
+    letterSpacing: 1.4,
   },
   gridTitle: {
-    color: colors.text,
-    fontSize: 13.5,
-    fontWeight: '700',
+    color: colors.ink,
     fontFamily: fonts.bold,
-  },
-  gridSub: {
-    color: colors.textDim,
     fontSize: 12.5,
-    fontFamily: fonts.regular,
-    marginTop: -4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+    marginTop: 8,
   },
+  rowIndex: { width: 22 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
-    minHeight: 78,
+    gap: 13,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
+    minHeight: 70,
   },
-  rowTitle: { color: colors.text, fontSize: 16, fontWeight: '500', fontFamily: fonts.medium },
-  rowSubWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  rowSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular, flexShrink: 1 },
-  statsTile: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.sm,
-    backgroundColor: '#535353',
+  rowTitle: {
+    color: colors.ink,
+    fontSize: 13.5,
+    fontFamily: fonts.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+  },
+  kindTile: {
+    width: 48,
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  aiTile: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.sm,
-    backgroundColor: colors.aiStart,
-    alignItems: 'center',
-    justifyContent: 'center',
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
+  emptyOverlay: { alignItems: 'center', gap: 8, padding: 32, paddingTop: 52 },
+  emptyTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 17,
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xxl },
-  emptyOverlay: { alignItems: 'center', gap: spacing.sm, padding: spacing.xxl, paddingTop: spacing.xxl + 20 },
-  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700', fontFamily: fonts.bold },
-  emptySub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   emptyCreateBtn: {
-    backgroundColor: colors.accentBright,
-    borderRadius: radius.full,
-    paddingHorizontal: 30,
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 24,
     paddingVertical: 10,
-    marginTop: 10,
+    marginTop: 8,
   },
-  emptyCreateText: { color: colors.accentDeep, fontSize: 15, fontWeight: '700', fontFamily: fonts.bold },
   modalBackdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.xl,
+    padding: 24,
   },
   dialog: {
     width: '100%',
-    backgroundColor: colors.elevated,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    padding: 24,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 6, height: 6 }, elevation: 6 } as object),
   },
-  dialogTitle: { color: colors.text, fontSize: 19, fontWeight: '700', fontFamily: fonts.bold },
+  dialogTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 17,
+    textTransform: 'uppercase',
+  },
   dialogInput: {
-    backgroundColor: colors.card,
-    borderRadius: radius.sm + 2,
-    color: colors.text,
-    fontSize: 15,
-    fontFamily: fonts.regular,
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.lg,
-    height: 46,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    color: colors.ink,
+    fontFamily: fonts.monoBold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    paddingHorizontal: 12,
+    marginTop: 16,
+    height: 44,
   },
   dialogCancel: {
     flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: radius.full,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 11,
   },
-  dialogCancelText: { color: colors.text, fontSize: 14, fontWeight: '700', fontFamily: fonts.bold },
-  dialogCreate: {
-    flex: 1,
-    backgroundColor: colors.accentBright,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  dialogCreateText: { color: colors.accentDeep, fontSize: 14, fontWeight: '700', fontFamily: fonts.bold },
   sheet: {
     position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: spacing.xl,
-    backgroundColor: colors.elevated,
-    borderRadius: radius.xl,
-    paddingVertical: spacing.sm,
+    left: 16,
+    right: 16,
+    bottom: 24,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
     overflow: 'hidden',
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 6, height: 6 }, elevation: 6 } as object),
   },
   sheetTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 15,
+    textTransform: 'uppercase',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
   },
   sheetAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
+    gap: 12,
+    paddingHorizontal: 16,
     paddingVertical: 15,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
   },
-  sheetActionText: { color: colors.text, fontSize: 15, fontWeight: '500', fontFamily: fonts.medium },
 });

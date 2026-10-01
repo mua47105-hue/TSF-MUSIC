@@ -4,7 +4,7 @@
 
 # TSF Music
 
-**A complete, Spotify-grade music platform — with a learning intelligence engine that runs entirely on your phone.**
+**A complete music platform, redrawn as an editorial broadsheet — PULSE — with a learning intelligence engine that runs entirely on your phone.**
 
 No server · No account · No tracking · Install and it works
 
@@ -22,10 +22,12 @@ No server · No account · No tracking · Install and it works
 
 TSF Music streams **320 kbps audio** from two catalogs — JioSaavn's full library
 (decrypted on-device) and **YouTube's music catalog with ad-free full-song
-playback** — wrapped in an interface pixel-verified against Spotify itself.
-Every play, skip, like and download becomes graded evidence for **MINDBEAT**,
-an on-device learning engine that builds radio stations, daily mixes, and
-recommendations that actually explain themselves.
+playback** — wrapped in **PULSE**: an editorial-brutalist interface of paper,
+ink and acid that treats the app like a daily broadsheet (mastheads, kickers,
+tickers, index numbers, hard shadows, zero rounded corners). Every play, skip,
+like and download becomes graded evidence for **MINDBEAT**, an on-device
+learning engine that builds radio stations, daily mixes, and recommendations
+that actually explain themselves.
 
 There is no backend anywhere in this system. No sign-up, no telemetry, no
 LLM APIs — your listening history never leaves the device. The app calls the
@@ -140,12 +142,15 @@ trust — turn that into:
 Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 ms**
 (budget: 150 ms) · blind A/B preferred over the legacy engine 17/20.
 
-### Design
+### Design — PULSE (v4.0)
 
-- Authentic Spotify Android design language — pixel-verified against genuine
-  reference screenshots (green-active chips, #282828 mini-player card,
-  4-tab bar, plain-white play glyph)
-- Figtree typography (6 weights), Spotify's own color system
+- Editorial brutalism: warm paper `#F4F1EA`, ink `#161513`, acid `#D9FF3D`,
+  safety-orange `#FF4D00` — type is the interface, zero radius in the chrome,
+  hard offset shadows instead of blurs
+- Archivo Black display type + Archivo text + Space Mono labels (7 weights),
+  outline-stroke mastheads, marquee ticker, stamped 320 kbps artwork
+- The artwork palette engine stays: every player surface carries a whisper
+  of the current song's extracted hue over the paper wash
 - **Tablet & foldable correct** — fully resizeable windows, live
   re-measuring layout, no letterboxing, verified at 5 viewports
   (Pixel 7, iPhone 13, portrait + landscape tablet, desktop window)
@@ -272,6 +277,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v4.0.0** | **PULSE** — the complete UI redesign: editorial brutalism, the Wire tab, broadsheet player, real LRCLIB lyrics, micro-interactions everywhere |
 | **v3.4.5** | Field-fix round: real songs over lo-fi covers, 40-deep search results, zero Top Songs repeats, 60 fps home feed |
 | **v3.4.4** | The half-screen window bug, closed at the root (invisible WebView wrapper) with 9 regression locks |
 | **v3.4.3** | Full-bleed windows on every device: aspect-clamp immunity (4 compat opt-outs + maxAspectRatio) |
@@ -290,7 +296,8 @@ React Native 0.76 · Expo SDK 52 (prebuild, bare workflow) ·
 react-native-track-player 4.1.1 · expo-sqlite (event ledger, WAL) ·
 AsyncStorage · expo-linear-gradient / haptics / font / file-system ·
 crypto-js (DES stream decryption) · jpeg-js (artwork color extraction) ·
-Figtree typography · TypeScript strict · Bun · GitHub Actions.
+Archivo Black / Archivo / Space Mono typography (PULSE) ·
+TypeScript strict · Bun · GitHub Actions.
 
 ---
 

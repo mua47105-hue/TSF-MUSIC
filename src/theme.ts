@@ -1,72 +1,91 @@
 /**
- * TSF Music design system — AUTHENTIC Spotify Android tokens.
- * Every value pixel-verified against real Spotify Android screenshots
- * (docs/spotify-refs): bg #121212, surfaces #242424/#282828/#2A2A2A,
- * tab bar #000000, secondary text #B3B3B3, CTA green #1ED760.
- * Figtree substitutes Circular (same geometric grotesque skeleton).
+ * TSF Music design system — PULSE (v4.0).
+ * Editorial brutalism: paper + ink + acid + orange. Type is the
+ * interface; zero radius in the chrome; hard offset shadows instead of
+ * blurs; mono uppercase labels; Archivo Black display type.
+ * Contract: docs/PULSE-REDESIGN.md · bar: prototype-2-pulse.html.
+ * Legacy Spotify token names are re-pointed so any un-migrated surface
+ * still lands on-brand (same migration trick as v2.3).
  */
 
 export const colors = {
-  // Spotify surfaces (verified by pixel-sampling references)
-  bg: '#121212', // base canvas — Spotify dark base
-  bgDeep: '#000000', // tab bar / under-modals — Spotify uses pure black here
-  surface: '#181818', // subtle raised surface
-  card: '#242424', // search field, chips, sheets
-  cardDim: '#1E1E1E',
-  elevated: '#282828', // mini player card, sheets, dialogs
-  tile: '#2A2A2A', // home quick tiles (pixel-sampled #2A2A2A)
-  border: '#282828',
+  // ── PULSE core ──
+  paper: '#F4F1EA', // base canvas
+  paper2: '#ECEADF', // dimmed wells, alt surfaces
+  paperDeep: '#DCD9D0', // outer stage (outside the frame)
+  ink: '#161513', // text, borders, ink panels
+  ink60: 'rgba(22,21,19,0.62)',
+  ink40: 'rgba(22,21,19,0.60)',
+  ink16: 'rgba(22,21,19,0.16)', // soft rules
+  ink78: 'rgba(22,21,19,0.78)', // offset shadows
+  acid: '#D9FF3D', // active / play / fill
+  orange: '#FF4D00', // accents, shadows-on-ink, liked
+  orangeDeep: '#C23A00', // kickers
+  // text on ink panels
+  onInk: '#F4F1EA',
+  onInk60: 'rgba(244,241,234,0.62)',
+  onInk40: 'rgba(244,241,234,0.40)',
+  onInk16: 'rgba(244,241,234,0.16)',
 
-  // legacy glass tokens → re-pointed to Spotify solids so any
-  // un-migrated surface still lands on authentic colors
-  glass: '#242424',
-  glassStrong: '#282828',
+  // ── legacy names, re-pointed to PULSE ──
+  bg: '#F4F1EA', // was #121212
+  bgDeep: '#F4F1EA', // tab bar canvas (paper + ink top border now)
+  surface: '#ECEADF',
+  card: '#ECEADF', // sheets, dialogs
+  cardDim: '#E7E4D8',
+  elevated: '#161513', // mini player, ink cards (was #282828)
+  tile: '#F4F1EA', // quick tiles are bordered paper now
+  border: '#161513',
+
+  glass: '#ECEADF',
+  glassStrong: '#161513',
   glassBorder: 'rgba(0,0,0,0)',
   glassBorderStrong: 'rgba(0,0,0,0)',
 
-  // text
-  text: '#FFFFFF',
-  textDim: '#B3B3B3', // Spotify secondary
-  textFaint: '#6A6A6A', // Spotify tertiary
-  textOnGreen: '#000000', // Spotify puts black on green CTAs
+  text: '#161513',
+  textDim: 'rgba(22,21,19,0.62)',
+  textFaint: 'rgba(22,21,19,0.60)',
+  textOnGreen: '#161513', // text on acid
 
-  // brand
-  accent: '#1DB954', // Spotify green (brand, active chip)
-  accentBright: '#1ED760', // CTA green (play FABs, equalizer)
-  accentDim: '#169C46',
-  accentDeep: '#000000', // black-on-green text/icons
-  danger: '#E91429',
+  accent: '#FF4D00', // brand accent → safety orange
+  accentBright: '#D9FF3D', // CTA green → acid
+  accentDim: '#C23A00',
+  accentDeep: '#161513',
+  danger: '#C23A00',
 
-  // filter chips — current Spotify Android: GREEN active pill + BLACK text
-  // (pixel-verified on genuine 2024/25 refs: bg #20d361, text #0b1e0e).
-  // HOME inactive = filled #282828; LIBRARY inactive = ghost outline #808080
-  chipActiveBg: '#1ED760',
-  chipActiveText: '#000000',
-  chipInactiveBg: '#282828',
-  chipGhostBorder: '#808080', // library outlined chips (pixel-sampled)
+  chipActiveBg: '#D9FF3D',
+  chipActiveText: '#161513',
+  chipInactiveBg: '#F4F1EA',
+  chipGhostBorder: '#161513',
 
-  // AI identity — signature violet→cyan
-  aiStart: '#7C4DFF',
-  aiMid: '#4D6BFF',
-  aiEnd: '#00E5FF',
+  aiStart: '#FF4D00',
+  aiMid: '#C23A00',
+  aiEnd: '#FF4D00',
 
-  // misc
   white: '#FFFFFF',
-  black: '#000000',
-  overlay: 'rgba(0,0,0,0.6)',
-  inactiveTab: '#A7A7A7', // Spotify inactive tab label/icon
-  likedStart: '#450AF5', // Spotify Liked Songs gradient
-  likedEnd: '#C4EFA1',
+  black: '#161513',
+  overlay: 'rgba(22,21,19,0.55)',
+  inactiveTab: 'rgba(22,21,19,0.60)',
+  likedStart: '#FF4D00', // Liked Songs → solid orange hero
+  likedEnd: '#161513',
 };
 
-/** Figtree weights loaded via expo-font in App.tsx. */
+/** Fonts loaded via expo-font in App.tsx. */
 export const fonts = {
-  regular: 'Figtree-400',
-  medium: 'Figtree-500',
-  semibold: 'Figtree-600',
-  bold: 'Figtree-700',
-  extrabold: 'Figtree-800',
-  black: 'Figtree-900',
+  regular: 'Archivo-400',
+  medium: 'Archivo-500',
+  semibold: 'Archivo-600',
+  bold: 'Archivo-700',
+  display: 'ArchivoBlack-400',
+  mono: 'SpaceMono-400',
+  monoBold: 'SpaceMono-700',
+  // legacy aliases (pre-v4 call sites) — both resolve to display
+  extrabold: 'ArchivoBlack-400',
+  black: 'ArchivoBlack-400',
+  // legacy Figtree (kept loaded; fallbacks only)
+  figtreeRegular: 'Figtree-400',
+  figtreeBold: 'Figtree-700',
+  figtreeBlack: 'Figtree-900',
 };
 
 const weightMap: Record<number, string> = {
@@ -74,11 +93,11 @@ const weightMap: Record<number, string> = {
   500: fonts.medium,
   600: fonts.semibold,
   700: fonts.bold,
-  800: fonts.extrabold,
-  900: fonts.black,
+  800: fonts.display,
+  900: fonts.display,
 };
 
-/** Pick the loaded font family for a numeric weight. */
+/** Pick the loaded font family for a numeric weight (800/900 → display). */
 export function font(weight: 400 | 500 | 600 | 700 | 800 | 900 = 500): string {
   return weightMap[weight] ?? fonts.medium;
 }
@@ -92,42 +111,81 @@ export const spacing = {
   xxl: 32,
 };
 
-/** Spotify radii — small and confident. */
+/** PULSE geometry — the app chrome has NO radius. */
 export const radius = {
-  sm: 4, // row artwork, quick-tile art
-  md: 6, // shelf cards, mini player art
-  lg: 8, // mini player card, player artwork, genre cards
-  xl: 12, // sheets, dialogs
-  xxl: 16,
-  squircle: 8,
-  full: 999,
+  sm: 0,
+  md: 0,
+  lg: 0,
+  xl: 0,
+  xxl: 0,
+  squircle: 0,
+  full: 999, // reserved: the few true circles (avatars in stat feet)
 };
 
-/** Spotify type scale (px). */
+/** Border widths. */
+export const borderW = {
+  hair: 1,
+  soft: 1.5,
+  hard: 2,
+} as const;
+
+/** Hard offset shadow (no blur) — the brutalist elevation. */
+export const hardShadow = (n = 4, color: string = colors.ink78) =>
+  ({ shadowColor: color, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: n, height: n }, elevation: n } as const);
+
+/** Orange hard shadow — reserved for elements sitting on ink. */
+export const orangeShadow = (n = 4) => hardShadow(n, colors.orange);
+
+/** PULSE type scale (px). */
 export const type = {
-  hero: 24,
-  title: 22, // shelf headers
+  hero: 34, // masthead huge (clamp target on phone)
+  title: 17, // shelf headers
   headline: 18,
-  subhead: 16,
-  body: 15,
-  caption: 13,
-  micro: 11,
+  subhead: 15,
+  body: 13.5,
+  caption: 12,
+  micro: 10,
+  monoXs: 8.5,
+  monoSm: 9.5,
+  monoMd: 10.5,
+  monoLg: 11.5,
 };
 
-/** Spotify "Browse all" genre card colors — the real browse palette. */
+/** Kicker style helper — mono uppercase orange-deep micro label. */
+export const kicker = {
+  fontFamily: fonts.monoBold,
+  fontSize: type.monoSm,
+  letterSpacing: 2,
+  textTransform: 'uppercase' as const,
+  color: colors.orangeDeep,
+};
+
+/** Mono meta style helper — uppercase ink-60. */
+export const monoMeta = {
+  fontFamily: fonts.mono,
+  fontSize: type.monoSm,
+  letterSpacing: 0.6,
+  textTransform: 'uppercase' as const,
+  color: colors.ink40,
+};
+
+/** The app is a light paper surface now. */
+export const isDarkTheme = false;
+
+/** Genre stacks keep editorial two-color pairs for gradients/grids. */
 export const genreColors: Array<[string, string]> = [
-  ['#8D67AB', '#8D67AB'], // Made For You
-  ['#E8115B', '#E8115B'], // Bollywood
-  ['#DC148C', '#DC148C'], // Punjabi
-  ['#1E3264', '#1E3264'], // Hip-Hop
-  ['#E13300', '#E13300'], // Rock
-  ['#477D95', '#477D95'], // Chill
-  ['#BA5D07', '#BA5D07'], // Lo-Fi
-  ['#503750', '#503750'], // Devotional
-  ['#0D73EC', '#0D73EC'], // Party
-  ['#537AA1', '#537AA1'], // Romance
-  ['#AF2896', '#AF2896'], // Workout
-  ['#7D4B32', '#7D4B32'], // Acoustic
+  ['#161513', '#D9FF3D'], // Made For You
+  ['#C23A00', '#161513'], // Bollywood
+  ['#FF4D00', '#F4F1EA'], // Punjabi
+  ['#161513', '#F4F1EA'], // Hip-Hop
+  ['#D9FF3D', '#161513'], // Chill
+  ['#ECEADF', '#161513'], // Lo-Fi
+  ['#F4F1EA', '#C23A00'], // Devotional
+  ['#FF4D00', '#161513'], // Romance
+  ['#161513', '#FF4D00'], // Party
+  ['#C23A00', '#D9FF3D'], // Workout
+  ['#ECEADF', '#FF4D00'], // Acoustic
+  ['#F4F1EA', '#161513'], // Rock
 ];
 
 export function genreGradient(i: number): [string, string] {

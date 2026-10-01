@@ -1,10 +1,10 @@
 /**
- * Collection — authentic Spotify album/playlist detail page:
- *   artwork-tinted gradient header · big centered cover · centered bold
- *   title + meta · Spotify action row (heart, download, dots — shuffle +
- *   green play FAB right) · track rows. Lazy-resolves tracks when the
- *   route carries none: kind 'chart' → JioSaavn playlist,
- *   kind 'search' → clean search.
+ * Collection — PULSE collection page (v4.0):
+ *   paper header with the artwork's palette wash at low alpha ·
+ *   bordered cover with the hard ink shadow · display title + mono ·
+ *   brutal action row (shuffle + ink FAB with acid glyph) · index
+ *   track rows. Lazy-resolves tracks when the route carries none:
+ *   kind 'chart' → JioSaavn playlist, kind 'search' → clean search.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -19,10 +19,11 @@ import { getAlbumTracks, getCollectionTracks, searchSaavnClean } from '../api/sa
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
-import { PressableScale } from '../components/PressableScale';
+import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts } from '../theme';
+import { withAlpha } from '../theme/dynamic';
 import { useTrackPalette } from '../theme/DynamicThemeProvider';
 import type { RootStackParamList } from './navigation';
 
@@ -90,21 +91,21 @@ export function CollectionScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Spotify's tinted header wash: album color melting into #121212 */}
+      {/* palette wash — the song's own hue at whisper alpha on paper */}
       <LinearGradient
-        colors={[isLiked ? '#450AF5' : palette.wash, '#121212']}
-        locations={[0, 0.85]}
+        colors={[isLiked ? withAlpha(colors.orange, 0.22) : withAlpha(palette.wash, 0.5), colors.paper]}
+        locations={[0, 0.8]}
         style={styles.headerWash}
         pointerEvents="none"
       />
       <View style={styles.topBar}>
-        <PressableScale hitSlop={12} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
-        </PressableScale>
-        <Text style={styles.topLabel} numberOfLines={1}>
-          {collection.subtitle ?? ''}
-        </Text>
-        <View style={{ width: 26 }} />
+        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+          <Ionicons name="chevron-back" size={16} color={colors.ink} />
+        </Brutal>
+        <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2, flex: 1, textAlign: 'center' }} numberOfLines={1}>
+          {(collection.subtitle ?? 'COLLECTION').toUpperCase()}
+        </MonoText>
+        <View style={{ width: 38 }} />
       </View>
 
       <FlatList
@@ -116,60 +117,57 @@ export function CollectionScreen() {
           <View style={styles.headerCard}>
             <View style={styles.artWrap}>
               {isLiked ? (
-                <Artwork seed="liked" size={204} liked variant="card" style={styles.art} />
+                <Artwork seed="liked" size={180} liked style={styles.art} />
               ) : (
                 <Artwork
                   uri={heroArt}
                   seed={collection.id}
-                  size={204}
-                  variant="card"
+                  size={180}
+                  bordered={false}
                   style={styles.art}
                 />
               )}
             </View>
-            <Text style={styles.title}>{collection.title}</Text>
-            <Text style={styles.sub}>
-              {tracks ? `${tracks.length} songs · 320 kbps` : 'Loading…'}
-            </Text>
+            <Text style={styles.title} allowFontScaling={false}>{collection.title.toUpperCase()}</Text>
+            <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 1 }}>
+              {tracks ? `${tracks.length} SONGS · 320 KBPS` : 'LOADING…'}
+            </MonoText>
 
-            {/* Spotify action row */}
+            {/* brutal action row */}
             {tracks && tracks.length ? (
               <View style={styles.actions}>
                 <View style={styles.actionLeft}>
-                  <PressableScale
-                    hitSlop={8}
-                    haptic
-                    onPress={() => toast.show({ message: 'Added to Your Library', icon: 'heart' })}
-                  >
-                    <Ionicons name="heart-outline" size={26} color={colors.text} />
-                  </PressableScale>
-                  <PressableScale
-                    hitSlop={8}
-                    haptic
-                    onPress={() => toast.show({ message: 'Downloading playlist…', icon: 'arrow-down-circle-outline' })}
-                  >
-                    <Ionicons name="arrow-down-circle-outline" size={26} color={colors.text} />
-                  </PressableScale>
+                  <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'ADDED TO YOUR CRATES', icon: 'heart' })} style={styles.sqBtn}>
+                    <Ionicons name="heart-outline" size={18} color={colors.ink} />
+                  </Brutal>
+                  <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'DOWNLOADING CRATE…', icon: 'arrow-down-circle-outline' })} style={styles.sqBtn}>
+                    <Ionicons name="arrow-down-outline" size={18} color={colors.ink} />
+                  </Brutal>
                 </View>
                 <View style={styles.actionRight}>
-                  <PressableScale hitSlop={8} haptic onPress={playShuffled}>
-                    <Ionicons name="shuffle" size={26} color={colors.text} />
-                  </PressableScale>
-                  <PressableScale haptic onPress={() => play(0)} style={styles.playFab}>
-                    <Ionicons name="play" size={26} color={colors.black} style={{ marginLeft: 2 }} />
-                  </PressableScale>
+                  <Brutal haptic shadow={0} pressOffset={1} onPress={playShuffled} style={[styles.sqBtn, { borderWidth: 2, borderColor: colors.ink, backgroundColor: colors.acid, width: 48, height: 48 }]}>
+                    <Ionicons name="shuffle" size={20} color={colors.ink} />
+                  </Brutal>
+                  <Brutal haptic onInk shadow={4} onPress={() => play(0)} style={styles.playFab}>
+                    <Ionicons name="play" size={22} color={colors.acid} style={{ marginLeft: 2 }} />
+                  </Brutal>
                 </View>
               </View>
             ) : null}
             {loading ? (
               <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={colors.accentBright} />
+                <ActivityIndicator size="large" color={colors.orange} />
+                <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+                    PULLING THE RECORDS…
+                </MonoText>
               </View>
             ) : null}
             {failed && !loading ? (
               <View style={styles.loadingWrap}>
-                <Ionicons name="cloud-offline-outline" size={38} color={colors.textFaint} />
-                <Text style={styles.failedText}>Couldn't load this — check your connection</Text>
+                <Ionicons name="cloud-offline-outline" size={34} color={colors.ink40} />
+                <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 1, textAlign: 'center' }}>
+                  {'COULDNT LOAD THIS — CHECK YOUR CONNECTION'}
+                </MonoText>
               </View>
             ) : null}
           </View>
@@ -190,75 +188,75 @@ export function CollectionScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
   headerWash: {
     ...StyleSheet.absoluteFillObject,
-    bottom: '58%',
+    bottom: '55%',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
-  topLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    flex: 1,
-    textAlign: 'center',
+  chevBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerCard: {
     alignItems: 'center',
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 18,
+    gap: 12,
   },
   artWrap: {
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 6, height: 6 }, elevation: 6 } as object),
   },
-  art: {},
+  art: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+  },
   title: {
-    color: colors.text,
+    color: colors.ink,
+    fontFamily: fonts.display,
     fontSize: 26,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
     textAlign: 'center',
-    letterSpacing: -0.4,
-    marginTop: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
+    lineHeight: 27,
+    marginTop: 4,
   },
-  sub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    paddingTop: spacing.sm,
+    paddingTop: 8,
   },
-  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  actionRight: { flexDirection: 'row', alignItems: 'center', gap: 22 },
+  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  sqBtn: {
+    width: 42,
+    height: 42,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   playFab: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accentBright, // Spotify CTA green
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
   },
-  loadingWrap: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xl },
-  failedText: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular, textAlign: 'center' },
+  loadingWrap: { alignItems: 'center', gap: 12, paddingVertical: 32 },
 });

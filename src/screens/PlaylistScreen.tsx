@@ -1,7 +1,7 @@
 /**
- * PlaylistScreen — Spotify playlist detail: big cover, name, meta,
- * Play + Shuffle + heart rows, track list with per-track remove and the
- * long-press TrackMenu (play next / queue / add to other playlist).
+ * PlaylistScreen — PULSE crate detail: bordered cover (or the acid AI
+ * block), display name, mono meta, brutal action row (shuffle + ink
+ * FAB), track list with per-track remove and the long-press TrackMenu.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -16,10 +16,11 @@ import { getPlaylists, removeTrackFromPlaylist } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
-import { PressableScale } from '../components/PressableScale';
+import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts } from '../theme';
+import { withAlpha } from '../theme/dynamic';
 import { useTrackPalette } from '../theme/DynamicThemeProvider';
 import type { RootStackParamList } from './navigation';
 
@@ -33,7 +34,6 @@ export function PlaylistScreen() {
 
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
-  // Playlists are small — read from storage each render pass (cheap).
   const [playlist, setPlaylist] = React.useState<{
     id: string;
     name: string;
@@ -57,7 +57,7 @@ export function PlaylistScreen() {
   const removeTrack = useCallback(
     async (trackId: string) => {
       await removeTrackFromPlaylist(playlistId, trackId);
-      toast.show({ message: 'Removed from playlist', icon: 'remove-circle-outline' });
+      toast.show({ message: 'STRUCK FROM THE CRATE', icon: 'remove-circle-outline' });
       setDataVersion((v) => v + 1);
     },
     [playlistId, toast],
@@ -67,10 +67,10 @@ export function PlaylistScreen() {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.topBar}>
-          <PressableScale hitSlop={12} onPress={() => nav.goBack()}>
-            <Ionicons name="chevron-back" size={26} color={colors.text} />
-          </PressableScale>
-          <View style={{ width: 26 }} />
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+            <Ionicons name="chevron-back" size={16} color={colors.ink} />
+          </Brutal>
+          <View style={{ width: 38 }} />
         </View>
       </View>
     );
@@ -90,7 +90,7 @@ export function PlaylistScreen() {
     nav.navigate('Player');
   };
 
-  // playlists wear their own cover's colors
+  // crates wear their own cover's colors at whisper alpha
   const palette = useTrackPalette(
     playlist.aiGenerated ? undefined : playlist.tracks[0]?.artwork,
     playlist.id,
@@ -98,19 +98,23 @@ export function PlaylistScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Spotify's tinted header wash: cover color melting into #121212 */}
       <LinearGradient
-        colors={[playlist.aiGenerated ? '#7C4DFF' : palette.wash, '#121212']}
-        locations={[0, 0.85]}
+        colors={[
+          playlist.aiGenerated ? withAlpha(colors.acid, 0.35) : withAlpha(palette.wash, 0.5),
+          colors.paper,
+        ]}
+        locations={[0, 0.8]}
         style={styles.headerWash}
         pointerEvents="none"
       />
       <View style={styles.topBar}>
-        <PressableScale hitSlop={12} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
-        </PressableScale>
-        <Text style={styles.topLabel}>Playlist</Text>
-        <View style={{ width: 26 }} />
+        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+          <Ionicons name="chevron-back" size={16} color={colors.ink} />
+        </Brutal>
+        <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2, flex: 1, textAlign: 'center' }}>
+          {playlist.aiGenerated ? 'MINDBEAT DISPATCH' : 'YOUR CRATE'}
+        </MonoText>
+        <View style={{ width: 38 }} />
       </View>
 
       <FlatList
@@ -120,64 +124,56 @@ export function PlaylistScreen() {
         ListHeaderComponent={
           <View style={styles.headerCard}>
             {playlist.aiGenerated ? (
-              <LinearGradient
-                colors={[colors.aiStart, colors.aiMid, colors.aiEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.aiArt}
-              >
-                <Ionicons name="sparkles" size={44} color="#fff" />
-              </LinearGradient>
+              <View style={styles.aiArt}>
+                <Ionicons name="sparkles" size={40} color={colors.ink} />
+              </View>
             ) : (
               <View style={styles.artWrap}>
                 <Artwork
                   uri={playlist.tracks[0]?.artwork}
                   seed={playlist.id}
-                  size={204}
-                  variant="card"
+                  size={180}
+                  bordered={false}
                   style={styles.art}
                 />
               </View>
             )}
-            <Text style={styles.name}>{playlist.name}</Text>
-            <Text style={styles.meta}>
-              Playlist · {playlist.tracks.length} songs
-              {playlist.prompt ? ` · from “${playlist.prompt}”` : ''}
-            </Text>
-            {/* Spotify action row */}
+            <Text style={styles.name} allowFontScaling={false}>{playlist.name.toUpperCase()}</Text>
+            <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 1, textAlign: 'center' }} numberOfLines={2}>
+              {`CRATE · ${playlist.tracks.length} SONGS${playlist.prompt ? ` · FROM "${playlist.prompt.toUpperCase()}"` : ''}`}
+            </MonoText>
+            {/* brutal action row */}
             <View style={styles.actions}>
               <View style={styles.actionLeft}>
-                <PressableScale
-                  hitSlop={8}
-                  haptic
-                  onPress={() => toast.show({ message: 'Added to Your Library', icon: 'heart' })}
-                >
-                  <Ionicons name="heart-outline" size={26} color={colors.text} />
-                </PressableScale>
+                <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'PINNED TO YOUR CRATES', icon: 'heart' })} style={styles.sqBtn}>
+                  <Ionicons name="heart-outline" size={18} color={colors.ink} />
+                </Brutal>
               </View>
               <View style={styles.actionRight}>
-                <PressableScale hitSlop={8} haptic onPress={playShuffled} disabled={!playlist.tracks.length}>
-                  <Ionicons name="shuffle" size={26} color={colors.text} />
-                </PressableScale>
-                <PressableScale
+                <Brutal haptic shadow={0} pressOffset={1} onPress={playShuffled} disabled={!playlist.tracks.length} style={[styles.sqBtn, { borderWidth: 2, borderColor: colors.ink, backgroundColor: colors.acid, width: 48, height: 48 }]}>
+                  <Ionicons name="shuffle" size={20} color={colors.ink} />
+                </Brutal>
+                <Brutal
                   haptic
+                  onInk
+                  shadow={4}
                   onPress={() => play(0)}
                   disabled={!playlist.tracks.length}
                   style={styles.playFab}
                 >
-                  <Ionicons name="play" size={26} color={colors.black} style={{ marginLeft: 2 }} />
-                </PressableScale>
+                  <Ionicons name="play" size={22} color={colors.acid} style={{ marginLeft: 2 }} />
+                </Brutal>
               </View>
             </View>
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="musical-notes-outline" size={44} color={colors.textFaint} />
-            <Text style={styles.emptyTitle}>This playlist is empty</Text>
-            <Text style={styles.emptySub}>
-              Search for songs and use “Add to playlist” from a long-press
-            </Text>
+            <Ionicons name="albums-outline" size={38} color={colors.ink40} />
+            <Text style={styles.emptyTitle}>THIS CRATE IS EMPTY</Text>
+            <MonoText size={10} color={colors.ink60} style={{ textAlign: 'center', lineHeight: 16 }}>
+              SEARCH FOR SONGS AND USE "ADD TO PLAYLIST" FROM A LONG-PRESS
+            </MonoText>
           </View>
         }
         renderItem={({ item, index }) => (
@@ -186,9 +182,9 @@ export function PlaylistScreen() {
             index={index}
             onLongPress={() => setMenuTrack(item)}
             right={
-              <PressableScale hitSlop={12} onPress={() => void removeTrack(item.id)} style={styles.removeBtn}>
-                <Ionicons name="remove-circle-outline" size={22} color={colors.textFaint} />
-              </PressableScale>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => void removeTrack(item.id)} style={styles.removeBtn}>
+                <Ionicons name="remove-circle-outline" size={20} color={colors.ink40} />
+              </Brutal>
             }
             onPress={() => play(index)}
           />
@@ -201,87 +197,92 @@ export function PlaylistScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
   headerWash: {
     ...StyleSheet.absoluteFillObject,
-    bottom: '58%',
+    bottom: '55%',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
-  topLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  chevBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerCard: {
     alignItems: 'center',
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 18,
+    gap: 12,
   },
   aiArt: {
-    width: 204,
-    height: 204,
-    borderRadius: radius.lg,
+    width: 180,
+    height: 180,
+    backgroundColor: colors.acid,
+    borderWidth: 2,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 6, height: 6 }, elevation: 6 } as object),
   },
   artWrap: {
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 6, height: 6 }, elevation: 6 } as object),
   },
-  art: {},
+  art: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+  },
   name: {
-    color: colors.text,
+    color: colors.ink,
+    fontFamily: fonts.display,
     fontSize: 26,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
     textAlign: 'center',
-    letterSpacing: -0.4,
-    marginTop: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
+    lineHeight: 27,
+    marginTop: 4,
   },
-  meta: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    paddingTop: spacing.sm,
+    paddingTop: 8,
   },
-  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  actionRight: { flexDirection: 'row', alignItems: 'center', gap: 22 },
+  actionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  sqBtn: {
+    width: 42,
+    height: 42,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   playFab: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accentBright,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
   },
-  empty: { alignItems: 'center', gap: spacing.md, padding: spacing.xxl, paddingTop: spacing.xxl + 10 },
-  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '800', fontFamily: fonts.extrabold },
-  emptySub: { color: colors.textDim, fontSize: 13, textAlign: 'center', fontFamily: fonts.regular },
-  removeBtn: { padding: 8 },
+  removeBtn: { padding: 6 },
+  empty: { alignItems: 'center', gap: 10, padding: 32 },
+  emptyTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 16,
+    textTransform: 'uppercase',
+  },
 });

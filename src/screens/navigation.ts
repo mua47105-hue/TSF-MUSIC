@@ -9,11 +9,12 @@ export type RootStackParamList = {
   Stats: undefined;
   Taste: undefined;
   AI: undefined;
+  Premium: undefined;
 };
 
 export type TabParamList = {
   Home: undefined;
   Search: undefined;
   Library: undefined;
-  Premium: undefined;
+  Wire: undefined;
 };

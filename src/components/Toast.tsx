@@ -1,6 +1,7 @@
 /**
- * Toast — Spotify-style floating pill notification ("Added to Liked
- * Songs"). Sits above the mini player, auto-dismisses with a slide+fade.
+ * Toast — PULSE ink bar notification: hard orange shadow, mono
+ * uppercase text with the acid accent. Sits above the mini player,
+ * auto-dismisses with a rise+fade.
  */
 
 import React, {
@@ -15,7 +16,7 @@ import React, {
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts, orangeShadow } from '../theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -100,8 +101,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
+    left: 18,
+    right: 18,
     alignItems: 'center',
     zIndex: 100,
     elevation: 30,
@@ -110,20 +111,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: colors.accent,
-    borderRadius: radius.full,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    backgroundColor: colors.ink,
+    paddingHorizontal: 17,
+    paddingVertical: 11,
     maxWidth: 340,
+    ...orangeShadow(3),
   },
   text: {
-    color: colors.accentDeep,
-    fontSize: 14,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+    color: colors.onInk,
+    fontSize: 11,
+    fontFamily: fonts.monoBold,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    flexShrink: 1,
   },
 });

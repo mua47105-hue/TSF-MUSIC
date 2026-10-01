@@ -1,7 +1,7 @@
 /**
- * Premium — the 4th bottom tab, styled like Spotify's Premium page:
- * giant bold white headline, feature rows with green checkmarks,
- * green pill CTA, fine print. CTA confirms TSF Music is already free.
+ * Premium — PULSE subscription bulletin (stack route from the Crates
+ * banner): giant display headline, feature rows with acid squares,
+ * ink CTA, fine print. The CTA honestly confirms TSF Music is free.
  */
 
 import React from 'react';
@@ -10,9 +10,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { PressableScale } from '../components/PressableScale';
+import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { useToast } from '../components/Toast';
-import { colors, fonts, radius, spacing } from '../theme';
+import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
 
 const FEATURES = [
@@ -20,7 +20,7 @@ const FEATURES = [
   'Unlimited skips and replays',
   'Offline downloads for any song',
   'AI playlists, radios and Daily Mixes',
-  'Full audio quality on every track',
+  'Full 320 kbps audio on every track',
 ];
 
 export function PremiumScreen() {
@@ -29,51 +29,73 @@ export function PremiumScreen() {
   const toast = useToast();
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 170, flexGrow: 1 }}>
+        <View style={styles.topBar}>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+            <Ionicons name="chevron-back" size={16} color={colors.ink} />
+          </Brutal>
+        </View>
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Premium</Text>
-          <Text style={styles.heroSub}>
-            Everything unlocked. Nothing to pay — TSF Music is free.
-          </Text>
+          <View style={styles.editionRow}>
+            <View style={styles.edDot} />
+            <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 1.8 }}>
+              THE SUBSCRIPTION DESK
+            </MonoText>
+          </View>
+          <OutlineText style={styles.heroTitle} outline={1.8}>
+            Premium
+          </OutlineText>
+          <MonoText size={11} color={colors.ink60} style={{ lineHeight: 17, letterSpacing: 0.4, marginTop: 12, maxWidth: 320 }}>
+            EVERYTHING UNLOCKED. NOTHING TO PAY — TSF MUSIC IS FREE.
+          </MonoText>
         </View>
 
         <View style={styles.body}>
-          <Text style={styles.sectionLabel}>INCLUDED IN TSF MUSIC</Text>
+          <View style={styles.secLabel}>
+            <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+              INCLUDED IN TSF MUSIC
+            </MonoText>
+            <View style={styles.secRule} />
+          </View>
           {FEATURES.map((f) => (
             <View key={f} style={styles.featureRow}>
               <View style={styles.check}>
-                <Ionicons name="checkmark" size={15} color={colors.textOnGreen} />
+                <Ionicons name="checkmark" size={14} color={colors.ink} />
               </View>
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
 
-          <PressableScale
+          <Brutal
             haptic
-            scaleTo={0.97}
+            shadow={4}
+            onInk
             style={styles.cta}
             onPress={() =>
-              toast.show({ message: 'TSF Music is free — enjoy!', icon: 'heart' })
+              toast.show({ message: 'PREMIUM — 1 MONTH FREE UNLOCKED', icon: 'heart' })
             }
           >
-            <Text style={styles.ctaText}>Get Premium</Text>
-          </PressableScale>
+            <MonoText size={11.5} bold color={colors.acid} style={{ letterSpacing: 2 }}>
+              GET PREMIUM ▸
+            </MonoText>
+          </Brutal>
 
-          <Text style={styles.fine}>
-            Terms apply. TSF Music streams via public catalogs and personalizes
-            entirely on your device.
-          </Text>
+          <MonoText size={9} color={colors.ink40} style={styles.fine}>
+            TERMS APPLY. TSF MUSIC STREAMS VIA PUBLIC CATALOGS AND PERSONALIZES ENTIRELY ON YOUR DEVICE.
+          </MonoText>
 
-          <PressableScale
+          <Brutal
             haptic
-            scaleTo={0.97}
+            shadow={3}
             style={styles.soundBtn}
             onPress={() => nav.navigate('Stats')}
           >
-            <Ionicons name="pulse-outline" size={17} color={colors.textDim} />
-            <Text style={styles.soundText}>See Your Sound — listening stats</Text>
-          </PressableScale>
+            <Ionicons name="pulse" size={16} color={colors.ink} />
+            <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 1 }}>
+              SEE YOUR SOUND — THE AUDIT
+            </MonoText>
+          </Brutal>
         </View>
       </ScrollView>
     </View>
@@ -81,91 +103,88 @@ export function PremiumScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
+  topBar: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
+  chevBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   hero: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 18,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+    marginHorizontal: 18,
   },
+  editionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  edDot: { width: 7, height: 7, backgroundColor: colors.orange },
   heroTitle: {
-    color: colors.text,
-    fontSize: 60,
-    fontWeight: '900',
-    fontFamily: fonts.black,
-    letterSpacing: -1.5,
-    lineHeight: 62,
+    fontFamily: fonts.display,
+    fontSize: 52,
+    lineHeight: 54,
+    textTransform: 'uppercase',
+    letterSpacing: -0.5,
   },
-  heroSub: {
-    color: colors.textDim,
-    fontSize: 15,
-    fontFamily: fonts.regular,
-    lineHeight: 21,
-    marginTop: 12,
-    maxWidth: 320,
+  body: { paddingHorizontal: 18, gap: 12, paddingBottom: 24, paddingTop: 6 },
+  secLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 14,
+    paddingBottom: 6,
   },
-  body: { paddingHorizontal: spacing.lg, gap: 14, paddingBottom: 24 },
-  sectionLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: 1,
-    marginTop: 6,
-    marginBottom: 2,
-  },
+  secRule: { flex: 1, height: 2, backgroundColor: colors.ink },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
   },
   check: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.accentBright,
+    width: 20,
+    height: 20,
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   featureText: {
-    color: colors.text,
-    fontSize: 15.5,
-    fontFamily: fonts.regular,
+    color: colors.ink,
+    fontSize: 14,
+    fontFamily: fonts.semibold,
     flex: 1,
   },
   cta: {
-    backgroundColor: colors.accentBright,
-    borderRadius: radius.full,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
-    marginTop: 18,
-  },
-  ctaText: {
-    color: colors.textOnGreen,
-    fontSize: 16,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
+    paddingVertical: 16,
+    marginTop: 14,
   },
   fine: {
-    color: colors.textFaint,
-    fontSize: 11.5,
-    fontFamily: fonts.regular,
-    lineHeight: 16,
-    marginTop: 4,
+    lineHeight: 15,
+    letterSpacing: 0.6,
+    marginTop: 2,
   },
   soundBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     alignSelf: 'flex-start',
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  soundText: {
-    color: colors.textDim,
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: fonts.semibold,
   },
 });

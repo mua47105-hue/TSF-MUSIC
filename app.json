@@ -2,22 +2,22 @@
   "expo": {
     "name": "TSF Music",
     "slug": "tsf-music",
-    "version": "3.4.4",
+    "version": "4.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "backgroundColor": "#0A0A0B",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F4F1EA",
     "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0A0B"
+      "backgroundColor": "#F4F1EA"
     },
     "android": {
       "package": "com.tsf.music",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0A0B"
+        "backgroundColor": "#F4F1EA"
       },
       "permissions": [
         "INTERNET",

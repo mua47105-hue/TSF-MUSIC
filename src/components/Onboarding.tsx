@@ -48,6 +48,7 @@ import {
 } from '../api/artists';
 import { mindbeat } from '../ai/mindbeat';
 import { Artwork } from './Artwork';
+import { Brutal, MonoText } from './Brutal';
 import { PressableScale } from './PressableScale';
 import { colors, fonts } from '../theme';
 
@@ -309,22 +310,25 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         {step === 'name' ? (
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.nameWrap}>
-              {/* Genuine signup mark: white circle, dark wave */}
+              {/* the broadsheet nameplate */}
               <View style={styles.logo}>
-                <View style={{ width: 22, height: 3.4, borderRadius: 9, backgroundColor: '#121212' }} />
-                <View style={{ width: 16, height: 3.4, borderRadius: 9, backgroundColor: '#121212' }} />
-                <View style={{ width: 10, height: 3.4, borderRadius: 9, backgroundColor: '#121212' }} />
+                <Text style={styles.logoText}>TSF·MUSIC</Text>
+                <MonoText size={8} bold color={colors.onInk60} style={{ letterSpacing: 2.4, marginTop: 5 }}>
+                  PULSE EDITION
+                </MonoText>
               </View>
               <Text style={styles.bigTitle}>What&apos;s your name?</Text>
-              <Text style={styles.sub}>Your name shapes your mixes, stats and AI picks.</Text>
+              <MonoText size={10} color={colors.ink60} style={{ textAlign: 'center', lineHeight: 16, letterSpacing: 0.6 }}>
+                YOUR NAME SHAPES YOUR MIXES, STATS AND WIRE DISPATCHES.
+              </MonoText>
               <View style={[styles.inputWrap, nameFocus && styles.inputWrapFocus]}>
                 <TextInput
                   testID="onb-name-input"
                   ref={nameInput}
                   autoFocus
                   style={styles.input as never}
-                  placeholder="Your name"
-                  placeholderTextColor={colors.textDim}
+                  placeholder="YOUR NAME"
+                  placeholderTextColor={colors.ink40}
                   value={name}
                   onChangeText={setName}
                   maxLength={24}
@@ -332,39 +336,45 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   onSubmitEditing={() => name.trim() && goStep('artists')}
                   onFocus={() => setNameFocus(true)}
                   onBlur={() => setNameFocus(false)}
-                  selectionColor={colors.accentBright}
+                  selectionColor={colors.orange}
                 />
               </View>
             </View>
-            {/* Same bottom-anchored footer pattern as the other steps
-             * (signup ref: full-width green pill, ~90% screen width). */}
             <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom + 8) }]}>
-              <PressableScale
+              <Brutal
                 testID="onb-continue"
                 haptic
                 disabled={!name.trim()}
+                onInk
+                shadow={4}
                 onPress={() => goStep('artists')}
                 style={name.trim() ? styles.cta : styles.ctaDim}
               >
-                <Text style={styles.ctaText}>Continue</Text>
-              </PressableScale>
+                <MonoText size={11.5} bold color={colors.acid} style={{ letterSpacing: 2 }}>
+                  CONTINUE ▸
+                </MonoText>
+              </Brutal>
             </View>
           </KeyboardAvoidingView>
         ) : step === 'artists' ? (
           <View style={styles.flex}>
             <View style={styles.topBar}>
-              <PressableScale haptic onPress={() => goStep('name')} style={styles.backBtn} hitSlop={12} accessibilityLabel="Back">
-                <Ionicons name="chevron-back" size={26} color={colors.text} />
-              </PressableScale>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => goStep('name')} style={styles.backBtn} accessibilityLabel="Back">
+                <Ionicons name="chevron-back" size={16} color={colors.ink} />
+              </Brutal>
+              <MonoText size={9.5} bold color={colors.ink60} style={{ flex: 1, textAlign: 'center', letterSpacing: 2 }}>
+                {`PICKED ${picked.size} · MIN ${MIN_ARTISTS}`}
+              </MonoText>
+              <View style={{ width: 38 }} />
             </View>
             <Text style={styles.stepTitle}>Choose 3 or more artists you like.</Text>
             <View style={styles.searchWrap}>
-              <Ionicons name="search" size={18} color={colors.textDim} />
+              <Ionicons name="search" size={16} color={colors.ink60} />
               <TextInput
                 testID="onb-search"
                 style={styles.searchInput as never}
-                placeholder="Search artists"
-                placeholderTextColor={colors.textDim}
+                placeholder="SEARCH ARTISTS"
+                placeholderTextColor={colors.ink40}
                 value={query}
                 onChangeText={(t) => {
                   setQuery(t);
@@ -372,25 +382,25 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 }}
                 returnKeyType="search"
                 onSubmitEditing={doSearch}
-                selectionColor={colors.accentBright}
+                selectionColor={colors.orange}
               />
               {query.length > 0 ? (
                 <PressableScale haptic onPress={() => { setQuery(''); setSearchHits(null); }} hitSlop={8}>
-                  <Ionicons name="close" size={18} color={colors.textDim} />
+                  <Ionicons name="close" size={16} color={colors.ink60} />
                 </PressableScale>
               ) : null}
             </View>
             <ScrollView contentContainerStyle={styles.gridPad} showsVerticalScrollIndicator={false}>
               {searchHits && searchHits.length === 0 ? (
                 <View style={styles.loadingWrap}>
-                  <Text style={styles.emptyText}>No artists found for “{query.trim()}”</Text>
+                  <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 1 }}>
+                    {`NO ARTISTS FOUND FOR "${query.trim().toUpperCase()}"`}
+                  </MonoText>
                 </View>
               ) : (
                 <View style={styles.grid}>
                   {shown.map((a) => {
                     const on = picked.has(a.name);
-                    // Genuine Spotify: once a pick exists, unselected tiles dim
-                    // so selections pop (critic-verified vs genuine refs).
                     const dim = picked.size > 0 && !on;
                     return (
                       <PressableScale
@@ -399,24 +409,21 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                         haptic
                         onPress={() => toggleArtist(a.name)}
                         accessibilityState={{ selected: on }}
-                        style={[styles.artistCell, { width: tileW, opacity: dim ? 0.45 : 1 }]}
+                        style={[styles.artistCell, { width: tileW, opacity: dim ? 0.4 : 1 }]}
                       >
                         <View style={styles.artWrap}>
-                          {/* Genuine picker: circular avatar w/ REAL artist
-                           * photo; selected = white ring flush on the photo
-                           * edge + white badge w/ black check top-right. */}
-                          <Artwork uri={a.image} seed={a.name} initials={a.name} size={tileW} variant="circle" />
+                          <Artwork uri={a.image} seed={a.name} initials={a.name} size={tileW} />
                           {on ? (
                             <>
                               <View style={styles.ring} />
                               <View style={styles.checkBadge}>
-                                <Ionicons name="checkmark" size={14} color="#000" />
+                                <Ionicons name="checkmark" size={13} color={colors.ink} />
                               </View>
                             </>
                           ) : null}
                         </View>
                         <Text style={styles.artistName} numberOfLines={2}>
-                          {a.name}
+                          {a.name.toUpperCase()}
                         </Text>
                       </PressableScale>
                     );
@@ -429,13 +436,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                       accessibilityLabel={moreLabel}
                       style={[styles.artistCell, { width: tileW }]}
                     >
-                      {/* Spotify India's "More {category}" magenta circle */}
-                      <View style={[styles.moreCircle, { width: tileW, height: tileW }]}>
+                      <View style={[styles.moreSquare, { width: tileW, height: tileW }]}>
                         {loadingMore ? (
-                          <ActivityIndicator color="#fff" />
+                          <ActivityIndicator color={colors.ink} />
                         ) : (
                           <Text style={styles.moreText} numberOfLines={2}>
-                            {moreLabel.replace('More ', 'More\n')}
+                            {moreLabel.replace('More ', 'More\n').toUpperCase()}
                           </Text>
                         )}
                       </View>
@@ -448,26 +454,36 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               )}
             </ScrollView>
             <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom + 8) }]}>
-              <PressableScale
+              <Brutal
                 testID="onb-continue"
                 haptic
                 disabled={!artistsReady}
+                onInk
+                shadow={4}
                 onPress={() => goStep('genres')}
                 style={artistsReady ? styles.cta : styles.ctaDim}
               >
-                <Text style={styles.ctaText}>{ctaLabel}</Text>
-              </PressableScale>
+                <MonoText size={11.5} bold color={colors.acid} style={{ letterSpacing: 2 }}>
+                  {ctaLabel.toUpperCase()}
+                </MonoText>
+              </Brutal>
               <PressableScale haptic onPress={() => goStep('genres')} style={styles.skip} hitSlop={12}>
-                <Text style={styles.skipText}>Skip</Text>
+                <MonoText size={10} bold color={colors.ink60} style={{ letterSpacing: 1.6 }}>
+                  SKIP
+                </MonoText>
               </PressableScale>
             </View>
           </View>
         ) : (
           <View style={styles.flex}>
             <View style={styles.topBar}>
-              <PressableScale haptic onPress={() => goStep('artists')} style={styles.backBtn} hitSlop={12} accessibilityLabel="Back">
-                <Ionicons name="chevron-back" size={26} color={colors.text} />
-              </PressableScale>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => goStep('artists')} style={styles.backBtn} accessibilityLabel="Back">
+                <Ionicons name="chevron-back" size={16} color={colors.ink} />
+              </Brutal>
+              <MonoText size={9.5} bold color={colors.ink60} style={{ flex: 1, textAlign: 'center', letterSpacing: 2 }}>
+                {`PICKED ${genres.size}`}
+              </MonoText>
+              <View style={{ width: 38 }} />
             </View>
             <Text style={styles.stepTitle}>What kind of music do you like?</Text>
             <ScrollView contentContainerStyle={styles.gridPad} showsVerticalScrollIndicator={false}>
@@ -481,7 +497,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                       haptic
                       onPress={() => toggleGenre(g.key)}
                       accessibilityState={{ selected: on }}
-                      style={[styles.genreTile, { width: (winW - 32 - 12) / 2 }, on && styles.genreTileOn]}
+                      style={[styles.genreTile, { width: (winW - 36 - 12) / 2 }, on && styles.genreTileOn]}
                     >
                       <LinearGradient
                         colors={[g.from, g.to]}
@@ -489,20 +505,13 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                         end={{ x: 1, y: 1 }}
                         style={StyleSheet.absoluteFill}
                       />
-                      {/* contrast scrim under the label */}
-                      <LinearGradient
-                        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
-                        start={{ x: 0, y: 0.25 }}
-                        end={{ x: 0, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                      <Text style={styles.genreLabel}>{g.label}</Text>
+                      <Text style={styles.genreLabel}>{g.label.toUpperCase()}</Text>
                       <View style={styles.genreIcon}>
-                        <Ionicons name={g.icon} size={38} color="rgba(255,255,255,0.9)" />
+                        <Ionicons name={g.icon} size={34} color="rgba(22,21,19,0.85)" />
                       </View>
                       {on ? (
                         <View style={styles.genreCheck}>
-                          <Ionicons name="checkmark" size={14} color="#000" />
+                          <Ionicons name="checkmark" size={13} color={colors.ink} />
                         </View>
                       ) : null}
                     </PressableScale>
@@ -511,17 +520,23 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               </View>
             </ScrollView>
             <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom + 8) }]}>
-              <PressableScale
+              <Brutal
                 testID="onb-continue"
                 haptic
                 disabled={ctaDisabled}
+                onInk
+                shadow={4}
                 onPress={() => void finish()}
                 style={ctaDisabled ? styles.ctaDim : styles.cta}
               >
-                <Text style={styles.ctaText}>{ctaLabel}</Text>
-              </PressableScale>
+                <MonoText size={11.5} bold color={colors.acid} style={{ letterSpacing: 2 }}>
+                  {ctaLabel.toUpperCase()}
+                </MonoText>
+              </Brutal>
               <PressableScale haptic onPress={() => void finish()} style={styles.skip} hitSlop={12}>
-                <Text style={styles.skipText}>Skip</Text>
+                <MonoText size={10} bold color={colors.ink60} style={{ letterSpacing: 1.6 }}>
+                  SKIP
+                </MonoText>
               </PressableScale>
             </View>
           </View>
@@ -532,146 +547,177 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: colors.paper },
   flex: { flex: 1 },
   // — step: name —
   nameWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 12 },
   logo: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.ink,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
     marginBottom: 10,
+    ...({ shadowColor: colors.orange, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 } as object),
   },
-  bigTitle: { color: colors.text, fontSize: 24, fontWeight: '900', fontFamily: fonts.black, textAlign: 'center' },
-  sub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular, textAlign: 'center', lineHeight: 18 },
+  logoText: { color: colors.paper, fontFamily: fonts.display, fontSize: 22, letterSpacing: 0.5 },
+  bigTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 26,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    lineHeight: 27,
+  },
   inputWrap: {
     width: '100%',
-    backgroundColor: '#242424',
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#242424',
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
     marginTop: 10,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 } as object),
   },
-  inputWrapFocus: { borderColor: '#ffffff' },
+  inputWrapFocus: {
+    ...({ shadowColor: colors.orange, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 } as object),
+  },
   input: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: colors.text,
-    fontSize: 16,
-    fontFamily: fonts.medium,
+    color: colors.ink,
+    fontSize: 13,
+    fontFamily: fonts.monoBold,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
     outlineWidth: 0,
   } as never,
   // — shared chrome —
-  topBar: { height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 },
-  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  topBar: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   stepTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '900',
-    fontFamily: fonts.black,
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 20,
     textAlign: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingTop: 16,
+    paddingBottom: 12,
+    textTransform: 'uppercase',
+    lineHeight: 22,
   },
-  footer: { padding: 16, gap: 10, backgroundColor: colors.bg },
+  footer: { padding: 18, gap: 8, backgroundColor: colors.paper, borderTopWidth: 2, borderTopColor: colors.ink },
   cta: {
-    backgroundColor: colors.accentBright,
-    borderRadius: 999,
-    paddingVertical: 15,
+    backgroundColor: colors.ink,
+    paddingVertical: 16,
     alignItems: 'center',
   },
   ctaDim: {
-    backgroundColor: '#169C46', // muted green
-    borderRadius: 999,
-    paddingVertical: 15,
+    backgroundColor: colors.ink40,
+    paddingVertical: 16,
     alignItems: 'center',
   },
-  ctaText: { color: colors.textOnGreen, fontSize: 15.5, fontWeight: '800', fontFamily: fonts.extrabold },
-  skip: { alignItems: 'center', paddingVertical: 8 },
-  skipText: { color: colors.textDim, fontSize: 13.5, fontFamily: fonts.medium },
+  skip: { alignItems: 'center', paddingVertical: 6 },
   // — step: artists —
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#282828',
-    borderRadius: 8,
-    marginHorizontal: 16,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    marginHorizontal: 18,
     paddingHorizontal: 14,
     height: 44,
   },
-  searchInput: { flex: 1, color: colors.text, fontSize: 14.5, fontFamily: fonts.medium, outlineWidth: 0 } as never,
+  searchInput: { flex: 1, color: colors.ink, fontSize: 12, fontFamily: fonts.monoBold, letterSpacing: 1, textTransform: 'uppercase', outlineWidth: 0 } as never,
   loadingWrap: { paddingVertical: 60, alignItems: 'center' },
-  emptyText: { color: colors.textDim, fontSize: 14, fontFamily: fonts.medium, textAlign: 'center', paddingHorizontal: 24 },
-  gridPad: { padding: 16, paddingBottom: 150 },
+  gridPad: { padding: 18, paddingBottom: 150 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   artistCell: { alignItems: 'center' },
   artWrap: { position: 'relative' },
   ring: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: '#ffffff',
+    borderWidth: 2.5,
+    borderColor: colors.orange,
   },
   checkBadge: {
     position: 'absolute',
-    top: 2,
-    right: 2,
+    top: -6,
+    right: -6,
     width: 24,
     height: 24,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
   },
   artistName: {
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: fonts.medium,
+    color: colors.ink,
+    fontSize: 11,
+    fontFamily: fonts.bold,
     textAlign: 'center',
     marginTop: 7,
-    height: 34,
+    height: 30,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
-  moreCircle: {
-    borderRadius: 999,
-    backgroundColor: '#e91e63',
+  moreSquare: {
+    backgroundColor: colors.orange,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 10,
   },
   moreText: {
-    color: '#fff',
-    fontSize: 13.5,
+    color: colors.ink,
+    fontSize: 13,
     fontWeight: '800',
-    fontFamily: fonts.extrabold,
+    fontFamily: fonts.display,
     textAlign: 'center',
-    lineHeight: 17,
+    lineHeight: 16,
+    textTransform: 'uppercase',
   },
   // — step: genres —
   genreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   genreTile: {
     aspectRatio: 1.75,
-    borderRadius: 10,
     overflow: 'hidden',
     padding: 12,
     justifyContent: 'flex-end',
+    borderWidth: 1.5,
+    borderColor: colors.ink,
   },
-  genreTileOn: { borderWidth: 2, borderColor: '#ffffff' },
-  genreLabel: { color: '#fff', fontSize: 15.5, fontWeight: '900', fontFamily: fonts.black },
-  genreIcon: { position: 'absolute', top: 8, right: 10, opacity: 0.92 },
+  genreTileOn: {
+    borderWidth: 3,
+    borderColor: colors.ink,
+    ...({ shadowColor: colors.orange, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 3, height: 3 }, elevation: 3 } as object),
+  },
+  genreLabel: { color: colors.ink, fontSize: 13, fontWeight: '900', fontFamily: fonts.display, textTransform: 'uppercase' },
+  genreIcon: { position: 'absolute', top: 8, right: 10, opacity: 0.9 },
   genreCheck: {
     position: 'absolute',
-    top: 8,
-    right: 10,
+    top: 6,
+    right: 6,
     width: 22,
     height: 22,
-    borderRadius: 11,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },

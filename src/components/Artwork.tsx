@@ -1,128 +1,103 @@
 /**
- * Artwork — remote cover with deterministic gradient fallback.
- * Variants mirror Spotify corner radii: 'card' shelf art (8), 'rounded'
- * rows (4), 'mini' mini-player art (4), 'circle' artists.
- * 'liked' renders Spotify's iconic purple→green Liked Songs tile.
+ * Artwork — PULSE cover primitive: SQUARE, zero radius, 1.5px ink
+ * border (the prototype's bordered art everywhere). Fallback is the
+ * prototype's diagonal hatch pattern with an ink music glyph — never a
+ * wrong image. 'liked' renders the orange Liked Songs block with the
+ * ink heart. React.memo (R8-P1 feed contract).
  */
 
 import React from 'react';
 import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
-
-const GRADIENTS: Array<[string, string]> = [
-  ['#7C4DFF', '#00E5FF'],
-  ['#E8115B', '#7C4DFF'],
-  ['#0D73EC', '#503750'],
-  ['#FF8A00', '#E52E71'],
-  ['#1DB954', '#0D73EC'],
-  ['#AF2896', '#503750'],
-];
-
-function gradientFor(seed: string): [string, string] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return GRADIENTS[h % GRADIENTS.length] as [string, string];
-}
+import { colors, fonts } from '../theme';
 
 export const Artwork = React.memo(function Artwork({
   uri,
   seed,
   size,
   style,
-  variant = 'rounded',
+  variant = 'square',
   liked = false,
   initials,
+  bordered = true,
 }: {
   uri?: string;
   seed: string;
   size: number;
   style?: StyleProp<ViewStyle>;
+  /** 'square' everywhere in PULSE; 'circle' reserved for true avatars */
   variant?: 'card' | 'rounded' | 'mini' | 'circle' | 'square';
-  /** Render Spotify's Liked Songs gradient heart tile. */
+  /** Render the orange Liked Songs block. */
   liked?: boolean;
-  /** When no image: render the letter(s) instead of the notes icon
-   *  (artist circles without a photo — v3.2 honest fallback). */
+  /** Letters fallback (artist without a photo). */
   initials?: string;
+  /** 1.5px ink frame (default on). */
+  bordered?: boolean;
 }) {
   const [failed, setFailed] = React.useState(false);
-  const borderRadius =
-    variant === 'circle'
-      ? size / 2
-      : variant === 'card'
-        ? 8
-        : variant === 'square'
-          ? 0
-          : 4;
+  const radius = variant === 'circle' ? size / 2 : 0;
 
   if (liked) {
     return (
-      <View style={[styles.fallback, { width: size, height: size, borderRadius }, style]}>
-        <LinearGradient
-          colors={[colors.likedStart, colors.likedEnd]}
-          start={{ x: 0.1, y: 0.1 }}
-          end={{ x: 0.9, y: 0.9 }}
-          style={[styles.gradient, { borderRadius }]}
-        >
-          <Ionicons name="heart" size={Math.max(14, size * 0.42)} color="#FFFFFF" />
-        </LinearGradient>
+      <View
+        style={[
+          styles.block,
+          { width: size, height: size, borderRadius: radius, backgroundColor: colors.orange, borderWidth: bordered ? 1.5 : 0, borderColor: colors.ink },
+          style,
+        ]}
+      >
+        <Ionicons name="heart" size={Math.max(14, size * 0.42)} color={colors.ink} />
       </View>
     );
   }
 
   if (!uri || failed) {
-    const [a, b] = gradientFor(seed);
     return (
-      <View style={[styles.fallback, { width: size, height: size, borderRadius }, style]}>
-        <LinearGradient
-          colors={[a, b]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.gradient, { borderRadius }]}
-        >
-          {initials ? (
-            <Text style={[styles.initials, { fontSize: Math.max(13, size * 0.3) }]} allowFontScaling={false}>
-              {initials.slice(0, 2).toUpperCase()}
-            </Text>
-          ) : (
-            <Ionicons name="musical-notes" size={Math.max(14, size * 0.28)} color="rgba(255,255,255,0.85)" />
-          )}
-        </LinearGradient>
+      <View
+        style={[
+          styles.block,
+          styles.hatch,
+          { width: size, height: size, borderRadius: radius, borderWidth: bordered ? 1.5 : 0, borderColor: colors.ink },
+          style,
+        ]}
+      >
+        {initials ? (
+          <Text style={[styles.initials, { fontSize: Math.max(12, size * 0.3) }]} allowFontScaling={false}>
+            {initials.slice(0, 2).toUpperCase()}
+          </Text>
+        ) : (
+          <Ionicons name="musical-notes" size={Math.max(12, size * 0.3)} color={colors.ink60} />
+        )}
       </View>
     );
   }
+
   return (
     <View
       style={[
-        styles.imageWrap,
-        { width: size, height: size, borderRadius, overflow: 'hidden' },
+        styles.block,
+        { width: size, height: size, borderRadius: radius, borderWidth: bordered ? 1.5 : 0, borderColor: colors.ink, overflow: 'hidden' },
         style,
       ]}
     >
-      <Image
-        source={{ uri }}
-        style={styles.imageFill}
-        onError={() => setFailed(true)}
-      />
+      <Image source={{ uri }} style={styles.imageFill} onError={() => setFailed(true)} />
     </View>
   );
 });
 
 const styles = StyleSheet.create({
-  imageWrap: { backgroundColor: colors.surface },
-  imageFill: { width: '100%', height: '100%' },
-  fallback: { overflow: 'hidden' },
-  initials: {
-    color: 'rgba(255,255,255,0.94)',
-    fontWeight: '800',
-    fontFamily: 'Figtree-800',
-    letterSpacing: 0.5,
-  },
-  gradient: {
-    width: '100%',
-    height: '100%',
+  block: {
+    backgroundColor: colors.paper2,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  hatch: {
+    backgroundColor: '#E3E0D4',
+  },
+  initials: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    letterSpacing: 0.5,
+  },
+  imageFill: { width: '100%', height: '100%' },
 });

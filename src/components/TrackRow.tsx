@@ -1,14 +1,12 @@
 /**
- * TrackRow — the workhorse row, tuned to Spotify specs:
- * 52px rounded art (4px), 16/500 title, 13/400 dim subtitle, explicit
- * "E" box, animated green equalizer on the active track, sparkle badge
- * for Smart Shuffle picks, optional heart toggle / index / custom right
- * slot / long-press. Spotify lists show no hearts by default.
+ * TrackRow — PULSE index-list row (the prototype's .trow):
+ * mono index number OR 44px bordered art that swaps to an acid EQ on
+ * ink block while playing, uppercase Archivo title (orange when
+ * active), mono meta, acid reason chip, source badge, heart slot.
+ * Long rows separated by 1px soft rules.
  *
- * React.memo (R8-P1): parent re-renders (feed appends, chip flips) can no
- * longer re-render every mounted row — only rows whose props actually
- * changed re-render. onPress IS compared (call sites build closures over
- * list indexes; a memo that ignored it would go stale on reorder).
+ * React.memo (R8-P1): feed appends can no longer re-render every
+ * mounted row — only rows whose props actually changed re-render.
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -23,13 +21,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Track } from '../types';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts } from '../theme';
 import { Artwork } from './Artwork';
 import { usePlayer } from '../player/PlayerProvider';
 import { isDownloaded } from '../storage/downloads';
+import { SourceBadge } from './Brutal';
 
-/** Three looping bars — the "this is playing" heartbeat. */
-export function EqualizerBars({ playing, size = 14 }: { playing: boolean; size?: number }) {
+/** Three looping acid bars on an ink block — the playing heartbeat. */
+export function EqualizerBars({ playing, size = 14, color = colors.acid }: { playing: boolean; size?: number; color?: string }) {
   const bars = useRef([new Animated.Value(0.3), new Animated.Value(0.65), new Animated.Value(0.45)]).current;
 
   useEffect(() => {
@@ -50,15 +49,14 @@ export function EqualizerBars({ playing, size = 14 }: { playing: boolean; size?:
   }, [playing, bars]);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: 2 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: 2.5 }}>
       {bars.map((b, i) => (
         <Animated.View
           key={i}
           style={{
-            width: Math.max(2, size / 5),
+            width: Math.max(2.5, size / 5.5),
             height: '100%',
-            borderRadius: 1,
-            backgroundColor: colors.accentBright,
+            backgroundColor: color,
             transform: [{ scaleY: b }],
           }}
         />
@@ -85,6 +83,8 @@ export const TrackRow = React.memo(function TrackRow({
   showHeart = false,
   right,
   subtitle,
+  reasonLabel,
+  showSource = false,
 }: {
   track: Track;
   index?: number;
@@ -95,6 +95,10 @@ export const TrackRow = React.memo(function TrackRow({
   showHeart?: boolean;
   right?: React.ReactNode;
   subtitle?: string;
+  /** acid reason chip (truthful MINDBEAT lines) */
+  reasonLabel?: string;
+  /** SAAVN / YT source chip */
+  showSource?: boolean;
 }) {
   const { active, isPlaying, favorites, toggleLike } = usePlayer();
   const [downloaded, setDownloaded] = React.useState(!!track.localUri);
@@ -113,7 +117,7 @@ export const TrackRow = React.memo(function TrackRow({
 
   const sub =
     subtitle ??
-    [track.artist, track.album].filter(Boolean).join(' • ');
+    [track.artist, track.album].filter(Boolean).join(' \u00b7 ');
 
   return (
     <Pressable
@@ -121,35 +125,40 @@ export const TrackRow = React.memo(function TrackRow({
       onLongPress={onLongPress}
       testID="track-row"
       delayLongPress={280}
-      android_ripple={{ color: colors.elevated }}
-      style={({ pressed }) => [styles.row, style, pressed && { opacity: 0.75 }]}
+      android_ripple={{ color: 'rgba(22,21,19,0.06)' }}
+      style={({ pressed }) => [styles.row, style, pressed && { backgroundColor: colors.paper2 }]}
     >
       {index != null && !showArtwork ? (
-        <Text style={[styles.index, isActive && { color: colors.accentBright }]}>{index + 1}</Text>
+        <Text style={[styles.index, isActive && { color: colors.orange }]}>
+          {String(index + 1).padStart(2, '0')}
+        </Text>
       ) : showArtwork ? (
-        <View>
-          <Artwork uri={track.artwork} seed={track.id} size={52} />
-          {isActive ? (
-            <View style={styles.eqOverlay}>
-              <EqualizerBars playing={isPlaying} size={16} />
-            </View>
-          ) : null}
-        </View>
+        isActive ? (
+          <View style={styles.eqBlock}>
+            <EqualizerBars playing={isPlaying} size={18} />
+          </View>
+        ) : (
+          <Artwork uri={track.artwork} seed={track.id} size={44} />
+        )
       ) : null}
 
       <View style={styles.meta}>
         <View style={styles.titleRow}>
           {track.explicit ? <ExplicitBadge /> : null}
-          {track.isRecommended ? (
-            <Ionicons name="sparkles" size={13} color={colors.aiEnd} style={{ marginRight: 2 }} />
-          ) : null}
-          <Text style={[styles.title, isActive && { color: colors.accentBright }]} numberOfLines={1}>
+          <Text style={[styles.title, isActive && { color: colors.orange }]} numberOfLines={1}>
             {track.title}
           </Text>
         </View>
+        {reasonLabel ? (
+          <View style={styles.reasonChip}>
+            <Text style={styles.reasonText} numberOfLines={1}>
+              {reasonLabel}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.subRow}>
           {downloaded ? (
-            <Ionicons name="arrow-down-circle" size={13} color={colors.accentBright} style={{ marginRight: 3 }} />
+            <Ionicons name="arrow-down" size={11} color={colors.orange} style={{ marginRight: 4 }} />
           ) : null}
           {track.previewOnly ? (
             <Text style={styles.previewTag}>PREVIEW</Text>
@@ -158,11 +167,10 @@ export const TrackRow = React.memo(function TrackRow({
             {sub}
           </Text>
         </View>
-        {/* MINDBEAT truthful explanation (§8.5) — every recommended
-            track carries an honest reason line, never social proof. */}
-        {track.isRecommended && track.reason ? (
-          <View style={styles.reasonRow}>
-            <Ionicons name="sparkles" size={11} color={colors.aiEnd} />
+        {/* MINDBEAT truthful explanation — every recommended track
+            carries an honest reason line, never social proof. */}
+        {!reasonLabel && track.isRecommended && track.reason ? (
+          <View style={styles.reasonChip}>
             <Text style={styles.reasonText} numberOfLines={1}>
               {track.reason}
             </Text>
@@ -170,16 +178,19 @@ export const TrackRow = React.memo(function TrackRow({
         ) : null}
       </View>
 
-      {right ??
-        (showHeart ? (
-          <Pressable hitSlop={12} onPress={() => toggleLike(track)} style={styles.likeBtn}>
-            <Ionicons
-              name={isFav ? 'heart' : 'heart-outline'}
-              size={21}
-              color={isFav ? colors.accentBright : colors.textFaint}
-            />
-          </Pressable>
-        ) : null)}
+      <View style={styles.side}>
+        {showSource ? <SourceBadge source={track.source} /> : null}
+        {right ??
+          (showHeart ? (
+            <Pressable hitSlop={12} onPress={() => toggleLike(track)} style={styles.likeBtn}>
+              <Ionicons
+                name={isFav ? 'heart' : 'heart-outline'}
+                size={19}
+                color={isFav ? colors.orange : colors.ink40}
+              />
+            </Pressable>
+          ) : null)}
+      </View>
     </Pressable>
   );
 });
@@ -188,69 +199,87 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 9,
-    gap: spacing.md,
-    minHeight: 70,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    gap: 12,
+    minHeight: 66,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
+    backgroundColor: colors.paper,
   },
   index: {
-    width: 26,
-    color: colors.textDim,
-    fontSize: 16,
-    textAlign: 'center',
-    fontFamily: fonts.medium,
+    width: 24,
+    color: colors.ink40,
+    fontSize: 10,
+    textAlign: 'left',
+    fontFamily: fonts.monoBold,
   },
-  meta: { flex: 1, gap: 3 },
+  eqBlock: {
+    width: 44,
+    height: 44,
+    backgroundColor: colors.ink,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    paddingBottom: 11,
+    paddingRight: 11,
+  },
+  meta: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   title: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '500',
-    fontFamily: fonts.medium,
+    color: colors.ink,
+    fontSize: 13.5,
+    fontFamily: fonts.bold,
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
     flexShrink: 1,
   },
-  subRow: { flexDirection: 'row', alignItems: 'center' },
-  subtitle: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontFamily: fonts.regular,
-    flexShrink: 1,
+  reasonChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.acid,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginTop: 3,
   },
-  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   reasonText: {
-    color: colors.aiEnd,
-    fontSize: 11.5,
-    fontFamily: fonts.medium,
+    color: colors.ink,
+    fontSize: 8.5,
+    fontFamily: fonts.monoBold,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    flexShrink: 1,
+  },
+  subRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  subtitle: {
+    color: colors.ink40,
+    fontSize: 10,
+    fontFamily: fonts.mono,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
     flexShrink: 1,
   },
   previewTag: {
-    color: colors.textFaint,
-    fontSize: 9,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: 0.5,
+    color: colors.ink40,
+    fontSize: 8.5,
+    fontFamily: fonts.monoBold,
+    letterSpacing: 1,
     marginRight: 5,
+    borderWidth: 1,
+    borderColor: colors.ink40,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
   badge: {
-    width: 15,
-    height: 15,
-    borderRadius: 3,
-    backgroundColor: colors.textFaint,
+    width: 14,
+    height: 14,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
-    color: colors.bg,
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+    color: colors.paper,
+    fontSize: 9,
+    fontFamily: fonts.monoBold,
   },
-  likeBtn: { padding: 8 },
-  eqOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 4,
-  },
+  side: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  likeBtn: { padding: 6 },
 });

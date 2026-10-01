@@ -13,21 +13,18 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import type { ListeningStats } from '../types';
 import { getStats } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
 import { usePlayer } from '../player/PlayerProvider';
 import { Artwork } from '../components/Artwork';
-import { PressableScale } from '../components/PressableScale';
-import { colors, fonts, radius, spacing } from '../theme';
-import { useDynamicPalette } from '../theme/DynamicThemeProvider';
-import { withAlpha } from '../theme/dynamic';
+import { Brutal, MonoText, OutlineText } from '../components/Brutal';
+import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
 
 type MindbeatStats = Awaited<ReturnType<typeof mindbeat.stats>>;
@@ -80,7 +77,6 @@ export function StatsScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
-  const palette = useDynamicPalette();
   const [stats, setStats] = useState<Merged | null>(null);
 
   useEffect(() => {
@@ -125,75 +121,119 @@ export function StatsScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
-        <PressableScale hitSlop={12} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
-        </PressableScale>
-        <Text style={styles.topLabel}>Your Sound</Text>
-        <PressableScale hitSlop={12} onPress={() => nav.navigate('Taste')}>
-          <Ionicons name="finger-print-outline" size={22} color={colors.textDim} />
-        </PressableScale>
+        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.goBack()} style={styles.chevBtn}>
+          <Ionicons name="chevron-back" size={16} color={colors.ink} />
+        </Brutal>
+        <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+          THE 30-DAY AUDIT
+        </MonoText>
+        <Brutal haptic shadow={0} pressOffset={1} onPress={() => nav.navigate('Taste')} style={styles.chevBtn}>
+          <Ionicons name="finger-print-outline" size={16} color={colors.ink} />
+        </Brutal>
       </View>
 
       {!stats ? (
         <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>Crunching your listening data…</Text>
+          <MonoText size={10.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+            CRUNCHING YOUR LISTENING DATA…
+          </MonoText>
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
-          {/* Hero stats — wearing the current song's palette */}
-          <LinearGradient
-            colors={[withAlpha(palette.deep, 0.95), withAlpha(palette.vibrant, 0.5)]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.hero, { borderColor: withAlpha(palette.glow, 0.25) }]}
-          >
-            <Text style={styles.heroTitle}>Your listening</Text>
-            <View style={styles.heroRow}>
-              <HeroStat value={fmtMinutes(stats.minutes)} label="minutes" />
-              <HeroStat value={String(stats.streams)} label="streams" />
-              <HeroStat value={String(stats.songs)} label="songs" />
+          {/* masthead */}
+          <View style={styles.mast}>
+            <View style={styles.editionRow}>
+              <View style={styles.edDot} />
+              <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 1.8 }}>
+                YOUR SOUND · FROM THE LEDGER
+              </MonoText>
+            </View>
+            <OutlineText style={styles.mastTitle} outline={1.4}>
+              The Audit
+            </OutlineText>
+          </View>
+
+          {/* the Your Sound audit box (the prototype's .your-sound) */}
+          <View style={styles.auditBox}>
+            <View style={styles.auditHead}>
+              <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                30-DAY WINDOW
+              </MonoText>
+              <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                30-SECOND RULE
+              </MonoText>
+            </View>
+            <View style={styles.auditGrid}>
+              <View style={styles.auditCell}>
+                <Text style={styles.auditNum}>{fmtMinutes(stats.minutes)}</Text>
+                <MonoText size={8.5} bold color={colors.ink40} style={{ letterSpacing: 1.4, marginTop: 4 }}>
+                  MINUTES
+                </MonoText>
+              </View>
+              <View style={[styles.auditCell, styles.auditCellMid]}>
+                <Text style={styles.auditNum}>{String(stats.streams)}</Text>
+                <MonoText size={8.5} bold color={colors.ink40} style={{ letterSpacing: 1.4, marginTop: 4 }}>
+                  STREAMS
+                </MonoText>
+              </View>
+              <View style={styles.auditCell}>
+                <Text style={styles.auditNum}>{String(stats.songs)}</Text>
+                <MonoText size={8.5} bold color={colors.ink40} style={{ letterSpacing: 1.4, marginTop: 4 }}>
+                  SONGS
+                </MonoText>
+              </View>
             </View>
             {stats.streakDays != null && stats.streakDays > 0 ? (
-              <View style={styles.streakRow}>
-                <Ionicons name="flame" size={14} color={colors.aiEnd} />
-                <Text style={styles.streakText}>
-                  {stats.streakDays}-day streak · {Math.round((stats.skipRate ?? 0) * 100)}% skip rate
-                  {stats.sessions ? ` · ${stats.sessions} sessions` : ''}
-                </Text>
+              <View style={styles.auditFoot}>
+                <Ionicons name="flame" size={14} color={colors.orange} />
+                <MonoText size={9.5} bold color={colors.ink60} style={{ flex: 1, letterSpacing: 0.6 }} numberOfLines={1}>
+                  {`${stats.streakDays}-DAY STREAK · ${Math.round((stats.skipRate ?? 0) * 100)}% SKIP RATE${stats.sessions ? ` · ${stats.sessions} SESSIONS` : ''}`}
+                </MonoText>
               </View>
             ) : null}
-          </LinearGradient>
+          </View>
 
           {/* Taste DNA entry — see and edit what the app believes (§6.6) */}
-          <PressableScale haptic style={styles.dnaCard} onPress={() => nav.navigate('Taste')}>
-            <Ionicons name="finger-print" size={22} color={colors.aiEnd} />
-            <View style={{ flex: 1 }}>
+          <Brutal haptic shadow={3} style={styles.dnaCard} onPress={() => nav.navigate('Taste')}>
+            <Ionicons name="finger-print" size={20} color={colors.orange} />
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.dnaTitle}>Taste DNA</Text>
-              <Text style={styles.dnaSub}>See what TSF AI believes about you — and change it</Text>
+              <MonoText size={9} style={{ marginTop: 2 }} numberOfLines={1}>
+                See what MINDBEAT believes — and change it
+              </MonoText>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-          </PressableScale>
+            <Ionicons name="chevron-forward" size={16} color={colors.ink40} />
+          </Brutal>
 
           {/* Top artists */}
-          <Text style={styles.sectionTitle}>Top artists</Text>
+          <View style={styles.secLabel}>
+            <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+              TOP ARTISTS
+            </MonoText>
+            <View style={styles.secRule} />
+          </View>
           {stats.topArtists.length ? (
             stats.topArtists.map((a, i) => (
               <View key={a.artist} style={styles.artistRow}>
-                <Text style={styles.rank}>{i + 1}</Text>
-                <Artwork uri={a.artwork} seed={a.artist} size={48} variant="circle" />
-                <View style={{ flex: 1 }}>
+                <MonoText size={10} bold color={colors.ink40} style={styles.rank}>
+                  {String(i + 1).padStart(2, '0')}
+                </MonoText>
+                <Artwork uri={a.artwork} seed={a.artist} size={44} />
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.artistName} numberOfLines={1}>
-                    {a.artist}
+                    {a.artist.toUpperCase()}
                   </Text>
-                  <Text style={styles.artistPlays}>
-                    {a.plays} {a.plays === 1 ? 'stream' : 'streams'}
-                  </Text>
+                  <MonoText size={9} style={{ marginTop: 2 }}>
+                    {`${a.plays} ${a.plays === 1 ? 'STREAM' : 'STREAMS'}`}
+                  </MonoText>
                 </View>
-                {i === 0 ? <Ionicons name="trophy" size={18} color={colors.aiEnd} /> : null}
+                {i === 0 ? <Ionicons name="trophy" size={16} color={colors.orange} /> : null}
               </View>
             ))
           ) : (
-            <Text style={styles.emptyText}>Play some music to build your taste profile</Text>
+            <MonoText size={10} color={colors.ink60} style={styles.emptyText}>
+              PLAY SOME MUSIC TO BUILD YOUR TASTE PROFILE
+            </MonoText>
           )}
 
           {/* Listening clock — the ledger's visible proof (§9.7) */}
@@ -202,12 +242,16 @@ export function StatsScreen() {
           {/* Top tracks */}
           {stats.topTracks.length ? (
             <>
-              <Text style={styles.sectionTitle}>Top songs</Text>
+              <View style={styles.secLabel}>
+                <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+                  TOP SONGS
+                </MonoText>
+                <View style={styles.secRule} />
+              </View>
               {stats.topTracks.map((e, i) => (
-                <PressableScale
+                <Pressable
                   key={e.track.id}
-                  haptic
-                  style={styles.trackRow}
+                  style={({ pressed }) => [styles.trackRow, pressed && { backgroundColor: colors.paper2 }]}
                   onPress={() => {
                     playQueue(
                       stats.topTracks.map((x) => x.track),
@@ -216,17 +260,19 @@ export function StatsScreen() {
                     nav.navigate('Player');
                   }}
                 >
-                  <Text style={styles.rank}>{i + 1}</Text>
-                  <Artwork uri={e.track.artwork} seed={e.track.id} size={48} />
-                  <View style={{ flex: 1 }}>
+                  <MonoText size={10} bold color={colors.ink40} style={styles.rank}>
+                    {String(i + 1).padStart(2, '0')}
+                  </MonoText>
+                  <Artwork uri={e.track.artwork} seed={e.track.id} size={44} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.trackTitle} numberOfLines={1}>
-                      {e.track.title}
+                      {e.track.title.toUpperCase()}
                     </Text>
-                    <Text style={styles.trackSub} numberOfLines={1}>
-                      {e.track.artist} · {e.plays} {e.plays === 1 ? 'stream' : 'streams'}
-                    </Text>
+                    <MonoText size={9} style={{ marginTop: 2 }} numberOfLines={1}>
+                      {`${e.track.artist.toUpperCase()} · ${e.plays} ${e.plays === 1 ? 'STREAM' : 'STREAMS'}`}
+                    </MonoText>
                   </View>
-                </PressableScale>
+                </Pressable>
               ))}
             </>
           ) : null}
@@ -236,124 +282,126 @@ export function StatsScreen() {
   );
 }
 
-function HeroStat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={styles.heroStat}>
-      <Text style={styles.heroValue}>{value}</Text>
-      <Text style={styles.heroLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
-  topLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  chevBtn: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: colors.textDim, fontSize: 14, fontFamily: fonts.medium },
-  hero: {
-    margin: spacing.lg,
-    marginBottom: spacing.sm,
-    borderRadius: radius.squircle,
-    padding: spacing.xl,
-    gap: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
+  mast: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 16 },
+  editionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  edDot: { width: 7, height: 7, backgroundColor: colors.orange },
+  mastTitle: {
+    fontFamily: fonts.display,
+    fontSize: 32,
+    lineHeight: 34,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
   },
-  heroTitle: { color: '#fff', fontSize: 15, fontWeight: '800', fontFamily: fonts.extrabold, opacity: 0.9 },
-  heroRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  heroStat: { alignItems: 'center', gap: 2 },
-  heroValue: { color: '#fff', fontSize: 26, fontWeight: '900', fontFamily: fonts.black },
-  heroLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontFamily: fonts.medium },
-  streakRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  streakText: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontFamily: fonts.medium },
+  auditBox: {
+    marginHorizontal: 18,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 5, height: 5 }, elevation: 5 } as object),
+  },
+  auditHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
+    backgroundColor: colors.acid,
+  },
+  auditGrid: { flexDirection: 'row' },
+  auditCell: { flex: 1, alignItems: 'center', paddingVertical: 15, paddingHorizontal: 6 },
+  auditCellMid: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.ink16 },
+  auditNum: { fontFamily: fonts.display, fontSize: 20, color: colors.ink },
+  auditFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 2,
+    borderTopColor: colors.ink,
+  },
   dnaCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    gap: 12,
+    marginHorizontal: 18,
+    marginTop: 18,
+    marginBottom: 8,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    padding: 14,
   },
-  dnaTitle: { color: colors.text, fontSize: 15, fontWeight: '700', fontFamily: fonts.bold },
-  dnaSub: { color: colors.textDim, fontSize: 12, fontFamily: fonts.regular, marginTop: 2 },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 21,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
+  dnaTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '700', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  secLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 8,
   },
+  secRule: { flex: 1, height: 2, backgroundColor: colors.ink },
   artistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
   },
-  rank: {
-    width: 22,
-    color: colors.textFaint,
-    fontSize: 15,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    textAlign: 'center',
-  },
-  artistName: { color: colors.text, fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold },
-  artistPlays: { color: colors.textDim, fontSize: 12.5, fontFamily: fonts.regular },
+  rank: { width: 24 },
+  artistName: { color: colors.ink, fontSize: 13, fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.2 },
   clockWrap: {
-    margin: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    margin: 18,
+    marginTop: 20,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    padding: 16,
   },
-  clockTitle: { color: colors.text, fontSize: 15, fontWeight: '700', fontFamily: fonts.bold },
-  clockSub: { color: colors.textDim, fontSize: 12, fontFamily: fonts.regular, marginTop: 2, marginBottom: spacing.md },
+  clockTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '700', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  clockSub: { color: colors.ink60, fontSize: 9.5, fontFamily: fonts.mono, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 3, marginBottom: 14 },
   clockRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 80 },
   clockCol: { flex: 1, alignItems: 'center' },
   clockBarWrap: { height: 64, justifyContent: 'flex-end' },
-  clockBar: { width: '100%', borderRadius: 2, minHeight: 3 },
-  clockLabel: { color: colors.textFaint, fontSize: 9, fontFamily: fonts.medium, marginTop: 2 },
+  clockBar: { width: '100%', minHeight: 3 },
+  clockLabel: { color: colors.ink40, fontSize: 9, fontFamily: fonts.mono, marginTop: 3 },
   trackRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
   },
-  trackTitle: { color: colors.text, fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold },
-  trackSub: { color: colors.textDim, fontSize: 12.5, fontFamily: fonts.regular },
+  trackTitle: { color: colors.ink, fontSize: 13, fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.2 },
   emptyText: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontFamily: fonts.regular,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    letterSpacing: 0.6,
   },
 });

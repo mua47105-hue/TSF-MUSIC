@@ -126,7 +126,7 @@ export function TasteScreen() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
         <PressableScale hitSlop={12} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
+          <Ionicons name="chevron-back" size={22} color={colors.ink} />
         </PressableScale>
         <Text style={styles.topLabel}>Taste DNA</Text>
         <View style={{ width: 26 }} />
@@ -134,7 +134,7 @@ export function TasteScreen() {
 
       {!profile ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.accentBright} />
+          <ActivityIndicator color={colors.orange} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
@@ -183,7 +183,7 @@ export function TasteScreen() {
                       onPress={() => act(() => mindbeat.boostArtist(a.artist), `${titleCase(a.artist)} boosted`)}
                       style={styles.miniBtn}
                     >
-                      <Ionicons name="trending-up-outline" size={17} color={colors.accentBright} />
+                      <Ionicons name="trending-up-outline" size={17} color={colors.orange} />
                     </PressableScale>
                     <PressableScale
                       hitSlop={8}
@@ -199,7 +199,7 @@ export function TasteScreen() {
                       <Ionicons
                         name={isMuted ? 'volume-high-outline' : 'volume-mute-outline'}
                         size={17}
-                        color={isMuted ? colors.accentBright : colors.textDim}
+                        color={isMuted ? colors.orange : colors.ink40}
                       />
                     </PressableScale>
                   </View>
@@ -299,7 +299,7 @@ export function TasteScreen() {
               }, recsOff ? 'Recommendations back on' : 'Recommendations off — your music only')
             }
           >
-            <Ionicons name={recsOff ? 'close-circle-outline' : 'sparkles-outline'} size={20} color={recsOff ? colors.textDim : colors.aiEnd} />
+            <Ionicons name={recsOff ? 'close-circle-outline' : 'sparkles-outline'} size={20} color={recsOff ? colors.ink40 : colors.orange} />
             <View style={{ flex: 1 }}>
               <Text style={styles.controlTitle}>Disable all recommendations</Text>
               <Text style={styles.controlSub}>Classic shuffle + your own music only. Nothing changes until you turn it back on.</Text>
@@ -318,7 +318,7 @@ export function TasteScreen() {
           <PressableScale haptic style={styles.controlCard} onPress={resetProfile}>
             <Ionicons name="refresh-outline" size={20} color="#e06c5a" />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.controlTitle, { color: '#e06c5a' }]}>Reset taste model</Text>
+              <Text style={[styles.controlTitle, { color: colors.orangeDeep }]}>Reset taste model</Text>
               <Text style={styles.controlSub}>Forgets everything learned. Playlists, likes and downloads stay.</Text>
             </View>
           </PressableScale>
@@ -329,142 +329,150 @@ export function TasteScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.paper },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.ink,
   },
   topLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 16,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.2,
   },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   glanceCard: {
-    margin: spacing.lg,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    margin: 18,
+    marginBottom: 6,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    padding: 16,
     gap: 8,
+    ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 4 } as object),
   },
-  glanceTitle: { color: colors.text, fontSize: 16, fontWeight: '800', fontFamily: fonts.extrabold },
-  glanceSub: { color: colors.textDim, fontSize: 12.5, fontFamily: fonts.regular },
-  barRow: { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 4 },
-  bar: { backgroundColor: colors.aiEnd },
-  barDim: { backgroundColor: colors.cardDim },
-  barCaption: { color: colors.textFaint, fontSize: 11, fontFamily: fonts.regular },
+  glanceTitle: { color: colors.ink, fontFamily: fonts.display, fontSize: 15, textTransform: 'uppercase' },
+  glanceSub: { color: colors.ink60, fontSize: 10, fontFamily: fonts.mono, letterSpacing: 0.5, textTransform: 'uppercase' },
+  barRow: { flexDirection: 'row', height: 10, borderWidth: 1.5, borderColor: colors.ink, overflow: 'hidden', marginTop: 4 },
+  bar: { backgroundColor: colors.orange },
+  barDim: { backgroundColor: colors.paper2 },
+  barCaption: { color: colors.ink40, fontSize: 9.5, fontFamily: fonts.mono, textTransform: 'uppercase', letterSpacing: 0.6 },
   sectionTitle: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '800',
-    fontFamily: fonts.extrabold,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 14,
+    textTransform: 'uppercase',
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 8,
   },
   artistCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
+    gap: 12,
+    marginHorizontal: 18,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
   },
   artistHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  artistName: { color: colors.text, fontSize: 14.5, fontWeight: '600', fontFamily: fonts.semibold, flexShrink: 1 },
+  artistName: { color: colors.ink, fontSize: 13, fontWeight: '700', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.2, flexShrink: 1 },
   mutedTag: {
-    backgroundColor: colors.cardDim,
-    borderRadius: 4,
+    backgroundColor: colors.ink,
     paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingVertical: 2,
   },
-  mutedTagText: { color: colors.textFaint, fontSize: 8.5, fontWeight: '800', fontFamily: fonts.bold },
+  mutedTagText: { color: colors.paper, fontSize: 8, fontWeight: '800', fontFamily: fonts.monoBold, letterSpacing: 1 },
   weightTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.cardDim,
+    height: 8,
+    borderWidth: 1,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
     marginTop: 6,
     overflow: 'hidden',
   },
-  weightBar: { height: '100%', borderRadius: 3, backgroundColor: colors.accentBright },
-  artistActions: { flexDirection: 'row', gap: 4 },
+  weightBar: { height: '100%', backgroundColor: colors.acid },
+  artistActions: { flexDirection: 'row', gap: 6 },
   miniBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
+    width: 34,
+    height: 34,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillGridWrap: { gap: 0 },
-  pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: spacing.lg },
+  pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 18 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 11,
     paddingVertical: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
   },
-  pillText: { color: colors.text, fontSize: 13, fontFamily: fonts.medium },
-  pillW: { color: colors.textFaint, fontSize: 11, fontFamily: fonts.medium },
-  dayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: spacing.lg },
+  pillText: { color: colors.ink, fontSize: 11, fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.4 },
+  pillW: { color: colors.ink40, fontSize: 10, fontFamily: fonts.monoBold },
+  dayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 18 },
   dayCard: {
     width: '48%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.md,
+    backgroundColor: colors.paper2,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    padding: 12,
     gap: 4,
   },
-  dayLabel: { color: colors.textFaint, fontSize: 10.5, fontWeight: '800', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.6 },
-  dayArtists: { color: colors.text, fontSize: 13, fontFamily: fonts.medium, lineHeight: 17 },
-  dayEnergy: { color: colors.textFaint, fontSize: 10.5, fontFamily: fonts.regular },
-  dayEmpty: { color: colors.textFaint, fontSize: 11.5, fontFamily: fonts.regular },
-  reasonList: { paddingHorizontal: spacing.lg, gap: 7 },
-  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  reasonText: { color: colors.textDim, fontSize: 12.5, fontFamily: fonts.regular },
-  reasonFoot: { color: colors.textFaint, fontSize: 11, fontFamily: fonts.regular, marginTop: 6, lineHeight: 15 },
+  dayLabel: { color: colors.orangeDeep, fontSize: 9.5, fontWeight: '800', fontFamily: fonts.monoBold, textTransform: 'uppercase', letterSpacing: 1.4 },
+  dayArtists: { color: colors.ink, fontSize: 12.5, fontFamily: fonts.bold, lineHeight: 16, textTransform: 'uppercase' },
+  dayEnergy: { color: colors.ink40, fontSize: 9.5, fontFamily: fonts.mono, textTransform: 'uppercase', letterSpacing: 0.4 },
+  dayEmpty: { color: colors.ink40, fontSize: 10.5, fontFamily: fonts.mono, textTransform: 'uppercase' },
+  reasonList: { paddingHorizontal: 18, gap: 7 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: colors.ink16, paddingBottom: 7 },
+  reasonText: { color: colors.ink60, fontSize: 11.5, fontFamily: fonts.medium, flex: 1 },
+  reasonFoot: { color: colors.ink40, fontSize: 9.5, fontFamily: fonts.mono, marginTop: 6, lineHeight: 15, textTransform: 'uppercase', letterSpacing: 0.4 },
   controlCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
+    gap: 12,
+    marginHorizontal: 18,
     marginBottom: 8,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    padding: 14,
   },
-  controlTitle: { color: colors.text, fontSize: 14, fontWeight: '700', fontFamily: fonts.bold },
-  controlSub: { color: colors.textDim, fontSize: 11.5, fontFamily: fonts.regular, marginTop: 2 },
+  controlTitle: { color: colors.ink, fontSize: 13, fontWeight: '700', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  controlSub: { color: colors.ink60, fontSize: 10.5, fontFamily: fonts.mono, marginTop: 3, lineHeight: 15, letterSpacing: 0.3 },
   switchTrack: {
     width: 40,
     height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.cardDim,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
     padding: 2,
   },
-  switchOn: { backgroundColor: colors.cardDim },
-  switchThumb: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textFaint, alignSelf: 'flex-end' },
+  switchOn: { backgroundColor: colors.acid },
+  switchThumb: { width: 15, height: 15, backgroundColor: colors.ink, alignSelf: 'flex-end' },
   emptyText: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontFamily: fonts.regular,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    color: colors.ink60,
+    fontSize: 10.5,
+    fontFamily: fonts.mono,
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    lineHeight: 16,
   },
 });

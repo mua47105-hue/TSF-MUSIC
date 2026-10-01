@@ -1,17 +1,17 @@
 /**
- * Home — authentic Spotify Android home architecture, v3.2 DEEP feed:
+ * Home — PULSE Front Page (v4.0 editorial brutalism):
  *
- *   profile avatar + filter chips (All / Music / AI) → 8-tile shortcut
- *   grid → Made for {name} (Daily Mixes + AI card) → Now Sound (daylist)
- *   → Jump back in → Popular artists (REAL artist photos, circular rail)
- *   → Trending now → On the Rise → Because you listened → New releases
- *   (JioSaavn editorial albums) → Featured playlists (editorial) →
- *   Popular charts → footer.
+ *   masthead (edition + huge greeting w/ outlined name + avatar) →
+ *   filter chips → Now Sound daypart hero (ink card + acid play) →
+ *   broadsheet ticker → numbered quick tiles → Made for {name} →
+ *   Jump back in → Popular artists (grayscale square stamps) →
+ *   Trending (numbered chart) → On the Rise → Because you listened →
+ *   New releases → Featured playlists → charts → endless feed.
  *
- * The editorial feed (content.getHomepageData) + artist rail make the
- * screen scroll as deep as Spotify from the very first session, with or
- * without a listening profile. Everything algorithmic stays safety-
- * filtered; every editorial shelf renders through collectionIsClean.
+ * R8-P1 architecture intact: the feed renders through a windowed
+ * FlatList with memo'd FeedSongRow / FeedAlbumShelf / HomeHeader —
+ * appends re-render only the new rows. Every algorithmic shelf stays
+ * safety-filtered; editorial shelves render through collectionIsClean.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -54,22 +54,28 @@ import {
   setHomeFeedCache,
 } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
-import { QuickTile, Shelf, ShelfCard } from '../components/Shelf';
+import { QuickTile, Shelf, ShelfCard, ArtistCard } from '../components/Shelf';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
 import { ShelfSkeleton } from '../components/ShelfSkeleton';
-import { PressableScale } from '../components/PressableScale';
-import { colors, fonts, radius, spacing } from '../theme';
+import { Brutal, MonoText, OutlineText, Ticker } from '../components/Brutal';
+import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
 
 type Chip = 'all' | 'music' | 'ai';
 
 const POPULAR_ARTIST_COUNT = 10;
 
+function daypart(): [string, string] {
+  const h = new Date().getHours();
+  if (h >= 23 || h < 5) return ['Late Night Frequencies', 'Quiet-hours dispatch — lo-fi, medleys, long drives.'];
+  if (h < 12) return ['Morning Momentum', 'Front-loaded openers — devotional calm into easy anthems.'];
+  if (h < 17) return ['Afternoon Drift', 'Mid-tempo flow to carry the day. No skips filed.'];
+  return ['Evening Glow', 'Golden-hour energy, rebuilt from the mixes you outgrew.'];
+}
+
 export function HomeScreen() {
   const insets = useSafeAreaInsets();
-  // window-reactive grid math (W2): tablets / split-screen / pop-up windows
-  // re-measure instead of freezing the boot-time module constant
   const { width: winWidth } = useWindowDimensions();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
@@ -125,9 +131,8 @@ export function HomeScreen() {
   );
 
   /** Popular artists: profile top artists first, onboarding seeds next,
-   *  curated A-listers filling the rail to a full row. Photos resolve from
-   *  the instant seed map; unknown names get at most 6 live lookups and an
-   *  honest initials circle otherwise. */
+   *  curated A-listers filling the rail. Photos resolve from the seed
+   *  map; unknown names get at most 6 live lookups + honest initials. */
   const loadPopularArtists = useCallback(async () => {
     try {
       await mindbeat.ready();
@@ -165,18 +170,16 @@ export function HomeScreen() {
       (n) => seedMap.get(n.toLowerCase()) ?? { name: n },
     );
     setPopularArtists(rail);
-    // Live photos only for the first few unknowns (network budget).
     rail
       .filter((a) => !a.image)
       .slice(0, 6)
-      .forEach((a, i) => {
+      .forEach((a) => {
         lookupArtistPhoto(a.name)
           .then((img) => {
             if (!img) return;
             setPopularArtists((prev) => prev.map((x) => (x.name === a.name ? { ...x, image: img } : x)));
           })
           .catch(() => undefined);
-        void i;
       });
   }, []);
 
@@ -213,9 +216,6 @@ export function HomeScreen() {
         if (cached && cached.length) setCharts(cached.map((s) => s.collection));
       }
 
-      // AI surfaces first — they personalize the whole screen. MINDBEAT
-      // surfaces (Mixes v2 / Now Sound / On the Rise) with the v2.1 engine
-      // as the graceful fallback (ladder §10.4).
       mindbeat
         .dailyMixes()
         .then((v2) => (v2.length ? setMixes(v2) : getDailyMixes().then(setMixes)))
@@ -250,8 +250,6 @@ export function HomeScreen() {
       } catch {
         setOffline(true);
       } finally {
-        // F2/P2-4: shelves settled (success OR failure) — the endless feed
-        // may now start, primed against whatever the shelves actually show.
         feedPrimedRef.current = true;
       }
     },
@@ -263,11 +261,11 @@ export function HomeScreen() {
   }, [load]);
 
   const resetFeed = useCallback(() => {
-    feedEpochRef.current += 1; // in-flight old-pager batches are void now
+    feedEpochRef.current += 1;
     pagerRef.current = null;
     feedSongsRef.current = [];
     feedBusyRef.current = false;
-    feedPrimedRef.current = false; // load() re-primes after trending settles
+    feedPrimedRef.current = false;
     setFeedBatches([]);
     setFeedState('idle');
   }, []);
@@ -278,7 +276,6 @@ export function HomeScreen() {
         searchSongs: (q, page, signal) => searchSaavn(q, 30, signal, page),
         searchAlbums: (q, page, signal) => searchAlbumCollections(q, page, 20, signal),
       });
-      // never repeat rows the fixed shelves above already show
       pagerRef.current.prime({
         songs: trending ?? undefined,
         albums: [...newAlbums, ...featured, ...charts],
@@ -288,11 +285,7 @@ export function HomeScreen() {
   }, [trending, newAlbums, featured, charts]);
 
   const loadFeedMore = useCallback(async () => {
-    // CRITIC P2-2 fix: after a failure round, only the explicit retry row
-    // resumes the feed — auto-scroll must not churn the ladder while the
-    // network is down.
     if (feedBusyRef.current || feedState === 'retry' || feedState === 'exhausted') return;
-    // CRITIC P2-4 fix: wait for the fixed shelves to settle first
     if (!feedPrimedRef.current) return;
     const pager = ensurePager();
     if (pager.isExhausted) return;
@@ -301,7 +294,7 @@ export function HomeScreen() {
     setFeedState('loading');
     try {
       const batch = await pager.next();
-      if (epoch !== feedEpochRef.current) return; // refresh reset the feed
+      if (epoch !== feedEpochRef.current) return;
       if (batch === null) {
         setFeedState('exhausted');
       } else if (batch.kind === 'retry') {
@@ -339,11 +332,6 @@ export function HomeScreen() {
     [playQueue, nav],
   );
 
-  // First name → "Made for {name}". AsyncStorage read first (instant — the
-  // kv copy can lag behind the ledger opening on cold start), then kv, then
-  // the profile subscription for the exact onboarding-complete moment.
-  // Subsequent reads never CLEAR a known-good name (kv may briefly be empty
-  // on cold web/crash-recovery boots).
   useEffect(() => {
     AsyncStorage.getItem('tsf.userName')
       .then((n) => n && setUserName(n))
@@ -362,8 +350,7 @@ export function HomeScreen() {
 
   const hasMixes = !!mixes && mixes.length > 0;
   const loading = mixes === null && trending === null;
-  const showAI = chip !== 'music'; // AI surfaces under All + AI chips
-
+  const showAI = chip !== 'music';
 
   const openArtist = useCallback(
     (artist: string) =>
@@ -386,11 +373,6 @@ export function HomeScreen() {
   const onGoAI = useCallback(() => nav.navigate('AI'), [nav]);
 
   // ── Endless feed → windowed FlatList rows (R8-P1) ──────────────────
-  // The old ScrollView mounted EVERY feed row forever — scrolling deep
-  // left hundreds of image rows in the tree and every feed-state flip
-  // re-rendered them all (the "scrolls fine, then lags" report). The
-  // FlatList unmounts far rows (windowing) and the memo'd row wrappers
-  // keep feed appends from re-rendering the rows above.
   const feedItems = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
     feedBatches.forEach((batch, bi) => {
@@ -418,6 +400,7 @@ export function HomeScreen() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <FlatList
         data={feedItems}
+        scrollEventThrottle={16}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
         ListHeaderComponent={
@@ -457,7 +440,6 @@ export function HomeScreen() {
           />
         }
         onEndReached={() => {
-          // never prefetch while the skeleton is up (content height is a lie)
           if (!loading) void loadFeedMore();
         }}
         onEndReachedThreshold={1}
@@ -469,8 +451,8 @@ export function HomeScreen() {
               resetFeed();
               load(true).finally(() => setRefreshing(false));
             }}
-            tintColor={colors.accentBright}
-            colors={[colors.accentBright]}
+            tintColor={colors.orange}
+            colors={[colors.orange]}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -485,25 +467,20 @@ export function HomeScreen() {
 }
 
 // ── R8-P1 windowed-feed primitives ─────────────────────────────────────────
-// Every wrapper is React.memo'd with STABLE props (track refs, stable
-// callbacks) so a feed append re-renders ONLY the new rows — the rows
-// above keep their mounted views. ShelfCard/Artwork/QuickTile (in their
-// own modules) are memo'd too; their onPress closures capture per-card
-// data objects, so ignoring closure identity is safe there.
 
-/** One flattened feed row (FlatList data element). */
 type FeedItem =
   | { k: 'header'; key: string; title: string }
   | { k: 'song'; key: string; track: Track }
   | { k: 'albumShelf'; key: string; title: string; albums: Collection[] };
 
-/** "Top Songs" section header — same look as the old batch wrapper. */
+/** Feed section header — editorial sec-label with the hard rule. */
 const FeedHeaderRow = React.memo(function FeedHeaderRow({ title }: { title: string }) {
   return (
-    <View style={styles.feedSection}>
-      <Text style={styles.feedHeader} testID="endless-feed-songs">
-        {title}
-      </Text>
+    <View style={styles.feedSection} testID="endless-feed-songs">
+      <View style={styles.secLabel}>
+        <Text style={styles.secLabelText}>{title}</Text>
+        <View style={styles.secLabelRule} />
+      </View>
     </View>
   );
 });
@@ -519,7 +496,7 @@ const FeedSongRow = React.memo(function FeedSongRow({
 }) {
   return (
     <View testID="endless-feed-song">
-      <TrackRow track={track} onPress={() => onPlay(track)} />
+      <TrackRow track={track} showSource onPress={() => onPlay(track)} />
     </View>
   );
 });
@@ -536,7 +513,7 @@ const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
 }) {
   return (
     <Shelf title={title}>
-      {albums.map((c) => (
+      {albums.map((c, i) => (
         <ShelfCard
           key={c.id}
           title={c.title}
@@ -544,6 +521,7 @@ const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
           artwork={c.artwork}
           seed={`feed-album-${c.id}`}
           size={150}
+          index={String(i + 1).padStart(2, '0')}
           onPress={() => onOpen(c)}
         />
       ))}
@@ -551,7 +529,7 @@ const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
   );
 });
 
-/** Spinner / retry row / honest end marker + the quiet footer. */
+/** Spinner / retry row / honest end marker + the broadsheet colophon. */
 const FeedFooter = React.memo(function FeedFooter({
   loading,
   feedState,
@@ -569,31 +547,35 @@ const FeedFooter = React.memo(function FeedFooter({
   return (
     <>
       {feedState === 'loading' ? (
-        <ActivityIndicator color={colors.accentBright} style={styles.feedSpinner} />
+        <ActivityIndicator color={colors.orange} style={styles.feedSpinner} />
       ) : null}
       {feedState === 'retry' ? (
-        <PressableScale haptic style={styles.feedRetry} onPress={onRetry}>
-          <Ionicons name="refresh" size={15} color={colors.textDim} />
-          <Text style={styles.feedRetryText}>Couldn't load more — tap to retry</Text>
-        </PressableScale>
+        <Brutal haptic shadow={2} onPress={onRetry} style={styles.feedRetry}>
+          <MonoText size={10.5} bold color={colors.ink60}>
+            COULDN'T LOAD MORE — TAP TO RETRY
+          </MonoText>
+        </Brutal>
       ) : null}
       {feedState === 'exhausted' ? (
-        <Text style={styles.feedEnd} testID="endless-feed-end">
-          You've reached the end
-        </Text>
+        <View style={styles.feedEndWrap} testID="endless-feed-end">
+          <MonoText size={10} color={colors.ink40} style={{ letterSpacing: 1.6 }}>
+            — END OF THE EDITION —
+          </MonoText>
+        </View>
       ) : null}
       {showEmpty ? <EmptyHome onGoAI={onGoAI} /> : null}
       <View style={styles.footerDivider}>
         <View style={styles.footerRule} />
-        <Text style={styles.footerText}>TSF Music · Music for everyone</Text>
+        <MonoText size={9} color={colors.ink40} style={{ letterSpacing: 1.4 }}>
+          TSF MUSIC · PULSE EDITION · 320 KBPS ALWAYS
+        </MonoText>
       </View>
     </>
   );
 });
 
-/** The fixed shelves (everything above the endless feed). Memo'd: feed
- *  appends and feed-state flips CANNOT re-render this subtree — only
- *  actual shelf data changes do (each settles exactly once per load). */
+/** The fixed shelves. Memo'd: feed appends and feed-state flips CANNOT
+ *  re-render this subtree — only actual shelf data changes do. */
 const HomeHeader = React.memo(function HomeHeader({
   chip,
   setChip,
@@ -645,6 +627,23 @@ const HomeHeader = React.memo(function HomeHeader({
 }) {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+  const h = new Date().getHours();
+  const dayWord = h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening';
+  const greeting = h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,';
+  const [dpTitle, dpSub] = daypart();
+
+  // ticker items — memo'd so the marquee never restarts on re-render
+  const tickerItems = useMemo(() => {
+    const items = [
+      trending?.[0] ? `NOW CHARTING · ${trending[0].title.toUpperCase()}` : '320 KBPS · ALWAYS',
+      'MINDBEAT · RECOMMENDATIONS EXPLAIN THEMSELVES',
+      newAlbums[0] ? `NEW DROP · ${newAlbums[0].title.toUpperCase()}` : 'JIOSAAVN · FULL CATALOG',
+      'SEARCH · TYPO-TOLERANT · LYRIC-VERIFIED',
+      favorites.length ? `YOUR CRATES · ${favorites.length} LIKED` : 'PULL TO REFRESH THE EDITION',
+    ];
+    return items;
+  }, [trending, newAlbums, favorites.length]);
+
   const quickTiles: Array<{
     title: string;
     subtitle?: string;
@@ -652,19 +651,22 @@ const HomeHeader = React.memo(function HomeHeader({
     seed: string;
     icon?: keyof typeof Ionicons.glyphMap;
     liked?: boolean;
+    acid?: boolean;
     onPress: () => void;
   }> = [];
   if (favorites.length > 0)
     quickTiles.push({
       title: 'Liked Songs',
+      subtitle: `${favorites.length} filed`,
       seed: 'liked-songs',
       liked: true,
       onPress: () => openTrackCollection('Liked Songs', favorites),
     });
   if (hasMixes)
-    mixes!.slice(0, 2).forEach((m) =>
+    mixes!.slice(0, 3).forEach((m) =>
       quickTiles.push({
         title: m.title,
+        subtitle: m.subtitle,
         artwork: m.artwork,
         seed: m.id,
         onPress: () => openTrackCollection(m.title, m.tracks),
@@ -672,493 +674,559 @@ const HomeHeader = React.memo(function HomeHeader({
     );
   if (trending && trending.length > 0)
     quickTiles.push({
-      title: 'Trending now',
+      title: 'Trending',
       subtitle: 'Hot hits',
       artwork: trending[0].artwork,
       seed: 'trending',
       onPress: () => openTrackCollection('Trending now', trending),
     });
-  recents.slice(0, 3).forEach((t) =>
+  recents.slice(0, 2).forEach((t) =>
     quickTiles.push({
       title: t.title,
+      subtitle: t.artist,
       artwork: t.artwork,
       seed: `recent-${t.id}`,
       onPress: () => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id))),
     }),
   );
-  if (newAlbums.length > 0)
-    quickTiles.push({
-      title: 'New releases',
-      subtitle: 'Fresh albums',
-      artwork: newAlbums[0].artwork,
-      seed: 'new-releases',
-      onPress: () => nav.navigate('Collection', { collection: newAlbums[0] }),
-    });
   if (quickTiles.length > 0)
     quickTiles.push({
-      title: 'Create with AI',
+      title: 'AI Playlists',
+      subtitle: 'File with the Wire',
       seed: 'ai-tile',
-      icon: 'sparkles',
-      onPress: () => nav.navigate('AI'),
+      icon: 'sparkles-outline',
+      acid: true,
+      onPress: onGoAI,
     });
   const quickTileList = quickTiles.slice(0, 8);
 
+  const heroTracks = nowSound && nowSound.tracks.length > 0 ? nowSound.tracks : trending?.length ? trending : null;
+  const heroTitle = nowSound && nowSound.tracks.length > 0 ? nowSound.title : dpTitle;
+  const heroSub = nowSound && nowSound.tracks.length > 0 ? nowSound.subtitle : dpSub;
+
+  const runHero = () => {
+    if (heroTracks) {
+      play(heroTracks as unknown as Track[], 0);
+    } else {
+      onGoAI();
+    }
+  };
+
   return (
     <>
-    {/* ── Header: avatar far-left + chips (genuine Spotify order) ── */}
-    <View style={styles.header}>
-      <PressableScale
-        scaleTo={0.92}
-        haptic
-        onPress={() => nav.navigate('Stats')}
-        style={styles.avatar}
-      >
-        <Text style={styles.avatarText}>{(userName || 'T').slice(0, 1).toUpperCase()}</Text>
-      </PressableScale>
+      {/* ── masthead ── */}
+      <View style={styles.masthead}>
+        <View style={styles.mastRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.editionRow}>
+              <View style={styles.edDot} />
+              <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 1.8 }}>
+                {dayWord.toUpperCase()} EDITION
+              </MonoText>
+              <MonoText size={9.5} color={colors.ink40} style={{ letterSpacing: 1.8 }}>
+                VOL. 34
+              </MonoText>
+            </View>
+            <Text style={styles.huge} allowFontScaling={false}>
+              {greeting}
+            </Text>
+            <OutlineText style={styles.hugeOutline} outline={1.6}>
+              {(userName || 'Reader').toUpperCase()}
+            </OutlineText>
+          </View>
+          <Brutal
+            haptic
+            shadow={3}
+            onInk
+            onPress={() => nav.navigate('Stats')}
+            style={styles.avatar}
+          >
+            <Text style={styles.avatarText}>{(userName || 'T').slice(0, 1).toUpperCase()}</Text>
+          </Brutal>
+        </View>
+      </View>
+
+      {offline ? (
+        <View style={styles.offlineChip}>
+          <Ionicons name="cloud-offline-outline" size={13} color={colors.ink60} />
+          <MonoText size={9.5} bold color={colors.ink60}>
+            OFFLINE — PULL TO RETRY
+          </MonoText>
+        </View>
+      ) : null}
+
+      {/* ── chips ── */}
       <View style={styles.chipRow}>
         {(['all', 'music', 'ai'] as Chip[]).map((c) => (
-          <PressableScale
+          <Brutal
             key={c}
-            scaleTo={0.94}
-            haptic
+            haptic={chip !== c}
+            shadow={2}
             onPress={() => setChip(c)}
             style={[styles.chip, chip === c && styles.chipActive]}
           >
-            <Text style={[styles.chipText, chip === c && styles.chipTextActive]}>
+            <MonoText size={11.5} bold color={chip === c ? colors.ink : colors.ink60} style={{ letterSpacing: 0.8 }}>
               {c === 'all' ? 'All' : c === 'music' ? 'Music' : 'AI'}
-            </Text>
-          </PressableScale>
+            </MonoText>
+          </Brutal>
         ))}
       </View>
-    </View>
 
-    {offline ? (
-      <View style={styles.offlineChip}>
-        <Ionicons name="cloud-offline-outline" size={13} color={colors.textDim} />
-        <Text style={styles.offlineText}>Offline — pull to retry</Text>
-      </View>
-    ) : null}
+      {/* ── Now Sound hero ── */}
+      {showAI && heroTitle ? (
+        <View style={styles.heroShelf}>
+          <View style={styles.shelfHeadRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <MonoText size={9} bold color={colors.orangeDeep} style={{ letterSpacing: 2 }} numberOfLines={1}>
+                MINDBEAT FEATURE · UPDATES WITH YOUR DAY
+              </MonoText>
+              <Text style={styles.shelfHeadTitle}>Now Sound</Text>
+            </View>
+            <Brutal haptic shadow={0} pressOffset={1} onPress={runHero} style={styles.heroRun}>
+              <MonoText size={10} bold color={colors.ink60}>
+                RUN IT ▸
+              </MonoText>
+            </Brutal>
+          </View>
+          <Brutal haptic shadow={5} onInk onPress={runHero} style={styles.heroCard}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.heroTitle} allowFontScaling={false}>
+                {heroTitle.toUpperCase()}
+              </Text>
+              <MonoText size={10.5} color={colors.onInk60} style={{ lineHeight: 16, marginTop: 8 }} numberOfLines={2}>
+                {heroSub}
+              </MonoText>
+            </View>
+            <View style={styles.heroPlay}>
+              <Ionicons name="play" size={18} color={colors.ink} />
+            </View>
+          </Brutal>
+        </View>
+      ) : null}
 
-    {/* ── Quick shortcuts — Spotify 8-tile grid, #2A2A2A ──────────── */}
-    {quickTileList.length > 0 && (
-      <View style={styles.quickGrid}>
-        {quickTileList.map((t) => (
-          <QuickTile
-            key={t.seed}
-            title={t.title}
-            subtitle={t.subtitle}
-            artwork={t.artwork}
-            seed={t.seed}
-            icon={t.icon}
-            liked={t.liked}
-            width={quickTileWidth(winWidth)}
-            onPress={t.onPress}
-          />
-        ))}
-      </View>
-    )}
+      {/* ── the ticker ── */}
+      <Ticker items={tickerItems} />
 
-    {loading ? (
-      <ShelfSkeleton />
-    ) : (
-      <>
-        {/* ── Made for you / Made for {name} (AI Daily Mixes) ────── */}
-        {hasMixes && showAI ? (
-          <Shelf title={userName ? `Made for ${userName}` : 'Made for you'}>
-            {mixes!.map((mix) => (
-              <ShelfCard
-                key={mix.id}
-                title={mix.title}
-                subtitle={mix.subtitle}
-                artwork={mix.artwork}
-                seed={mix.id}
-                size={150}
-                onPress={() => openTrackCollection(mix.title, mix.tracks)}
-              />
-            ))}
-            <AICreateCard onPress={() => nav.navigate('AI')} />
-          </Shelf>
-        ) : null}
-
-        {/* ── Now Sound (daylist §9.4) — the time-aware shelf ─────── */}
-        {nowSound && nowSound.tracks.length > 0 && showAI ? (
-          <Shelf title="Now Sound">
-            <ShelfCard
-              title={nowSound.title}
-              subtitle={nowSound.subtitle}
-              artwork={nowSound.tracks[0]?.artwork ?? ''}
-              seed={nowSound.id}
-              size={150}
-              onPress={() =>
-                openTrackCollection(nowSound.title, nowSound.tracks as unknown as Track[])
-              }
+      {/* ── numbered quick tiles ── */}
+      {quickTileList.length > 0 && (
+        <View style={styles.quickGrid}>
+          {quickTileList.map((t, i) => (
+            <QuickTile
+              key={t.seed}
+              title={t.title}
+              subtitle={t.subtitle}
+              artwork={t.artwork}
+              seed={t.seed}
+              icon={t.icon}
+              liked={t.liked}
+              acid={t.acid}
+              width={quickTileWidth(winWidth)}
+              onPress={t.onPress}
             />
-            <AICreateCard onPress={() => nav.navigate('AI')} />
-          </Shelf>
-        ) : null}
+          ))}
+        </View>
+      )}
 
-        {/* ── Jump back in ───────────────────────────────────────── */}
-        {recents.length > 0 ? (
-          <Shelf title="Jump back in">
-            {recents.slice(0, 10).map((t) => (
-              <ShelfCard
-                key={t.id}
-                title={t.title}
-                subtitle={t.album ? `Album · ${t.artist}` : t.artist}
-                artwork={t.artwork}
-                seed={t.id}
-                size={150}
-                onPress={() => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id)))}
-              />
-            ))}
-          </Shelf>
-        ) : null}
-
-        {/* ── Popular artists — REAL photos, circular rail ─────────── */}
-        {popularArtists.length > 0 ? (
-          <Shelf title="Popular artists">
-            {popularArtists.map((a) => (
-              <PressableScale
-                key={a.name}
-                haptic
-                testID="home-artist"
-                onPress={() => openArtist(a.name)}
-                style={styles.artistCell}
-              >
-                <Artwork
-                  uri={a.image}
-                  seed={a.name}
-                  initials={a.name}
-                  size={124}
-                  variant="circle"
+      {loading ? (
+        <ShelfSkeleton />
+      ) : (
+        <>
+          {hasMixes && showAI ? (
+            <Shelf kicker={userName ? `MADE FOR ${userName.toUpperCase()}` : 'MADE FOR YOU'} title="Daily Mixes">
+              {mixes!.map((mix) => (
+                <ShelfCard
+                  key={mix.id}
+                  title={mix.title}
+                  subtitle={mix.subtitle}
+                  artwork={mix.artwork}
+                  seed={mix.id}
+                  size={150}
+                  onPress={() => openTrackCollection(mix.title, mix.tracks)}
                 />
-                <View style={{ gap: 2 }}>
-                  <Text style={styles.artistName} numberOfLines={1}>
-                    {a.name}
-                  </Text>
-                  <Text style={styles.artistSub}>Artist</Text>
-                </View>
-              </PressableScale>
-            ))}
-          </Shelf>
-        ) : null}
+              ))}
+              <AICreateCard onPress={() => nav.navigate('AI')} />
+            </Shelf>
+          ) : null}
 
-        {/* ── Trending now ───────────────────────────────────────── */}
-        {trending && trending.length > 0 ? (
-          <Shelf
-            title="Trending now"
-            actionLabel="Show all"
-            onAction={() => openTrackCollection('Trending now', trending)}
-          >
-            {trending.slice(0, 10).map((t) => (
-              <ShelfCard
-                key={t.id}
-                title={t.title}
-                subtitle={t.album ? `Album · ${t.artist}` : t.artist}
-                artwork={t.artwork}
-                seed={t.id}
-                size={150}
-                onPress={() => play(trending, Math.max(0, trending.findIndex((x) => x.id === t.id)))}
+          {recents.length > 0 ? (
+            <Shelf kicker="THE REWIND DESK" title="Jump Back In">
+              {recents.slice(0, 10).map((t) => (
+                <ShelfCard
+                  key={t.id}
+                  title={t.title}
+                  subtitle={t.artist}
+                  artwork={t.artwork}
+                  seed={t.id}
+                  size={150}
+                  onPress={() => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id)))}
+                />
+              ))}
+            </Shelf>
+          ) : null}
+
+          {popularArtists.length > 0 ? (
+            <Shelf kicker="THE PHOTO DESK" title="Popular Artists">
+              {popularArtists.map((a) => (
+                <ArtistCard
+                  key={a.name}
+                  name={a.name}
+                  meta="Artist"
+                  artwork={a.image}
+                  seed={a.name}
+                  onPress={() => openArtist(a.name)}
+                />
+              ))}
+            </Shelf>
+          ) : null}
+
+          {trending && trending.length > 0 ? (
+            <Shelf
+              kicker={`CHART · WEEK ${weekNumber()}`}
+              title="Trending Now"
+              actionLabel="Full list"
+              onAction={() => openTrackCollection('Trending now', trending)}
+            >
+              {trending.slice(0, 10).map((t, i) => (
+                <ShelfCard
+                  key={t.id}
+                  title={t.title}
+                  subtitle={t.artist}
+                  artwork={t.artwork}
+                  seed={t.id}
+                  size={150}
+                  index={String(i + 1).padStart(2, '0')}
+                  onPress={() => play(trending, Math.max(0, trending.findIndex((x) => x.id === t.id)))}
+                />
+              ))}
+            </Shelf>
+          ) : null}
+
+          {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
+            <Shelf kicker="DISCOVERY DESK" title="On The Rise">
+              {onTheRise.tracks.slice(0, 10).map((t) => (
+                <ArtistCard
+                  key={t.id}
+                  name={t.artist}
+                  meta={`via ${t.viaArtist}`}
+                  artwork={t.artwork}
+                  seed={`rise-${t.id}`}
+                  onPress={() =>
+                    openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
+                  }
+                />
+              ))}
+            </Shelf>
+          ) : null}
+
+          {because.map(({ artist, seedTrack }) => (
+            <Shelf key={artist} kicker={`FROM THE ${artist.toUpperCase()} LEDGER`} title="Because You Listened">
+              <ArtistCard
+                name={artist}
+                meta="Artist radio"
+                artwork={popularArtists.find((a) => a.name === artist)?.image ?? seedTrack?.artwork}
+                seed={`because-${artist}`}
+                onPress={() => openArtist(artist)}
               />
-            ))}
-          </Shelf>
-        ) : null}
+              {seedTrack ? (
+                <ShelfCard
+                  title={seedTrack.title}
+                  subtitle={seedTrack.artist}
+                  artwork={seedTrack.artwork}
+                  seed={`because-${seedTrack.id}`}
+                  size={150}
+                  onPress={() =>
+                    nav.navigate('Collection', {
+                      collection: {
+                        id: `artist-${artist}`,
+                        title: artist,
+                        subtitle: 'Artist radio',
+                        artwork: seedTrack.artwork,
+                        kind: 'search',
+                        query: artist,
+                      },
+                    })
+                  }
+                />
+              ) : null}
+            </Shelf>
+          ))}
 
-        {/* ── On the Rise (§9.6) — the weekly discovery flagship ──── */}
-        {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
-          <Shelf title="On the Rise">
-            {onTheRise.tracks.slice(0, 10).map((t) => (
-              <ShelfCard
-                key={t.id}
-                title={t.title}
-                subtitle={`via ${t.viaArtist}`}
-                artwork={t.artwork}
-                seed={`rise-${t.id}`}
-                size={150}
-                onPress={() =>
-                  openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
-                }
-              />
-            ))}
-          </Shelf>
-        ) : null}
+          {newAlbums.length > 0 ? (
+            <Shelf kicker="FRESH INK" title="New Releases">
+              {newAlbums.map((c) => (
+                <ShelfCard
+                  key={c.id}
+                  title={c.title}
+                  subtitle={c.subtitle}
+                  artwork={c.artwork}
+                  seed={`album-${c.id}`}
+                  size={150}
+                  onPress={() => nav.navigate('Collection', { collection: c })}
+                />
+              ))}
+            </Shelf>
+          ) : null}
 
-        {/* ── Because you listened ───────────────────────────────── */}
-        {because.map(({ artist, seedTrack }) => (
-          <Shelf key={artist} title={`Because you listened to ${artist}`}>
-            <ArtistRadioCard
-              artist={artist}
-              image={popularArtists.find((a) => a.name === artist)?.image}
-              onPress={() => openArtist(artist)}
-            />
-            {seedTrack ? (
-              <ShelfCard
-                title={seedTrack.title}
-                subtitle={seedTrack.artist}
-                artwork={seedTrack.artwork}
-                seed={`because-${seedTrack.id}`}
-                size={150}
-                onPress={() =>
-                  nav.navigate('Collection', {
-                    collection: {
-                      id: `artist-${artist}`,
-                      title: artist,
-                      subtitle: 'Artist radio',
-                      artwork: seedTrack.artwork,
-                      kind: 'search',
-                      query: artist,
-                    },
-                  })
-                }
-              />
-            ) : null}
-          </Shelf>
-        ))}
+          {featured.length > 0 ? (
+            <Shelf kicker="FROM THE EDITORS" title="Featured Playlists">
+              {featured.map((c) => (
+                <ShelfCard
+                  key={c.id}
+                  title={c.title}
+                  subtitle={c.subtitle}
+                  artwork={c.artwork}
+                  seed={`feat-${c.id}`}
+                  size={150}
+                  onPress={() => nav.navigate('Collection', { collection: c })}
+                />
+              ))}
+            </Shelf>
+          ) : null}
 
-        {/* ── New releases (JioSaavn editorial albums) ─────────────── */}
-        {newAlbums.length > 0 ? (
-          <Shelf title="New releases">
-            {newAlbums.map((c) => (
-              <ShelfCard
-                key={c.id}
-                title={c.title}
-                subtitle={c.subtitle}
-                artwork={c.artwork}
-                seed={`album-${c.id}`}
-                size={150}
-                onPress={() => nav.navigate('Collection', { collection: c })}
-              />
-            ))}
-          </Shelf>
-        ) : null}
-
-        {/* ── Featured playlists (editorial) ───────────────────────── */}
-        {featured.length > 0 ? (
-          <Shelf title="Featured playlists">
-            {featured.map((c) => (
-              <ShelfCard
-                key={c.id}
-                title={c.title}
-                subtitle={c.subtitle}
-                artwork={c.artwork}
-                seed={`feat-${c.id}`}
-                size={150}
-                onPress={() => nav.navigate('Collection', { collection: c })}
-              />
-            ))}
-          </Shelf>
-        ) : null}
-
-        {/* ── Popular charts ─────────────────────────────────────── */}
-        {charts.length > 0 ? (
-          <Shelf title="Popular charts">
-            {charts.map((c) => (
-              <ShelfCard
-                key={c.id}
-                title={c.title}
-                subtitle={c.subtitle}
-                artwork={c.artwork}
-                seed={c.id}
-                size={150}
-                onPress={() => nav.navigate('Collection', { collection: c })}
-              />
-            ))}
-          </Shelf>
-        ) : null}
-      </>
-    )}
-
+          {charts.length > 0 ? (
+            <Shelf kicker="THE COUNTING HOUSE" title="Popular Charts">
+              {charts.map((c, i) => (
+                <ShelfCard
+                  key={c.id}
+                  title={c.title}
+                  subtitle={c.subtitle}
+                  artwork={c.artwork}
+                  seed={c.id}
+                  size={150}
+                  index={String(i + 1).padStart(2, '0')}
+                  onPress={() => nav.navigate('Collection', { collection: c })}
+                />
+              ))}
+            </Shelf>
+          ) : null}
+        </>
+      )}
     </>
   );
 });
 
-// Quick-tile grid math is window-reactive: the two-column width is computed
-// per render from the CURRENT window width (W2 — tablets, split-screen,
-// pop-up and foldable posture changes all re-measure live).
+function weekNumber(): number {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  return Math.max(1, Math.ceil(((now.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7));
+}
+
+// window-reactive two-column width (W2 — tablets re-measure live)
 function quickTileWidth(winWidth: number): number {
-  // two columns with 8px gutters inside 16px screen padding
-  return Math.floor((winWidth - 32 - 8) / 2);
+  return Math.floor((winWidth - 36 - 9) / 2);
 }
 
-/** Artist radio card — circular photo + name (Spotify artist-card style). */
-function ArtistRadioCard({ artist, image, onPress }: { artist: string; image?: string; onPress: () => void }) {
-  return (
-    <PressableScale onPress={onPress} haptic style={{ width: 124, gap: 8 }}>
-      <Artwork uri={image} seed={artist} initials={artist} size={124} variant="circle" />
-      <View style={{ gap: 2 }}>
-        <Text style={styles.artistName} numberOfLines={2}>
-          {artist}
-        </Text>
-        <Text style={styles.artistSub}>Artist radio</Text>
-      </View>
-    </PressableScale>
-  );
-}
-
-/** The "create with AI" card capping the Made-for-you rail. */
+/** The "create with AI" acid card capping the Made-for-you rail. */
 function AICreateCard({ onPress }: { onPress: () => void }) {
   return (
-    <PressableScale onPress={onPress} haptic style={{ width: 150, gap: 8 }}>
+    <Brutal onPress={onPress} haptic shadow={4} style={{ width: 150 }}>
       <View style={styles.aiCard}>
-        <Ionicons name="sparkles" size={30} color="#fff" />
+        <Ionicons name="sparkles-outline" size={34} color={colors.ink} />
       </View>
-      <View style={{ gap: 2 }}>
-        <Text style={styles.aiCardTitle}>Create with AI</Text>
-        <Text style={styles.aiCardSub}>Describe your vibe</Text>
-      </View>
-    </PressableScale>
+      <Text style={styles.aiCardTitle}>AI Playlist</Text>
+      <MonoText size={9.5} style={{ marginTop: 2 }}>
+        Type a vibe, get 25
+      </MonoText>
+    </Brutal>
   );
 }
 
 function EmptyHome({ onGoAI }: { onGoAI: () => void }) {
   return (
     <View style={styles.empty}>
-      <Ionicons name="musical-notes-outline" size={52} color={colors.textFaint} />
-      <Text style={styles.emptyTitle}>Your home, your music</Text>
-      <Text style={styles.emptySub}>
-        Search for something you love — TSF learns your taste and builds mixes, radios and
-        recommendations just for you.
-      </Text>
-      <PressableScale onPress={onGoAI} haptic style={styles.emptyBtn}>
-        <Ionicons name="sparkles" size={17} color="#fff" />
-        <Text style={styles.emptyBtnText}>Generate a playlist with AI</Text>
-      </PressableScale>
+      <Ionicons name="albums-outline" size={44} color={colors.ink40} />
+      <Text style={styles.emptyTitle}>Your front page, your music</Text>
+      <MonoText size={10.5} color={colors.ink60} style={{ textAlign: 'center', lineHeight: 16 }}>
+        Search for something you love — TSF learns your taste and builds mixes, radios and recommendations just for you.
+      </MonoText>
+      <Brutal onPress={onGoAI} haptic shadow={3} style={styles.emptyBtn}>
+        <MonoText size={10.5} bold color={colors.ink}>
+          FILE A VIBE WITH THE WIRE ▸
+        </MonoText>
+      </Brutal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+  root: { flex: 1, backgroundColor: colors.paper },
+  masthead: { paddingHorizontal: 18, paddingTop: 14 },
+  mastRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+  editionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  edDot: { width: 7, height: 7, backgroundColor: colors.orange },
+  huge: {
+    fontFamily: fonts.display,
+    fontSize: 34,
+    lineHeight: 33,
+    color: colors.ink,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
   },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chip: {
-    backgroundColor: colors.chipInactiveBg, // current Spotify inactive chip
-    borderRadius: radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+  hugeOutline: {
+    fontFamily: fonts.display,
+    fontSize: 34,
+    lineHeight: 36,
+    textTransform: 'uppercase',
+    letterSpacing: -0.2,
   },
-  chipActive: { backgroundColor: colors.chipActiveBg }, // green pill (pixel-verified on real Spotify)
-  chipText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-  },
-  chipTextActive: { color: colors.chipActiveText }, // black on green (genuine)
   avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#535353',
+    width: 40,
+    height: 40,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.text, fontSize: 15, fontWeight: '700', fontFamily: fonts.bold },
+  avatarText: { color: colors.acid, fontSize: 15, fontFamily: fonts.display },
   offlineChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
+    marginHorizontal: 18,
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    borderStyle: 'dashed',
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  offlineText: { color: colors.textDim, fontSize: 11, fontWeight: '600', fontFamily: fonts.semibold },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+  },
+  chip: {
+    backgroundColor: colors.paper,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  chipActive: { backgroundColor: colors.acid },
+  heroShelf: { marginTop: 16 },
+  shelfHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginHorizontal: 18,
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.ink,
+    gap: 10,
+  },
+  shelfHeadTitle: {
+    fontFamily: fonts.display,
+    fontSize: 16.5,
+    color: colors.ink,
+    textTransform: 'uppercase',
+    marginTop: 3,
+  },
+  heroRun: { paddingHorizontal: 6, paddingVertical: 4 },
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 14,
+    marginHorizontal: 18,
+    backgroundColor: colors.ink,
+    padding: 20,
+  },
+  heroTitle: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    lineHeight: 27,
+    color: colors.onInk,
+    textTransform: 'uppercase',
+  },
+  heroPlay: {
+    width: 52,
+    height: 52,
+    backgroundColor: colors.acid,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   quickGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    gap: 9,
+    paddingHorizontal: 18,
+    marginTop: 14,
+    marginBottom: 6,
   },
-  artistCell: { width: 124, alignItems: 'center' },
-  artistName: {
-    color: colors.text,
-    fontSize: 13.5,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    lineHeight: 17,
-    marginTop: 8,
-    maxWidth: 124,
-  },
-  artistSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   aiCard: {
     width: 150,
     height: 150,
-    borderRadius: radius.lg,
-    backgroundColor: colors.aiStart,
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
   aiCardTitle: {
-    color: colors.text,
-    fontSize: 13.5,
-    fontWeight: '700',
+    color: colors.ink,
     fontFamily: fonts.bold,
+    fontSize: 12.5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginTop: 8,
   },
-  aiCardSub: { color: colors.textDim, fontSize: 13, fontFamily: fonts.regular },
   empty: {
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.xxl,
-    paddingTop: spacing.xxl + 12,
+    gap: 12,
+    padding: 28,
+    marginHorizontal: 18,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.ink40,
   },
-  emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800', fontFamily: fonts.extrabold },
-  emptySub: {
-    color: colors.textDim,
-    fontSize: 14,
+  emptyTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 17,
+    textTransform: 'uppercase',
     textAlign: 'center',
-    lineHeight: 20,
-    fontFamily: fonts.regular,
   },
   emptyBtn: {
+    backgroundColor: colors.acid,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    marginTop: 4,
+  },
+  footerDivider: { alignItems: 'center', paddingTop: 32, gap: 10 },
+  footerRule: { height: 2, backgroundColor: colors.ink, width: '24%' },
+  secLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.accent,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 13,
-    marginTop: spacing.sm,
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 8,
   },
-  emptyBtnText: { color: colors.accentDeep, fontSize: 14, fontWeight: '800', fontFamily: fonts.bold },
-  footerDivider: { alignItems: 'center', paddingTop: spacing.xl + 8, gap: 12 },
-  footerRule: { height: StyleSheet.hairlineWidth, backgroundColor: '#3d3d3d', width: '72%' },
-  footerText: { color: colors.textFaint, fontSize: 12, fontFamily: fonts.medium, paddingBottom: 4 },
-  // ── endless feed (F2) ────────────────────────────────────────────────
-  feedSection: { paddingHorizontal: spacing.lg, marginTop: 6 },
-  feedHeader: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
-    letterSpacing: -0.3,
-    marginBottom: 10,
+  secLabelText: {
+    fontFamily: fonts.monoBold,
+    fontSize: 9.5,
+    letterSpacing: 2.2,
+    color: colors.ink60,
+    textTransform: 'uppercase',
   },
+  secLabelRule: { flex: 1, height: 2, backgroundColor: colors.ink },
+  feedSection: { marginTop: 4 },
   feedSpinner: { marginVertical: 26 },
   feedRetry: {
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 7,
-    paddingVertical: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    marginTop: 16,
   },
-  feedRetryText: { color: colors.textDim, fontSize: 13, fontFamily: fonts.medium },
-  feedEnd: {
-    color: colors.textFaint,
-    fontSize: 13,
-    fontFamily: fonts.medium,
-    textAlign: 'center',
-    paddingVertical: 22,
-  },
+  feedEndWrap: { alignItems: 'center', paddingVertical: 22 },
 });

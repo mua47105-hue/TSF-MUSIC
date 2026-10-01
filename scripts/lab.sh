@@ -12,7 +12,7 @@ pkill -f "expo start" 2>/dev/null || true
 sleep 1
 
 echo "[lab] starting metro (web) on :$PORT"
-CI=1 bunx expo start --web --port $PORT --offline --non-interactive >"$LOG" 2>&1 &
+CI=1 bunx expo start --web --port $PORT --offline --non-interactive --clear >"$LOG" 2>&1 &
 METRO_PID=$!
 
 ready=0

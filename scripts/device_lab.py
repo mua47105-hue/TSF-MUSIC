@@ -94,6 +94,10 @@ SCROLL_TOP_JS = """() => {
 
 def scroll(page, dy, times=1):
     for _ in range(times):
+        # jiggle: a scrollTop already pinned at max produces no scroll event,
+        # and the virtualized window only advances on fresh events (PULSE v4)
+        page.evaluate(SCROLL_JS, -260)
+        page.wait_for_timeout(60)
         page.evaluate(SCROLL_JS, dy)
         page.wait_for_timeout(260)
 
@@ -104,8 +108,9 @@ def tab(page, name):
     if page.locator(sel).count() > 0:
         page.click(sel)
         return
-    # react-native-web tab bar: match by accessible label text
-    label = "Your Library" if name == "library" else name.capitalize()
+    # react-native-web tab bar: match by accessible label text (PULSE v4)
+    labels = {"home": "Front", "search": "Index", "library": "Crates", "wire": "Wire", "premium": "Wire"}
+    label = labels.get(name, name.capitalize())
     page.get_by_text(label, exact=True).last.click()
 
 
@@ -217,7 +222,7 @@ def run_device(pw, name, cfg):
         # tab bar's bottom edge sits within 70px of the viewport bottom
         # — in EVERY window shape now, including landscape/desktop.
         try:
-            bar_bb = page.locator("text=Your Library").last.bounding_box()
+            bar_bb = page.locator("text=Crates").last.bounding_box()
             vh = page.viewport_size["height"]
             bar_bottom_dist = (vh - (bar_bb["y"] + bar_bb["height"])) if bar_bb else 9999
             log(name, "v341-tabbar-at-window-bottom", bar_bottom_dist < 70, f"bottom gap {bar_bottom_dist:.0f}px of {vh}px viewport")
@@ -275,7 +280,7 @@ def run_device(pw, name, cfg):
         shot(page, name, "10-search-browse")
 
         # 07b — SEARCH V2: typeahead rail (recents+suggestions+topquery)
-        field = page.get_by_placeholder("What do you want to listen to?")
+        field = page.get_by_placeholder("TYPE A SONG, ARTIST, OR A LINE YOU REMEMBER")
         field.fill("tum")
         # count INSIDE the rail's visibility window (suggestions ~240ms,
         # search replaces them at ~850ms) — before the shot's own settle
@@ -290,7 +295,7 @@ def run_device(pw, name, cfg):
         field.fill("zzqqxx")
         page.wait_for_timeout(2600)
         shot(page, name, "10c-search-zero")
-        zero_text = page.get_by_text("No results", exact=False).count()
+        zero_text = page.get_by_text("Not in the stacks", exact=False).count()
         junk_rows = page.locator('[data-testid="search-top-result"]').count()
         log(name, "search-honest-zero", zero_text >= 1 and junk_rows == 0, f"zero-state={zero_text} junk-top={junk_rows}")
 
@@ -314,17 +319,18 @@ def run_device(pw, name, cfg):
         # Scroll the results list to the bottom: pagination must append
         # page-2 rows (webmock serves synthetic pages 2-3, then an empty
         # page 4 → the honest end marker).
-        rows_before = page.locator('[data-testid="track-row"]').count()
-        for burst in range(8):
-            scroll(page, 1800, 3)
+        appended_rows = 0
+        end_note = 0
+        for burst in range(14):
+            scroll(page, 1800, 4)
             page.wait_for_timeout(900)
+            # appended fixture rows carry the synthetic "Page N, Track M" title
+            appended_rows = page.get_by_text("Page 2", exact=False).count() + page.get_by_text("Page 3", exact=False).count()
             end_note = page.locator('[data-testid="search-end-note"]').count()
             if end_note >= 1:
                 break
-        rows_after = page.locator('[data-testid="track-row"]').count()
-        end_note = page.locator('[data-testid="search-end-note"]').count()
         shot(page, name, "11a-search-paginated")
-        log(name, "v341-search-pagination-appends", rows_after > rows_before, f"{rows_before} -> {rows_after} rows")
+        log(name, "v341-search-pagination-appends", appended_rows >= 1, f"appended synthetic rows={appended_rows}")
         log(name, "v341-search-pagination-honest-end", end_note >= 1, f"end-note={end_note}")
         # fresh search resets pagination (no stale end-note on a new query).
         # NOTE: re-filling the SAME string is a React no-op (state dedupe) —
@@ -342,9 +348,9 @@ def run_device(pw, name, cfg):
         field.fill("tu chaiye")
         page.wait_for_timeout(3200)
         shot(page, name, "11b-search-rescued")
-        rescued_label = page.get_by_text("Found on YouTube · full song, ad-free", exact=False).count()
+        rescued_label = page.get_by_text("Found on YouTube · full song, ad-free", exact=False).count() or page.get_by_text("FOUND ON YOUTUBE · FULL SONG, AD-FREE", exact=False).count()
         top_is_yt = page.locator('[data-testid="search-top-result"]').count() > 0 and (
-            page.get_by_text("Tu Chahiye", exact=True).count() >= 1
+            page.get_by_text("u Chahiye", exact=False).count() >= 1
         )
         log(name, "v34-sig-rescued-label", rescued_label >= 1, f"label x{rescued_label}")
         log(name, "v34-sig-rescued-top", top_is_yt, "canonical row present")
@@ -359,7 +365,7 @@ def run_device(pw, name, cfg):
         page.wait_for_timeout(2600)
         shot(page, name, "11c-search-youtube-mode")
         yt_rows = page.locator('[data-testid="track-row"]').count()
-        yt_song_badge = page.get_by_text("YT Song", exact=True).count()
+        yt_song_badge = page.get_by_text("YT Song", exact=True).count() + page.get_by_text("YT SONG", exact=True).count()
         log(name, "v34-youtube-mode-rows", yt_rows >= 2, f"{yt_rows} rows")
         log(name, "v34-youtube-mode-badge", yt_song_badge >= 1, f"YT Song badges x{yt_song_badge}")
         page.locator('[data-testid="source-toggle-catalog"]').click()
@@ -386,6 +392,13 @@ def run_device(pw, name, cfg):
         if page.locator('[data-testid="search-top-result"]').count() > 0:
             page.locator('[data-testid="search-top-result"]').first.click()
             page.wait_for_timeout(1500)
+            # dismiss the full player so the shot is the MINI state (PULSE v4:
+            # the previous capture caught the still-open full player)
+            try:
+                page.locator('[data-testid="player-dismiss"]').first.click(timeout=8000)
+                page.wait_for_timeout(900)
+            except Exception:
+                pass
             shot(page, name, "12-miniplayer")
             try:
                 page.locator('[data-testid="mini-player"]').click(force=True, timeout=8000)
@@ -408,7 +421,7 @@ def run_device(pw, name, cfg):
         page.wait_for_timeout(900)
         shot(page, name, "14-library")
         log(name, "library", True)
-        tab(page, "premium")
+        tab(page, "wire")
         page.wait_for_timeout(900)
         shot(page, name, "15-premium")
         log(name, "premium", True)

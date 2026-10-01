@@ -31,12 +31,13 @@ export function ShelfSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: 16, gap: 12, marginBottom: 16 },
-  row: { flexDirection: 'row', gap: 12 },
+  wrap: { paddingHorizontal: 18, gap: 13, marginBottom: 16 },
+  row: { flexDirection: 'row', gap: 13 },
   block: {
-    width: 140,
-    height: 140,
-    borderRadius: 15,
-    backgroundColor: colors.glass,
+    width: 150,
+    height: 150,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
   },
 });
