@@ -418,7 +418,22 @@ export async function searchMusicV2(
   // render unrelated rows as matches. SIG M2.1 tightens the old gate:
   // artistMatch ≥ 1 alone no longer passes (that loophole is exactly what
   // painted O'Meri Laila as "Best match" for "tu chaiye of atif aslam").
-  const anyRelevant = ranked.some((r) => r.queryMatch >= 0.34);
+  //
+  // LAB FIX (Android E2E lab, round 8): ARTIST-INTENT queries have no
+  // title axis — "arijit" painted 22 rows BY Arijit Singh early, then this
+  // check wiped them to zero 10ms later (queryMatch ≈ 0 by construction;
+  // the user saw 'NOT IN THE STACKS' over a healthy answer). A row whose
+  // artist credit starts with what the user typed IS an honest answer
+  // (≥3 chars so single-letter probes don't sneak through). Title-intent
+  // queries are untouched: their credits can never start with the full
+  // normalized query, so SIG M2.1's wrong-'Best match' fix stays intact.
+  const qn = plan.normalized;
+  const artistAxisHit =
+    qn.length >= 3 &&
+    ranked.some((r) =>
+      (r.artistsFull ?? [r.artist]).some((c) => c.toLowerCase().startsWith(qn)),
+    );
+  const anyRelevant = ranked.some((r) => r.queryMatch >= 0.34) || artistAxisHit;
   if (!anyRelevant && ranked.length > 0) {
     tracks = [];
   }

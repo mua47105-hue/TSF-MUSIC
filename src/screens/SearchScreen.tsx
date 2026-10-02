@@ -450,7 +450,16 @@ export function SearchScreen() {
             : res.tracks;
           resultsRef.current = finalTracks;
           perfMark('search-final', finalTracks.length);
-          setResults(finalTracks);
+          // SEATBELT (Android E2E lab, round 8): the same generation's
+          // final paint must never regress below its own early paint —
+          // a late zero can't unsee rows the user can already read.
+          setResults((prev) => {
+            if (finalTracks.length === 0 && prev.length > 0) {
+              resultsRef.current = prev; // keep bookkeeping aligned with the screen
+              return prev;
+            }
+            return finalTracks;
+          });
           setMeta({
             degraded: res.degraded,
             reason: res.topReason,
