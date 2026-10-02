@@ -1,30 +1,30 @@
-# 06 — the tour: all four tabs, Crates premium banner, Wire desk, the
-# avatar shortcut into Stats, and back. Proves core navigation survives a
-# full lap with playback state present.
+# 06 — the tour: all four tabs (by their label texts — a11y-safe), the
+# Crates Liked hero (top of screen), the Wire desk, the avatar shortcut
+# into Stats, and back. Proves core navigation survives a full lap.
 appId: com.tsf.music
 name: "06 — tab tour: crates, wire, stats, home"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "tab-library"
+      text: "ZED"
     timeout: 25000
 - tapOn:
-    id: "tab-library"
+    text: "Crates"
 - extendedWaitUntil:
     visible:
-      id: "premium-banner"
-    timeout: 15000
+      id: "liked-hero"
+    timeout: 20000
 - takeScreenshot: 06-crates
 - tapOn:
-    id: "tab-wire"
+    text: "Wire"
 - extendedWaitUntil:
     visible:
       id: "wire-vibe-input"
     timeout: 15000
 - takeScreenshot: 06-wire
 - tapOn:
-    id: "tab-home"
+    text: "Front"
 - extendedWaitUntil:
     visible:
       id: "home-avatar"
@@ -33,5 +33,7 @@ name: "06 — tab tour: crates, wire, stats, home"
     id: "home-avatar"
 - takeScreenshot: 06-stats
 - pressKey: Back
-- assertVisible:
-    id: "tab-home"
+- extendedWaitUntil:
+    visible:
+      text: "ZED"
+    timeout: 10000

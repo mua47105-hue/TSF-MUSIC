@@ -1,7 +1,7 @@
 # 01 — fresh boot: WhatsNew bulletin, 3-step onboarding, Front Page paint.
-# Runs on a pristine install (clearState). This is the cold-start journey
-# every real first-time user takes; the logcat [TSF-PERF] marks it triggers
-# (js-boot, fonts-ready, home-first-data) become the boot report.
+# A11y-tree anchors only: Pressables/Texts/TextInputs expose testIDs to
+# Android's accessibility tree; plain Views do NOT (round-3 finding) —
+# so we assert the nameplate text "ZED" and tap feed rows via track-row.
 appId: com.tsf.music
 name: "01 — fresh boot, whatsnew, onboarding, front page"
 ---
@@ -37,6 +37,8 @@ name: "01 — fresh boot, whatsnew, onboarding, front page"
 - tapOn:
     id: "onb-artist"
     index: 2
+- assertVisible:
+    text: "PICKED 3"
 - tapOn:
     id: "onb-continue"
 - extendedWaitUntil:
@@ -46,10 +48,18 @@ name: "01 — fresh boot, whatsnew, onboarding, front page"
 - tapOn:
     id: "onb-genre"
     index: 0
+- extendedWaitUntil:
+    visible:
+      text: "PICKED 1"
+    timeout: 10000
 - tapOn:
     id: "onb-continue"
 - extendedWaitUntil:
     visible:
-      id: "endless-feed-songs"
+      text: "ZED"
     timeout: 45000
+- extendedWaitUntil:
+    visible:
+      id: "track-row"
+    timeout: 30000
 - takeScreenshot: 01-front-page

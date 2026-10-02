@@ -418,7 +418,7 @@ export function LibraryScreen() {
 
             {/* Liked Songs hero (orange block) */}
             {chip === 'playlists' && favorites.length >= 0 ? (
-              <Brutal haptic shadow={4} style={styles.likedHero} onPress={() => openCollection('Liked Songs', favorites)}>
+              <Brutal haptic shadow={4} style={styles.likedHero} onPress={() => openCollection('Liked Songs', favorites)} testID="liked-hero">
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.likedTitle} allowFontScaling={false}>
                     Liked{'\n'}Songs

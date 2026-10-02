@@ -1,19 +1,18 @@
 # 02 — the Index: rapid two-part typing must land ONE clean query.
 # The user-reported "hihiz" bug class: fast keystroke appends doubling up.
 # We type "ari" then immediately "jit" — the field must commit "arijit" and
-# produce real results. If the doubling bug existed, the committed query
-# would be garbage and no track rows would paint. Latency comes from the
-# search-run → search-results [TSF-PERF] pair in logcat.
+# produce real results. Latency comes from the search-run → search-results
+# [TSF-PERF] pair in logcat. Tab opened by its label text (a11y-safe).
 appId: com.tsf.music
 name: "02 — search: rapid two-part typing, results paint"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "tab-search"
+      text: "ZED"
     timeout: 25000
 - tapOn:
-    id: "tab-search"
+    text: "Index"
 - extendedWaitUntil:
     visible:
       id: "search-input"

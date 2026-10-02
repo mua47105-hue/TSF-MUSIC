@@ -1,16 +1,30 @@
-# 03 — playback: tap a feed song, mini player must appear, broadsheet
-# player opens, pause + resume cycle, dismiss. The play-request →
-# audio-playing [TSF-PERF] pair in logcat is the time-to-audio metric.
+# 03 — playback: search "arijit", tap the first result row (on-screen by
+# construction), mini player must appear, broadsheet player opens, pause +
+# resume, dismiss. The play-request → audio-playing [TSF-PERF] pair in
+# logcat is the time-to-audio metric.
 appId: com.tsf.music
-name: "03 — playback: feed song to playing, pause, resume"
+name: "03 — playback: search result to playing, pause, resume"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "endless-feed-songs"
+      text: "ZED"
     timeout: 30000
 - tapOn:
-    id: "endless-feed-song"
+    text: "Index"
+- extendedWaitUntil:
+    visible:
+      id: "search-input"
+    timeout: 15000
+- tapOn:
+    id: "search-input"
+- inputText: "arijit"
+- extendedWaitUntil:
+    visible:
+      id: "track-row"
+    timeout: 30000
+- tapOn:
+    id: "track-row"
     index: 0
 - extendedWaitUntil:
     visible:

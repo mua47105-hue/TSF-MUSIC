@@ -7,7 +7,7 @@ name: "07 — stretch: wire vibe dispatch end to end"
 ---
 - launchApp
 - tapOn:
-    id: "tab-wire"
+    text: "Wire"
 - extendedWaitUntil:
     visible:
       id: "wire-vibe-input"

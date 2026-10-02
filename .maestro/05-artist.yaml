@@ -1,15 +1,19 @@
 # 05 — artist regression: the v4.0.1 fix (artist pages resolve the real
 # photo, or fall back to honest initials — never a stranger's album cover).
-# Opens an artist tile from the Front Page, requires the Collection screen
-# to render, and screenshots the header as evidence.
+# Scrolls the Front Page until an artist tile is on screen, opens it,
+# requires the Collection screen to render, screenshots the header.
 appId: com.tsf.music
 name: "05 — artist page opens from the Front Page shelf"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "home-artist"
+      text: "ZED"
     timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "home-artist"
+    timeout: 40000
 - tapOn:
     id: "home-artist"
     index: 0
@@ -23,5 +27,5 @@ name: "05 — artist page opens from the Front Page shelf"
     id: "collection-back"
 - extendedWaitUntil:
     visible:
-      id: "endless-feed-songs"
+      text: "ZED"
     timeout: 15000

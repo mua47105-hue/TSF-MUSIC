@@ -61,6 +61,8 @@ cp /tmp/logcat.txt "$ART/logcat.txt" 2>/dev/null || true
 # maestro leaves failure screenshots/ui-dumps in the CWD — hoard them all
 cp -a ./*.png "$ART/" 2>/dev/null || true
 cp -a ./*.xml "$ART/" 2>/dev/null || true
+# maestro's per-run debug dirs (failure screenshot + UI hierarchy dump)
+cp -a "$HOME/.maestro/tests" "$ART/maestro-tests" 2>/dev/null || true
 
 echo "PERF_PARSE_EXIT=$PARSE FAIL=$FAIL"
 if [ "$FAIL" -ne 0 ] || [ "$PARSE" -eq 2 ] || [ "$PARSE" -eq 3 ]; then
