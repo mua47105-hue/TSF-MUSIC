@@ -103,6 +103,16 @@ jobs:
 
       # ── the optimized emulator: KVM hardware accel, small profile,
       #    software GPU, audio LEFT ON (playback state must be honest) ────
+      # /dev/kvm exists on ubuntu-24.04 runners but the default udev perms
+      # deny the runner user (ProbeKVM: no permissions) — without this the
+      # action silently falls back to TCG software emulation and the boot
+      # never completes (round-1 finding).
+      - name: Grant KVM to the runner user
+        run: |
+          ls -la /dev/kvm
+          sudo chmod 666 /dev/kvm
+          sudo udevadm control --reload-rules || true
+
       - name: Run the lab on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -112,7 +122,9 @@ jobs:
           profile: pixel_3a
           ram-size: 3072M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -no-snapshot
           script: |
             chmod +x scripts/e2e/run_lab.sh
             ./scripts/e2e/run_lab.sh
