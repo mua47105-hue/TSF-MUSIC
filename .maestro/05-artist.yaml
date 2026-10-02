@@ -13,7 +13,7 @@ name: "05 - artist page from front page shelf"
 - scrollUntilVisible:
     element:
       id: "home-artist"
-    timeout: 40000
+    timeout: 60000
     visibilityPercentage: 30
 - tapOn:
     id: "home-artist"

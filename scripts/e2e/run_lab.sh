@@ -26,7 +26,9 @@ sleep 2
 adb shell am start -W -n "$ACT" | tee "$ART/am-start.txt"
 sleep 4 # let the fresh boot settle before flow 01 restarts it clean
 
-# ── required flows (any failure fails the lab) ─────────────────────────
+# ── required flows (any failure fails the lab; each flow gets ONE retry —
+#    the CI network flakes (round-11: the popular-artists fetch) and one
+#    honest retry separates flake from regression ────────────────────────
 REQUIRED=(01-fresh-boot 02-search 03-playback 04-skip 05-artist 06-tour)
 STRETCH=(07-wire-vibe 08-download)
 FAIL=0
@@ -34,8 +36,10 @@ for f in "${REQUIRED[@]}"; do
   echo "===== FLOW $f ====="
   if timeout 480 maestro test "$PWD/.maestro/$f.yaml" 2>&1 | tee "$ART/$f.log"; then
     echo "===== $f PASS ====="
+  elif timeout 480 maestro test "$PWD/.maestro/$f.yaml" 2>&1 | tee "$ART/$f-retry.log"; then
+    echo "===== $f PASS (on retry) ====="
   else
-    echo "===== $f FAIL ====="
+    echo "===== $f FAIL (2 attempts) ====="
     FAIL=1
   fi
 done

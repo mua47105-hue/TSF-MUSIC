@@ -107,7 +107,7 @@ def main() -> int:
     for e in events:
         if e["event"] == "search-run":
             last_run = e["t"]
-        elif e["event"] == "search-results" and last_run is not None:
+        elif e["event"] in ("search-results", "search-early", "search-final", "search-yt", "search-vibe") and last_run is not None:
             try:
                 n = int(e["detail"])
             except ValueError:
