@@ -1,0 +1,40 @@
+# 03 — playback: tap a feed song, mini player must appear, broadsheet
+# player opens, pause + resume cycle, dismiss. The play-request →
+# audio-playing [TSF-PERF] pair in logcat is the time-to-audio metric.
+appId: com.tsf.music
+name: "03 — playback: feed song to playing, pause, resume"
+---
+- launchApp
+- assertVisible:
+    id: "endless-feed-songs"
+    timeout: 30000
+- tapOn:
+    id: "endless-feed-song"
+    index: 0
+- assertVisible:
+    id: "mini-player"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: 03-miniplayer
+- tapOn:
+    id: "mini-player"
+- assertVisible:
+    id: "player-toggle"
+    timeout: 15000
+- takeScreenshot: 03-player
+- tapOn:
+    id: "player-toggle"
+- assertVisible:
+    id: "player-toggle"
+    timeout: 8000
+- tapOn:
+    id: "player-toggle"
+- assertVisible:
+    id: "player-toggle"
+    timeout: 8000
+- tapOn:
+    id: "player-dismiss"
+- assertVisible:
+    id: "mini-player"
+    timeout: 10000

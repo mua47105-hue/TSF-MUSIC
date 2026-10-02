@@ -61,6 +61,7 @@ import { ShelfSkeleton } from '../components/ShelfSkeleton';
 import { Brutal, MonoText, OutlineText, Ticker } from '../components/Brutal';
 import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
+import { perfMark } from '../perf/perf';
 
 type Chip = 'all' | 'music' | 'ai';
 
@@ -259,6 +260,17 @@ export function HomeScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // [TSF-PERF] first real content on the Front Page — the lab's
+  // time-to-first-content marker (scripts/e2e/parse_perf.py).
+  const homePaintedRef = useRef(false);
+  useEffect(() => {
+    if (homePaintedRef.current) return;
+    if (feedBatches.length > 0 || popularArtists.length > 0) {
+      homePaintedRef.current = true;
+      perfMark('home-first-data', String(feedBatches.length + popularArtists.length));
+    }
+  }, [feedBatches, popularArtists]);
 
   const resetFeed = useCallback(() => {
     feedEpochRef.current += 1;
@@ -764,6 +776,7 @@ const HomeHeader = React.memo(function HomeHeader({
             onInk
             onPress={() => nav.navigate('Stats')}
             style={styles.avatar}
+            testID="home-avatar"
           >
             <Text style={styles.avatarText}>{(userName || 'T').slice(0, 1).toUpperCase()}</Text>
           </Brutal>

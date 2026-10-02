@@ -197,6 +197,7 @@ export function MindbeatWireScreen() {
               onSubmitEditing={() => run(promptField.getValue())}
               editable={!busy}
               autoCapitalize="none"
+              testID="wire-vibe-input"
             />
           </View>
           <Brutal

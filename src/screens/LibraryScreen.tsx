@@ -437,7 +437,7 @@ export function LibraryScreen() {
         ListFooterComponent={
           <>
             {/* Premium banner */}
-            <Brutal haptic shadow={4} style={styles.premiumBanner} onPress={() => nav.navigate('Premium')}>
+            <Brutal haptic shadow={4} style={styles.premiumBanner} onPress={() => nav.navigate('Premium')} testID="premium-banner">
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.premiumTitle}>TSF Premium</Text>
                 <MonoText size={10} color={colors.ink60} style={{ marginTop: 6, lineHeight: 16 }}>

@@ -1,0 +1,21 @@
+# 07 — STRETCH (failure recorded, does not fail the lab): a full Wire vibe
+# dispatch — type a vibe, submit, the MINDBEAT desk files a narrated
+# 25-track playlist. Network-heavy; if this flakes we want the evidence,
+# not a red lab.
+appId: com.tsf.music
+name: "07 — stretch: wire vibe dispatch end to end"
+---
+- launchApp
+- tapOn:
+    id: "tab-wire"
+- assertVisible:
+    id: "wire-vibe-input"
+    timeout: 20000
+- tapOn:
+    id: "wire-vibe-input"
+- inputText: "monsoon 90s bollywood"
+- pressKey: Enter
+- takeScreenshot: 07-wire-running
+- waitForAnimationToEnd:
+    timeout: 60000
+- takeScreenshot: 07-wire-result

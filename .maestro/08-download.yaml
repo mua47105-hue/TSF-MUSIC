@@ -1,0 +1,25 @@
+# 08 — STRETCH (failure recorded, does not fail the lab): download a song
+# from the player's track menu and wait for the honest "Downloaded" toast.
+appId: com.tsf.music
+name: "08 — stretch: download from the player menu"
+---
+- launchApp
+- assertVisible:
+    id: "mini-player"
+    timeout: 30000
+- tapOn:
+    id: "mini-player"
+- assertVisible:
+    id: "player-toggle"
+    timeout: 15000
+- tapOn:
+    text: "SAVE"
+- assertVisible:
+    text: "Download"
+    timeout: 10000
+- tapOn:
+    text: "Download"
+- assertVisible:
+    text: "Downloaded"
+    timeout: 120000
+- takeScreenshot: 08-downloaded

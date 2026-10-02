@@ -27,6 +27,9 @@ import { Onboarding } from './src/components/Onboarding';
 import { MonoText } from './src/components/Brutal';
 import type { RootStackParamList, TabParamList } from './src/screens/navigation';
 import { colors } from './src/theme';
+import { perfMark } from './src/perf/perf';
+
+perfMark('js-boot');
 
 const navTheme = {
   ...DefaultTheme,
@@ -131,8 +134,14 @@ export default function App() {
       'Figtree-800': require('./assets/fonts/Figtree-800.ttf'),
       'Figtree-900': require('./assets/fonts/Figtree-900.ttf'),
     })
-      .then(() => setFontsReady(true))
-      .catch(() => setFontsReady(true)); // render with system font if load fails
+      .then(() => {
+        setFontsReady(true);
+        perfMark('fonts-ready');
+      })
+      .catch(() => {
+        setFontsReady(true);
+        perfMark('fonts-ready', 'fallback-fonts');
+      }); // render with system font if load fails
   }, []);
 
   if (!fontsReady) return null;

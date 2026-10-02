@@ -57,6 +57,7 @@ export function MiniPlayer() {
           style={styles.btn}
           onPress={() => toggleLike(active)}
           accessibilityLabel="Like"
+          testID="mini-like"
         >
           <Ionicons
             name={isFav ? 'heart' : 'heart-outline'}
@@ -64,14 +65,14 @@ export function MiniPlayer() {
             color={isFav ? colors.orange : colors.onInk}
           />
         </Pressable>
-        <Pressable hitSlop={10} style={styles.btn} onPress={togglePlay} accessibilityLabel="Play">
+        <Pressable hitSlop={10} style={styles.btn} onPress={togglePlay} accessibilityLabel="Play" testID="mini-toggle">
           {loading ? (
             <View style={styles.spinner} />
           ) : (
             <Ionicons name={isPlaying ? 'pause' : 'play'} size={21} color={colors.onInk} />
           )}
         </Pressable>
-        <Pressable hitSlop={10} style={styles.btn} onPress={() => next()} accessibilityLabel="Next">
+        <Pressable hitSlop={10} style={styles.btn} onPress={() => next()} accessibilityLabel="Next" testID="mini-next">
           <Ionicons name="play-skip-forward" size={18} color={colors.onInk} />
         </Pressable>
       </Pressable>

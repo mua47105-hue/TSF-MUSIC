@@ -62,6 +62,7 @@ import { TrackRow } from '../components/TrackRow';
 import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { colors, fonts, genreGradient } from '../theme';
 import type { RootStackParamList } from './navigation';
+import { perfMark } from '../perf/perf';
 
 const GENRES: Array<{ label: string; query: string }> = [
   { label: 'Bollywood', query: 'bollywood hits' },
@@ -352,6 +353,7 @@ export function SearchScreen() {
         return;
       }
       const gen = ++searchGen.current;
+      perfMark('search-run', q);
       abortRef.current?.abort(); // kill the previous generation's probes
       const ctrl = new AbortController();
       abortRef.current = ctrl;
@@ -373,6 +375,7 @@ export function SearchScreen() {
           }
           const ytr = await ytSearchMusic(q, 25, ctrl.signal);
           if (gen !== searchGen.current) return;
+          perfMark('search-results', ytr.tracks.length);
           setResults(ytr.tracks);
           setMeta({
             degraded: false,
@@ -401,6 +404,7 @@ export function SearchScreen() {
             25,
           );
           if (gen !== searchGen.current) return;
+          perfMark('search-results', r.tracks.length);
           setResults(r.tracks);
           setMeta({ degraded: false });
           setHasMoreBoth(false);
@@ -417,6 +421,7 @@ export function SearchScreen() {
             deps,
             onEarly: (early) => {
               if (gen !== searchGen.current) return;
+              perfMark('search-results', early.tracks.length);
               setResults(early.tracks);
               setMeta({
                 degraded: false,
@@ -442,6 +447,7 @@ export function SearchScreen() {
             ? mergeUniqueTracks(res.tracks, appendedPagesRef.current)
             : res.tracks;
           resultsRef.current = finalTracks;
+          perfMark('search-results', finalTracks.length);
           setResults(finalTracks);
           setMeta({
             degraded: res.degraded,

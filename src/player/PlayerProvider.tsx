@@ -54,6 +54,7 @@ import {
   setSmartShuffleSetting as persistSmartShuffle,
   toggleFavorite as storeToggleFavorite,
 } from '../storage/store';
+import { perfMark } from '../perf/perf';
 
 let setupPromise: Promise<void> | null = null;
 let notifAsked = false;
@@ -218,6 +219,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const prevTrackId = useRef<string>('');
   useEffect(() => {
     if (!active?.id || active.id === prevTrackId.current) return;
+    perfMark('track-active', String(active.id));
     // SINGLE-OWNER RULE (mirror of the service gate): the provider owns
     // track transitions only while FOREGROUNDED; the background service
     // owns them otherwise — otherwise both instrument the same change and
@@ -250,6 +252,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const state = playback?.state;
   const isPlaying = state === 'playing';
   const loading = state === 'loading' || state === 'buffering';
+
+  // [TSF-PERF] fires on every pause/resume→playing transition; the lab pairs
+  // the first unconsumed one after each play/skip request into the
+  // time-to-audio and skip-latency metrics (scripts/e2e/parse_perf.py).
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    const now = state === 'playing';
+    if (now && !wasPlayingRef.current) perfMark('audio-playing', String(active?.id ?? ''));
+    wasPlayingRef.current = now;
+  }, [state, active?.id]);
 
   async function buildPlayable(tracks: Track[]): Promise<RNTrack[]> {
     const downloads = await getDownloadIndex();
@@ -318,6 +330,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await ensureSetup();
       await askNotificationPermission();
       const wantedId = tracks[startIndex]?.id;
+      perfMark('play-request', String(wantedId));
       const playable = await buildPlayable(tracks);
       if (!playable.length || !wantedId) {
         // HONEST FAILURE (no more blank player): if the tapped row was a
@@ -372,7 +385,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await TrackPlayer.add(playable);
       await TrackPlayer.skip(startAt);
       await TrackPlayer.play();
-      // Smart Shuffle persists across sessions — honor it on fresh queues.
+      perfMark('queue-started', String(wantedId));
       if (smartShuffle) {
         void injectRecommendations(startAt);
       }
@@ -442,6 +455,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   async function next(): Promise<void> {
     // Queue healing (§9.1): skipping a RECOMMENDED track immediately
     // re-seeds the remaining rec slots away from what was rejected.
+    perfMark('skip-request');
     try {
       const idx = await TrackPlayer.getActiveTrackIndex();
       if (idx != null) {

@@ -1,0 +1,25 @@
+# 05 — artist regression: the v4.0.1 fix (artist pages resolve the real
+# photo, or fall back to honest initials — never a stranger's album cover).
+# Opens an artist tile from the Front Page, requires the Collection screen
+# to render, and screenshots the header as evidence.
+appId: com.tsf.music
+name: 05 — artist page opens from the Front Page shelf
+---
+- launchApp
+- assertVisible:
+    id: "home-artist"
+    timeout: 30000
+- tapOn:
+    id: "home-artist"
+    index: 0
+- assertVisible:
+    id: "collection-back"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: 05-artist-page
+- tapOn:
+    id: "collection-back"
+- assertVisible:
+    id: "endless-feed-songs"
+    timeout: 15000

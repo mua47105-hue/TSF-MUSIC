@@ -329,10 +329,10 @@ export function PlayerScreen() {
           <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShuffle(!shuffle)} style={[styles.smlBtn, shuffle && styles.smlOn]}>
             <Ionicons name="shuffle" size={19} color={colors.ink} />
           </Brutal>
-          <Brutal haptic shadow={0} pressOffset={1} onPress={() => prev()} style={styles.smlBtn}>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => prev()} style={styles.smlBtn} testID="player-prev">
             <Ionicons name="play-skip-back" size={22} color={colors.ink} />
           </Brutal>
-          <Brutal haptic onInk shadow={4} onPress={togglePlay} style={styles.playBtn}>
+          <Brutal haptic onInk shadow={4} onPress={togglePlay} style={styles.playBtn} testID="player-toggle">
             {loading ? (
               <View style={styles.spinner} />
             ) : (
@@ -344,7 +344,7 @@ export function PlayerScreen() {
               />
             )}
           </Brutal>
-          <Brutal haptic shadow={0} pressOffset={1} onPress={() => next()} style={styles.smlBtn}>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => next()} style={styles.smlBtn} testID="player-next">
             <Ionicons name="play-skip-forward" size={22} color={colors.ink} />
           </Brutal>
           <Brutal haptic shadow={0} pressOffset={1} onPress={cycleRepeat} style={[styles.smlBtn, repeat !== 'off' && styles.smlOn]}>
