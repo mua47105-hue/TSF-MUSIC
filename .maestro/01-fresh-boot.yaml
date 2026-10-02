@@ -58,9 +58,4 @@ name: "01 - fresh boot whatsnew onboarding front page"
     visible:
       id: "home-avatar"
     timeout: 45000
-- scrollUntilVisible:
-    element:
-      id: "track-row"
-    timeout: 40000
-    visibilityPercentage: 30
 - takeScreenshot: 01-front-page

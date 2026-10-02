@@ -28,5 +28,5 @@ name: "05 - artist page from front page shelf"
     id: "collection-back"
 - extendedWaitUntil:
     visible:
-      id: "home-avatar"
+      text: "Front"
     timeout: 15000

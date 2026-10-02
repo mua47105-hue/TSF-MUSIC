@@ -19,6 +19,7 @@ name: "03 - playback search result to playing"
 - tapOn:
     id: "search-input"
 - inputText: "arijit"
+- hideKeyboard
 - scrollUntilVisible:
     element:
       id: "track-row"

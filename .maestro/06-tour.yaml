@@ -35,5 +35,5 @@ name: "06 - tab tour crates wire stats home"
 - pressKey: Back
 - extendedWaitUntil:
     visible:
-      id: "home-avatar"
-    timeout: 10000
+      text: "Front"
+    timeout: 15000

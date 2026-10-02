@@ -21,6 +21,7 @@ name: "04 - skip x5 rapid next presses"
       - tapOn:
           id: "search-input"
       - inputText: "arijit"
+      - hideKeyboard
       - scrollUntilVisible:
           element:
             id: "track-row"
