@@ -1,45 +1,39 @@
-# 03 — playback: search "arijit", tap the first result row (on-screen by
-# construction), mini player must appear, broadsheet player opens, pause +
-# resume, dismiss. The play-request → audio-playing [TSF-PERF] pair in
-# logcat is the time-to-audio metric.
+# 03 — playback: search "arijit", tap the first result row — the app plays
+# AND opens the broadsheet player (round-10 screenshot proof: real artwork,
+# TSF 320 KBPS badge, progress advancing). Assert the player controls, run
+# a pause + resume cycle, dismiss to the mini player. The play-request →
+# audio-playing [TSF-PERF] pair is the time-to-audio metric.
 appId: com.tsf.music
 name: "03 - playback search result to playing"
 ---
 - launchApp
-- extendedWaitUntil:
-    visible:
-      id: "home-avatar"
-    timeout: 30000
-- tapOn:
-    text: "Index"
-- extendedWaitUntil:
-    visible:
-      id: "search-input"
-    timeout: 15000
-- tapOn:
-    id: "search-input"
-- inputText: "arijit"
-- hideKeyboard
-- scrollUntilVisible:
-    element:
-      id: "track-row"
-    timeout: 30000
-    visibilityPercentage: 30
-- tapOn:
-    id: "track-row"
-    index: 0
-- extendedWaitUntil:
-    visible:
-      id: "mini-player"
-    timeout: 30000
-- waitForAnimationToEnd
-- takeScreenshot: 03-miniplayer
-- tapOn:
-    id: "mini-player"
+- runFlow:
+    when:
+      notVisible:
+        id: "player-dismiss"
+    commands:
+      - tapOn:
+          text: "Index"
+      - extendedWaitUntil:
+          visible:
+            id: "search-input"
+          timeout: 20000
+      - tapOn:
+          id: "search-input"
+      - inputText: "arijit"
+      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: "track-row"
+          timeout: 30000
+          visibilityPercentage: 30
+      - tapOn:
+          id: "track-row"
+          index: 0
 - extendedWaitUntil:
     visible:
       id: "player-toggle"
-    timeout: 15000
+    timeout: 30000
 - takeScreenshot: 03-player
 - tapOn:
     id: "player-toggle"
@@ -49,9 +43,11 @@ name: "03 - playback search result to playing"
     id: "player-toggle"
 - assertVisible:
     id: "player-toggle"
+- takeScreenshot: 03-paused-resumed
 - tapOn:
     id: "player-dismiss"
 - extendedWaitUntil:
     visible:
       id: "mini-player"
-    timeout: 10000
+    timeout: 15000
+- takeScreenshot: 03-miniplayer

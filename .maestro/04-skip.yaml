@@ -1,8 +1,7 @@
-# 04 — skips: five consecutive next() presses. Each skip-request →
-# audio-playing [TSF-PERF] pair is the skip-latency metric (the
-# Spotify-grade bar: p50 ≤ 3s, hard fail > 6s). Rapid skipping is also a
-# stress case for the queue / stale-URL recovery paths. If playback is not
-# already running, it starts one via search (on-screen rows).
+# 04 — skips: five consecutive next() presses on the broadsheet player
+# (the real user skip path). Each skip-request → audio-playing [TSF-PERF]
+# pair is the skip-latency metric (the Spotify-grade bar: p50 ≤ 3s, hard
+# fail > 6s). Rapid skipping also stresses queue / stale-URL recovery.
 appId: com.tsf.music
 name: "04 - skip x5 rapid next presses"
 ---
@@ -10,7 +9,7 @@ name: "04 - skip x5 rapid next presses"
 - runFlow:
     when:
       notVisible:
-        id: "mini-player"
+        id: "player-dismiss"
     commands:
       - tapOn:
           text: "Index"
@@ -30,18 +29,16 @@ name: "04 - skip x5 rapid next presses"
       - tapOn:
           id: "track-row"
           index: 0
-      - extendedWaitUntil:
-          visible:
-            id: "mini-player"
-          timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: "player-toggle"
+    timeout: 30000
 - repeat:
     times: 5
     commands:
       - tapOn:
-          id: "mini-next"
+          id: "player-next"
       - waitForAnimationToEnd
-- extendedWaitUntil:
-    visible:
-      id: "mini-player"
-    timeout: 10000
+- assertVisible:
+    id: "player-toggle"
 - takeScreenshot: 04-after-skips
