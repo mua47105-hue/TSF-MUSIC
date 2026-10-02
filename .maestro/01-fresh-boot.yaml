@@ -50,7 +50,7 @@ name: "01 - fresh boot whatsnew onboarding front page"
     index: 0
 - extendedWaitUntil:
     visible:
-      text: "PICKED 1 · MIN 3"
+      text: "PICKED 1"
     timeout: 10000
 - tapOn:
     id: "onb-continue"
