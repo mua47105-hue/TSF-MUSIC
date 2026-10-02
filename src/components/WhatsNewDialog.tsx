@@ -11,15 +11,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_2';
+const SEEN_KEY = 'tsf.whatsNew.v4_0_3';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Artist searches stay put: searching an artist name used to flash its rows and then wipe them to blank — now what you see painted is what you keep.',
-  'Search holds its ground: if the instant engine stumbles after results are already on screen, your rows no longer vanish mid-lookup.',
-  'Now proven on a real device, automatically: every update must survive a full Android emulator gauntlet — cold start, playback, skips, search — before it ships.',
-  'Nothing else moved: 320 kbps playback, YouTube rescue, downloads and your library are exactly as v4.0.1 left them.',
+  'Your app wears a new face: the launcher icon is now the swirl-head artwork — the old equalizer logo is retired from the app drawer, settings and the store listing.',
+  'Cropped clean: the Gemini sparkle that rode along with the artwork is gone — what ships is pure icon, edge to edge, tuned for every launcher shape (circle, squircle, rounded square).',
+  'Nothing else moved: playback, search, downloads and your library are exactly as v4.0.2 left them.',
 ];
 
 export function WhatsNewDialog() {
@@ -62,7 +61,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0.2 — THE STEADY SEARCH EDITION
+            TSF MUSIC 4.0.3 — THE NEW FACE EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
