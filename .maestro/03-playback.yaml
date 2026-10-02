@@ -19,10 +19,11 @@ name: "03 - playback search result to playing"
 - tapOn:
     id: "search-input"
 - inputText: "arijit"
-- extendedWaitUntil:
-    visible:
+- scrollUntilVisible:
+    element:
       id: "track-row"
     timeout: 30000
+    visibilityPercentage: 30
 - tapOn:
     id: "track-row"
     index: 0

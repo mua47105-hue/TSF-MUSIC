@@ -21,8 +21,9 @@ name: "02 - search rapid two-part typing"
     id: "search-input"
 - inputText: "ari"
 - inputText: "jit"
-- extendedWaitUntil:
-    visible:
+- scrollUntilVisible:
+    element:
       id: "track-row"
     timeout: 30000
+    visibilityPercentage: 30
 - takeScreenshot: 02-search-results

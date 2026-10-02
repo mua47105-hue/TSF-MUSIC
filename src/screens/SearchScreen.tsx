@@ -511,10 +511,18 @@ export function SearchScreen() {
         }
         await pushRecentSearch(q);
         setRecentSearches(await getRecentSearches());
-      } catch {
+      } catch (e) {
         if (gen !== searchGen.current) return;
-        setResults([]);
-        setMeta({ degraded: true });
+        // LAB FIX (Android E2E lab, round 6): a post-early stage failure
+        // used to WIPE rows the user can already see — onEarly painted
+        // 22-25 results and 9ms later the catch blanked them into the
+        // 'NOT IN THE STACKS' zero-state. Keep the early paint; flag the
+        // degraded note instead. Name the stage in the lab logcat.
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('[search] post-early failure:', msg);
+        perfMark('search-error', msg.slice(0, 90));
+        setResults((prev) => (prev.length ? prev : []));
+        setMeta((m) => ({ ...m, degraded: true }));
       } finally {
         if (gen === searchGen.current) setLoading(false);
       }
