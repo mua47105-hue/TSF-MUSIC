@@ -345,6 +345,7 @@ export function SearchScreen() {
         abortRef.current?.abort();
         abortRef.current = null;
         setResults([]);
+        perfMark('search-wipe', 'empty-q');
         setMeta({ degraded: false });
         setVibeChips([]);
         setSearched(false);
@@ -366,6 +367,7 @@ export function SearchScreen() {
         if (src === 'youtube') {
           if (!ytAvailable()) {
             if (gen !== searchGen.current) return;
+            perfMark('search-wipe', 'yt-unavailable');
             setResults([]);
             setMeta({ degraded: false, sigState: undefined, partialArtists: undefined, ytUnavailable: true });
             setVibeChips([]);
@@ -375,7 +377,7 @@ export function SearchScreen() {
           }
           const ytr = await ytSearchMusic(q, 25, ctrl.signal);
           if (gen !== searchGen.current) return;
-          perfMark('search-results', ytr.tracks.length);
+          perfMark('search-yt', ytr.tracks.length);
           setResults(ytr.tracks);
           setMeta({
             degraded: false,
@@ -404,7 +406,7 @@ export function SearchScreen() {
             25,
           );
           if (gen !== searchGen.current) return;
-          perfMark('search-results', r.tracks.length);
+          perfMark('search-vibe', r.tracks.length);
           setResults(r.tracks);
           setMeta({ degraded: false });
           setHasMoreBoth(false);
@@ -421,7 +423,7 @@ export function SearchScreen() {
             deps,
             onEarly: (early) => {
               if (gen !== searchGen.current) return;
-              perfMark('search-results', early.tracks.length);
+              perfMark('search-early', early.tracks.length);
               setResults(early.tracks);
               setMeta({
                 degraded: false,
@@ -447,7 +449,7 @@ export function SearchScreen() {
             ? mergeUniqueTracks(res.tracks, appendedPagesRef.current)
             : res.tracks;
           resultsRef.current = finalTracks;
-          perfMark('search-results', finalTracks.length);
+          perfMark('search-final', finalTracks.length);
           setResults(finalTracks);
           setMeta({
             degraded: res.degraded,
