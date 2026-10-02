@@ -11,15 +11,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_1';
+const SEEN_KEY = 'tsf.whatsNew.v4_0_2';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Typing is fixed: the Index search field no longer doubles your keystrokes on fast typing — what you type is what you get, on every text surface in the app.',
-  'Artist photos are fixed: artist pages now resolve the real photo, and when none exists you get an honest initials stamp instead of a stranger’s album cover.',
-  'Same-class sweep: On The Rise and stats tiles show true artist artwork, joined credits resolve to the right person, and rename dialogs stay steady under load.',
-  'Nothing else moved: 320 kbps playback, YouTube rescue, downloads and your library are exactly as v4.0.0 left them.',
+  'Artist searches stay put: searching an artist name used to flash its rows and then wipe them to blank — now what you see painted is what you keep.',
+  'Search holds its ground: if the instant engine stumbles after results are already on screen, your rows no longer vanish mid-lookup.',
+  'Now proven on a real device, automatically: every update must survive a full Android emulator gauntlet — cold start, playback, skips, search — before it ships.',
+  'Nothing else moved: 320 kbps playback, YouTube rescue, downloads and your library are exactly as v4.0.1 left them.',
 ];
 
 export function WhatsNewDialog() {
@@ -62,7 +62,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0.1 — THE FIX EDITION
+            TSF MUSIC 4.0.2 — THE STEADY SEARCH EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
