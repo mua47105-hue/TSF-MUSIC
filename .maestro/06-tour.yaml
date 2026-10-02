@@ -5,25 +5,29 @@ appId: com.tsf.music
 name: "06 — tab tour: crates, wire, stats, home"
 ---
 - launchApp
-- assertVisible:
-    id: "tab-library"
+- extendedWaitUntil:
+    visible:
+      id: "tab-library"
     timeout: 25000
 - tapOn:
     id: "tab-library"
-- assertVisible:
-    id: "premium-banner"
+- extendedWaitUntil:
+    visible:
+      id: "premium-banner"
     timeout: 15000
 - takeScreenshot: 06-crates
 - tapOn:
     id: "tab-wire"
-- assertVisible:
-    id: "wire-vibe-input"
+- extendedWaitUntil:
+    visible:
+      id: "wire-vibe-input"
     timeout: 15000
 - takeScreenshot: 06-wire
 - tapOn:
     id: "tab-home"
-- assertVisible:
-    id: "home-avatar"
+- extendedWaitUntil:
+    visible:
+      id: "home-avatar"
     timeout: 15000
 - tapOn:
     id: "home-avatar"
@@ -31,4 +35,3 @@ name: "06 — tab tour: crates, wire, stats, home"
 - pressKey: Back
 - assertVisible:
     id: "tab-home"
-    timeout: 10000

@@ -3,23 +3,25 @@
 # Opens an artist tile from the Front Page, requires the Collection screen
 # to render, and screenshots the header as evidence.
 appId: com.tsf.music
-name: 05 — artist page opens from the Front Page shelf
+name: "05 — artist page opens from the Front Page shelf"
 ---
 - launchApp
-- assertVisible:
-    id: "home-artist"
+- extendedWaitUntil:
+    visible:
+      id: "home-artist"
     timeout: 30000
 - tapOn:
     id: "home-artist"
     index: 0
-- assertVisible:
-    id: "collection-back"
+- extendedWaitUntil:
+    visible:
+      id: "collection-back"
     timeout: 20000
-- waitForAnimationToEnd:
-    timeout: 8000
+- waitForAnimationToEnd
 - takeScreenshot: 05-artist-page
 - tapOn:
     id: "collection-back"
-- assertVisible:
-    id: "endless-feed-songs"
+- extendedWaitUntil:
+    visible:
+      id: "endless-feed-songs"
     timeout: 15000

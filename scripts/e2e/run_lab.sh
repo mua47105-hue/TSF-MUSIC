@@ -32,7 +32,7 @@ STRETCH=(07-wire-vibe 08-download)
 FAIL=0
 for f in "${REQUIRED[@]}"; do
   echo "===== FLOW $f ====="
-  if timeout 480 maestro test "$PWD/.maestro/$f.yaml"; then
+  if timeout 480 maestro test "$PWD/.maestro/$f.yaml" 2>&1 | tee "$ART/$f.log"; then
     echo "===== $f PASS ====="
   else
     echo "===== $f FAIL ====="
@@ -43,7 +43,7 @@ done
 # ── stretch flows (evidence only) ──────────────────────────────────────
 for f in "${STRETCH[@]}"; do
   echo "===== STRETCH $f ====="
-  timeout 300 maestro test "$PWD/.maestro/$f.yaml" \
+  timeout 300 maestro test "$PWD/.maestro/$f.yaml" 2>&1 | tee "$ART/$f.log" \
     || echo "===== $f STRETCH-FAIL (recorded, not gating) ====="
 done
 

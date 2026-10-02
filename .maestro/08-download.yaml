@@ -4,22 +4,26 @@ appId: com.tsf.music
 name: "08 — stretch: download from the player menu"
 ---
 - launchApp
-- assertVisible:
-    id: "mini-player"
+- extendedWaitUntil:
+    visible:
+      id: "mini-player"
     timeout: 30000
 - tapOn:
     id: "mini-player"
-- assertVisible:
-    id: "player-toggle"
+- extendedWaitUntil:
+    visible:
+      id: "player-toggle"
     timeout: 15000
 - tapOn:
     text: "SAVE"
-- assertVisible:
-    text: "Download"
+- extendedWaitUntil:
+    visible:
+      text: "Download"
     timeout: 10000
 - tapOn:
     text: "Download"
-- assertVisible:
-    text: "Downloaded"
+- extendedWaitUntil:
+    visible:
+      text: "Downloaded"
     timeout: 120000
 - takeScreenshot: 08-downloaded

@@ -8,19 +8,22 @@ appId: com.tsf.music
 name: "02 — search: rapid two-part typing, results paint"
 ---
 - launchApp
-- assertVisible:
-    id: "tab-search"
+- extendedWaitUntil:
+    visible:
+      id: "tab-search"
     timeout: 25000
 - tapOn:
     id: "tab-search"
-- assertVisible:
-    id: "search-input"
+- extendedWaitUntil:
+    visible:
+      id: "search-input"
     timeout: 15000
 - tapOn:
     id: "search-input"
 - inputText: "ari"
 - inputText: "jit"
-- assertVisible:
-    id: "track-row"
+- extendedWaitUntil:
+    visible:
+      id: "track-row"
     timeout: 30000
 - takeScreenshot: 02-search-results

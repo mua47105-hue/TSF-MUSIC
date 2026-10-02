@@ -3,26 +3,29 @@
 # every real first-time user takes; the logcat [TSF-PERF] marks it triggers
 # (js-boot, fonts-ready, home-first-data) become the boot report.
 appId: com.tsf.music
-name: 01 — fresh boot, whatsnew, onboarding, front page
+name: "01 — fresh boot, whatsnew, onboarding, front page"
 ---
 - launchApp:
     clearState: true
-- assertVisible:
-    id: "whatsnew-continue"
+- extendedWaitUntil:
+    visible:
+      id: "whatsnew-continue"
     timeout: 30000
 - takeScreenshot: 01-whatsnew
 - tapOn:
     id: "whatsnew-continue"
-- assertVisible:
-    id: "onb-name-input"
+- extendedWaitUntil:
+    visible:
+      id: "onb-name-input"
     timeout: 20000
 - tapOn:
     id: "onb-name-input"
 - inputText: "Zed"
 - tapOn:
     id: "onb-continue"
-- assertVisible:
-    id: "onb-artist"
+- extendedWaitUntil:
+    visible:
+      id: "onb-artist"
     timeout: 25000
 - takeScreenshot: 01-onb-artists
 - tapOn:
@@ -36,15 +39,17 @@ name: 01 — fresh boot, whatsnew, onboarding, front page
     index: 2
 - tapOn:
     id: "onb-continue"
-- assertVisible:
-    id: "onb-genre"
+- extendedWaitUntil:
+    visible:
+      id: "onb-genre"
     timeout: 15000
 - tapOn:
     id: "onb-genre"
     index: 0
 - tapOn:
     id: "onb-continue"
-- assertVisible:
-    id: "endless-feed-songs"
+- extendedWaitUntil:
+    visible:
+      id: "endless-feed-songs"
     timeout: 45000
 - takeScreenshot: 01-front-page

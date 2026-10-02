@@ -11,23 +11,25 @@ name: "04 — skip x5: rapid next presses, playback survives"
       notVisible:
         id: "mini-player"
     commands:
-      - assertVisible:
-          id: "endless-feed-songs"
+      - extendedWaitUntil:
+          visible:
+            id: "endless-feed-songs"
           timeout: 30000
       - tapOn:
           id: "endless-feed-song"
           index: 1
-      - assertVisible:
-          id: "mini-player"
+      - extendedWaitUntil:
+          visible:
+            id: "mini-player"
           timeout: 30000
 - repeat:
     times: 5
     commands:
       - tapOn:
           id: "mini-next"
-      - waitForAnimationToEnd:
-          timeout: 8000
-- assertVisible:
-    id: "mini-player"
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "mini-player"
     timeout: 10000
 - takeScreenshot: 04-after-skips
