@@ -1,7 +1,7 @@
 # 08 — STRETCH (failure recorded, does not fail the lab): download a song
 # from the player's track menu and wait for the honest "Downloaded" toast.
 appId: com.tsf.music
-name: "08 — stretch: download from the player menu"
+name: "08 - stretch download from player menu"
 ---
 - launchApp
 - extendedWaitUntil:

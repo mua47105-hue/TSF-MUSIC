@@ -2,12 +2,12 @@
 # Crates Liked hero (top of screen), the Wire desk, the avatar shortcut
 # into Stats, and back. Proves core navigation survives a full lap.
 appId: com.tsf.music
-name: "06 — tab tour: crates, wire, stats, home"
+name: "06 - tab tour crates wire stats home"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 25000
 - tapOn:
     text: "Crates"
@@ -35,5 +35,5 @@ name: "06 — tab tour: crates, wire, stats, home"
 - pressKey: Back
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 10000

@@ -3,7 +3,7 @@
 # 25-track playlist. Network-heavy; if this flakes we want the evidence,
 # not a red lab.
 appId: com.tsf.music
-name: "07 — stretch: wire vibe dispatch end to end"
+name: "07 - stretch wire vibe dispatch"
 ---
 - launchApp
 - tapOn:

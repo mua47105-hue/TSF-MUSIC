@@ -3,12 +3,12 @@
 # Scrolls the Front Page until an artist tile is on screen, opens it,
 # requires the Collection screen to render, screenshots the header.
 appId: com.tsf.music
-name: "05 — artist page opens from the Front Page shelf"
+name: "05 - artist page from front page shelf"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 30000
 - scrollUntilVisible:
     element:
@@ -27,5 +27,5 @@ name: "05 — artist page opens from the Front Page shelf"
     id: "collection-back"
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 15000

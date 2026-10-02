@@ -3,7 +3,7 @@
 # Android's accessibility tree; plain Views do NOT (round-3 finding) —
 # so we assert the nameplate text "ZED" and tap feed rows via track-row.
 appId: com.tsf.music
-name: "01 — fresh boot, whatsnew, onboarding, front page"
+name: "01 - fresh boot whatsnew onboarding front page"
 ---
 - launchApp:
     clearState: true
@@ -38,7 +38,7 @@ name: "01 — fresh boot, whatsnew, onboarding, front page"
     id: "onb-artist"
     index: 2
 - assertVisible:
-    text: "PICKED 3"
+    text: "PICKED 3 · MIN 3"
 - tapOn:
     id: "onb-continue"
 - extendedWaitUntil:
@@ -50,13 +50,13 @@ name: "01 — fresh boot, whatsnew, onboarding, front page"
     index: 0
 - extendedWaitUntil:
     visible:
-      text: "PICKED 1"
+      text: "PICKED 1 · MIN 3"
     timeout: 10000
 - tapOn:
     id: "onb-continue"
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 45000
 - extendedWaitUntil:
     visible:

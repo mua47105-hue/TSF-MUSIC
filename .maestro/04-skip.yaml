@@ -4,7 +4,7 @@
 # stress case for the queue / stale-URL recovery paths. If playback is not
 # already running, it starts one via search (on-screen rows).
 appId: com.tsf.music
-name: "04 — skip x5: rapid next presses, playback survives"
+name: "04 - skip x5 rapid next presses"
 ---
 - launchApp
 - runFlow:

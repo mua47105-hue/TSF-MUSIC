@@ -3,12 +3,12 @@
 # resume, dismiss. The play-request → audio-playing [TSF-PERF] pair in
 # logcat is the time-to-audio metric.
 appId: com.tsf.music
-name: "03 — playback: search result to playing, pause, resume"
+name: "03 - playback search result to playing"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 30000
 - tapOn:
     text: "Index"

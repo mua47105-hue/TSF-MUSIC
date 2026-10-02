@@ -4,12 +4,12 @@
 # produce real results. Latency comes from the search-run → search-results
 # [TSF-PERF] pair in logcat. Tab opened by its label text (a11y-safe).
 appId: com.tsf.music
-name: "02 — search: rapid two-part typing, results paint"
+name: "02 - search rapid two-part typing"
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
-      text: "ZED"
+      id: "home-avatar"
     timeout: 25000
 - tapOn:
     text: "Index"

@@ -63,6 +63,8 @@ cp -a ./*.png "$ART/" 2>/dev/null || true
 cp -a ./*.xml "$ART/" 2>/dev/null || true
 # maestro's per-run debug dirs (failure screenshot + UI hierarchy dump)
 cp -a "$HOME/.maestro/tests" "$ART/maestro-tests" 2>/dev/null || true
+# strip paths the artifact uploader rejects (flow names once carried ':')
+find "$ART/maestro-tests" -name '*:*' -exec rm -rf {} + 2>/dev/null || true
 
 echo "PERF_PARSE_EXIT=$PARSE FAIL=$FAIL"
 if [ "$FAIL" -ne 0 ] || [ "$PARSE" -eq 2 ] || [ "$PARSE" -eq 3 ]; then
