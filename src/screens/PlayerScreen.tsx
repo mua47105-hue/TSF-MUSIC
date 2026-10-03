@@ -29,6 +29,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
+import { mindbeat } from '../ai/mindbeat';
 import { fetchPlainLyrics } from '../api/lrclib';
 import { usePlayer } from '../player/PlayerProvider';
 import {
@@ -60,6 +61,17 @@ function fmt(sec: number): string {
 /* ── The striped progress bar: bordered track, ink stripes on acid ── */
 
 const STRIPES = Array.from({ length: 90 }, (_, i) => i);
+
+/** Vibe state machine → listener-facing words (Task 28). The machine's own
+ *  vocabulary stays in src/ai; this is just the broadsheet translation. */
+const VIBE_LABEL: Record<string, string> = {
+  WARMUP: 'WARMING UP',
+  FLOW: 'IN FLOW',
+  PEAK: 'PEAK',
+  WIND_DOWN: 'WINDING DOWN',
+  SKIP_STORM: 'NOT FEELING IT',
+  EXPLORING: 'EXPLORING',
+};
 
 function ProgressBar({
   duration,
@@ -154,6 +166,7 @@ export function PlayerScreen() {
     setAutoplay,
     cycleRepeat,
     toggleLike,
+    queueVibeShift,
     removeFromQueue,
     refreshQueue,
   } = usePlayer();
@@ -182,6 +195,37 @@ export function PlayerScreen() {
     : 'SLEEP';
   const [saver, setSaver] = useState(dataSaverActive());
   useEffect(() => subscribeDataSaver(setSaver), []);
+  // VIBE readout (Task 28): the session brain's mood state machine, finally
+  // visible in the player. Refreshes on track change + every 20s so a
+  // SKIP_STORM shows up while the screen is open.
+  const [vibe, setVibe] = useState(mindbeat.sessionReadout());
+  const [shifting, setShifting] = useState(false);
+  useEffect(() => {
+    setVibe(mindbeat.sessionReadout());
+    const t = setInterval(() => setVibe(mindbeat.sessionReadout()), 20000);
+    return () => clearInterval(t);
+  }, [active?.id]);
+  const shiftVibe = async () => {
+    if (!active || shifting) return;
+    setShifting(true);
+    try {
+      const exclude = new Set<string>([active.id, ...upNext.map((t) => t.id)]);
+      const picks = await mindbeat.vibeShift(active, exclude);
+      if (!picks.length) {
+        toast.show({ message: 'NOT ENOUGH SESSION YET — PLAY OR LIKE A FEW SONGS FIRST', icon: 'sparkles-outline' });
+        return;
+      }
+      const n = await queueVibeShift(picks);
+      if (n > 0) {
+        const dir = vibe.energy < 0.5 ? 'ENERGY UP' : 'WINDING DOWN';
+        toast.show({ message: `VIBE SHIFTED · ${n} SONGS · ${dir}`, icon: 'sparkles' });
+      } else {
+        toast.show({ message: 'COULD NOT QUEUE THE SHIFT', icon: 'alert-outline' });
+      }
+    } finally {
+      setShifting(false);
+    }
+  };
   // real lyrics (LRCLIB, on-device catalog lookup) — the broadsheet
   // card prints the actual words, never a fabricated byline.
   // lyricMiss closes the loop (v4.0.6): a null resolution means the desk
@@ -387,6 +431,21 @@ export function PlayerScreen() {
               <Ionicons name="repeat" size={19} color={colors.ink} />
               {repeat === 'track' ? <View style={styles.repeatOne} /> : null}
             </View>
+          </Brutal>
+        </View>
+
+        {/* ── vibe strip — the session brain, made visible (Task 28) ─ */}
+        <View style={styles.vibeStrip}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 }}>
+            <View style={[styles.vibeDot, vibe.listens > 0 && styles.vibeDotLive]} />
+            <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.2 }} numberOfLines={1}>
+              {`VIBE · ${VIBE_LABEL[vibe.vibe as keyof typeof VIBE_LABEL] ?? vibe.vibe} · E ${Math.round(vibe.energy * 100)}%`}
+            </MonoText>
+          </View>
+          <Brutal haptic shadow={0} pressOffset={1} onPress={() => void shiftVibe()} style={styles.vibeBtn}>
+            <MonoText size={9} bold color={colors.ink}>
+              {shifting ? 'SHIFTING…' : 'SHIFT ▸'}
+            </MonoText>
           </Brutal>
         </View>
 
@@ -812,6 +871,35 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 2,
     borderBottomColor: colors.ink,
+  },
+  /* vibe strip (Task 28) */
+  vibeStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+  },
+  vibeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.ink16,
+    marginRight: 8,
+  },
+  vibeDotLive: {
+    backgroundColor: colors.acid,
+  },
+  vibeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.acid,
   },
   /* sleep timer sheet (Task 28) */
   sleepSheet: {

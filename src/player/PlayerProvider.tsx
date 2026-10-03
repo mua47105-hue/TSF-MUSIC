@@ -142,6 +142,9 @@ interface PlayerState {
   toggleLike: (track: Track) => Promise<void>;
   playNext: (track: Track) => Promise<void>;
   addToQueue: (track: Track) => Promise<void>;
+  /** Vibe shift (Task 28): batch-insert recommended tracks after the current
+   *  one with a single toast (the caller owns the copy). Returns count queued. */
+  queueVibeShift: (tracks: Track[]) => Promise<number>;
   removeFromQueue: (trackId: string) => Promise<void>;
   refreshQueue: () => Promise<void>;
 }
@@ -661,6 +664,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** Vibe shift batch insert (Task 28): all picks land after the current
+   * track IN ORDER with no per-track toasts — the caller toasts once. */
+  async function queueVibeShift(tracks: Track[]): Promise<number> {
+    try {
+      if (!tracks.length) return 0;
+      await ensureSetup();
+      const playable = await buildPlayable(tracks);
+      if (!playable.length) return 0;
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      await TrackPlayer.add(playable, (currentIdx ?? -1) + 1);
+      await refreshQueue();
+      for (const t of playable) void mindbeat.queueAdded(t as unknown as Track, surfaceRef.current);
+      return playable.length;
+    } catch {
+      return 0;
+    }
+  }
+
   const value: PlayerState = useMemo(
     () => ({
       active,
@@ -683,6 +704,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       cycleRepeat,
       toggleLike,
       playNext,
+      queueVibeShift,
       addToQueue,
       removeFromQueue,
       refreshQueue,

@@ -407,6 +407,76 @@ class Mindbeat {
     }
   }
 
+  /**
+   * VIBE SHIFT (Task 28 · the felt-intelligence surface). The session brain
+   * already tracks where the listener's energy is heading; this lets the
+   * player SAY so and act on it: reads the session energy and queues 3 tracks
+   * that pull the mood the other way (up when the session is low/flat, down
+   * when it's peaking or winding down). Picks come ONLY from the user's own
+   * affinity pools (seed artist + top profile artists) scored through the
+   * proxy feature space — no social proof, nothing fabricated. Empty array =
+   * not enough evidence yet; the chip shows the honest cold-start line.
+   */
+  async vibeShift(seed: Track | null, excludeIds: Set<string>): Promise<Track[]> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return [];
+    const energy = this.brain?.sessionEnergy ?? 0.5;
+    const up = energy < 0.5; // low session → inject energy; high session → calm it
+    const [lo, hi] = up ? [0.6, 0.98] : [0.08, 0.45];
+
+    const artists: string[] = [];
+    const pushArtist = (a?: string) => {
+      const name = (a ?? '').split(/,|&/)[0].trim();
+      if (name && !artists.some((x) => x.toLowerCase() === name.toLowerCase())) artists.push(name);
+    };
+    pushArtist(seed?.artist);
+    for (const { artist } of topArtists(this.profile, Date.now(), 4)) pushArtist(artist);
+
+    const out: Track[] = [];
+    for (const a of artists) {
+      if (out.length >= 3) break;
+      let rows: Track[] = [];
+      try {
+        rows = await CATALOG.artistTracks(a, 14);
+      } catch {
+        rows = [];
+      }
+      for (const t of rows) {
+        if (out.length >= 3) break;
+        if (excludeIds.has(t.id) || out.some((x) => x.id === t.id)) continue;
+        const f = estimateFeatures({ artist: t.artist, title: t.title, album: t.album });
+        if (f.energy < lo || f.energy > hi) continue;
+        out.push({ ...t, isRecommended: true });
+      }
+    }
+    // Fallback ladder: affinity pool too narrow → seed-artist deep cuts only,
+    // still flagged + explained (never silent-empty when the catalog has rows).
+    if (!out.length && seed?.artist) {
+      try {
+        const rows = await CATALOG.artistTracks(seed.artist.split(/,|&/)[0].trim(), 6);
+        for (const t of rows) {
+          if (excludeIds.has(t.id) || out.some((x) => x.id === t.id)) continue;
+          out.push({ ...t, isRecommended: true });
+          if (out.length >= 3) break;
+        }
+      } catch {
+        /* honest empty */
+      }
+    }
+    return out;
+  }
+
+  /** Session readout for the player chip (nulls = cold session, honest). */
+  sessionReadout(): { vibe: string; energy: number; listens: number } {
+    const state = this.brain?.state;
+    return {
+      vibe: state?.vibe ?? 'WARMUP',
+      energy: this.brain?.sessionEnergy ?? 0,
+      listens: state?.window.length ?? 0,
+    };
+  }
+
+
   async dailyMixes(force = false): Promise<DailyMixV2[]> {
     await this.ready();
     if (this.disabled || !this.ledger) return [];
