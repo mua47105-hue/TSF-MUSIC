@@ -6,7 +6,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Collection, DailyMix, ListeningStats, PlayCountEntry, Playlist, Track } from '../types';
+import type { Collection, DailyMix, ListeningStats, PlayCountEntry, Playlist, Track, WeeklyCrate } from '../types';
 
 const KEYS = {
   favorites: 'tsf.favorites.v1',
@@ -18,6 +18,7 @@ const KEYS = {
   playlists: 'tsf.playlists.v1',
   playCounts: 'tsf.playCounts.v1',
   dailyMixes: 'tsf.dailyMixes.v1',
+  weeklyCrate: 'tsf.weeklyCrate.v1',
   autoplay: 'tsf.autoplay.v1',
   smartShuffle: 'tsf.smartShuffle.v1',
   dataSaver: 'tsf.dataSaver.v1',
@@ -312,6 +313,30 @@ export async function getDailyMixCache(): Promise<DailyMix[] | null> {
 
 export async function setDailyMixCache(mixes: DailyMix[]): Promise<void> {
   await writeJSON(KEYS.dailyMixes, { date: new Date().toDateString(), mixes });
+}
+
+// ── THE WEEKLY CRATE (§9.7) — persisted: an edition must survive restarts ──
+
+interface WeeklyCrateCache {
+  weekKey: string;
+  crate: WeeklyCrate;
+  /** The edition's own ids — next week's anti-repeat anchor. */
+  prevIds: string[];
+}
+
+/**
+ * The cached edition as written (any week) — the CALLER enforces week
+ * freshness by comparing `weekKey` against weekKeyOf(now). Kept here so
+ * the memory-mirror fallback in mindbeat can reuse even a stale anchor.
+ */
+export async function getWeeklyCrateCache(): Promise<WeeklyCrateCache | null> {
+  const cache = await readJSON<WeeklyCrateCache | null>(KEYS.weeklyCrate, null);
+  if (!cache || !cache.crate?.tracks?.length) return null;
+  return cache;
+}
+
+export async function setWeeklyCrateCache(cache: WeeklyCrateCache): Promise<void> {
+  await writeJSON(KEYS.weeklyCrate, cache);
 }
 
 // ── Settings ───────────────────────────────────────────────────────────

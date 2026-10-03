@@ -29,7 +29,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Collection, DailyMix, Track } from '../types';
+import type { Collection, DailyMix, Track, WeeklyCrate } from '../types';
 import {
   collectionIsClean,
   getCharts,
@@ -84,6 +84,7 @@ export function HomeScreen() {
   const [chip, setChip] = useState<Chip>('all');
 
   const [mixes, setMixes] = useState<DailyMix[] | null>(null);
+  const [crate, setCrate] = useState<WeeklyCrate | null>(null);
   const [trending, setTrending] = useState<Track[] | null>(null);
   const [because, setBecause] = useState<Array<{ artist: string; seedTrack?: Track }>>([]);
   const [charts, setCharts] = useState<Collection[]>([]);
@@ -230,6 +231,10 @@ export function HomeScreen() {
         .catch(() => setBecause([]));
       mindbeat.nowSound().then(setNowSound).catch(() => undefined);
       mindbeat.onTheRise().then(setOnTheRise).catch(() => undefined);
+      mindbeat
+        .weeklyCrate()
+        .then(setCrate)
+        .catch(() => setCrate(null));
       void loadPopularArtists();
       void loadFeed(force);
 
@@ -431,6 +436,7 @@ export function HomeScreen() {
             showAI={showAI}
             hasMixes={hasMixes}
             mixes={mixes}
+            crate={crate}
             favorites={favorites}
             nowSound={nowSound}
             recents={recents}
@@ -603,6 +609,7 @@ const HomeHeader = React.memo(function HomeHeader({
   showAI,
   hasMixes,
   mixes,
+  crate,
   favorites,
   nowSound,
   recents,
@@ -627,6 +634,7 @@ const HomeHeader = React.memo(function HomeHeader({
   showAI: boolean;
   hasMixes: boolean;
   mixes: DailyMix[] | null;
+  crate: WeeklyCrate | null;
   favorites: Track[];
   nowSound: NowSoundCard | null;
   recents: Track[];
@@ -874,6 +882,22 @@ const HomeHeader = React.memo(function HomeHeader({
         <ShelfSkeleton />
       ) : (
         <>
+          {crate && showAI ? (
+            <Shelf
+              kicker={userName ? `MADE FOR ${userName.toUpperCase()} · NEW EVERY MONDAY` : 'MADE FOR YOU · NEW EVERY MONDAY'}
+              title="The Weekly Crate"
+            >
+              <ShelfCard
+                title={crate.title}
+                subtitle={crate.subtitle}
+                artwork={crate.artwork}
+                seed={crate.id}
+                size={275}
+                onPress={() => openTrackCollection('The Weekly Crate', crate.tracks)}
+              />
+            </Shelf>
+          ) : null}
+
           {hasMixes && showAI ? (
             <Shelf kicker={userName ? `MADE FOR ${userName.toUpperCase()}` : 'MADE FOR YOU'} title="Daily Mixes">
               {mixes!.map((mix) => (

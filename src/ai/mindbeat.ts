@@ -14,11 +14,12 @@ import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory v
 import { SessionBrain } from './core/session';
 import { estimateFeatures } from './core/features';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
-import type { Track } from '../types';
-import { getFavorites, getSmartShuffleSetting } from '../storage/store';
+import type { Track, WeeklyCrate } from '../types';
+import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
+import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
@@ -39,6 +40,8 @@ class Mindbeat {
   private listeners = new Set<ProfileListener>();
   private initPromise: Promise<void> | null = null;
   private mixesCache: { at: number; mixes: DailyMixV2[]; yesterdayIds: Set<string>; sessionsAtBuild: number } | null = null;
+  /** Session mirror of this week's crate — survives a storage write failure. */
+  private weeklyMem: WeeklyCrate | null = null;
   private nowSoundCache: { at: number; card: NowSoundCard | null } | null = null;
   private riseCache: { at: number; card: OnTheRiseCard | null } | null = null;
   private sessionCountAtBoot = 0;
@@ -502,6 +505,48 @@ class Mindbeat {
       return mixes;
     } catch {
       return this.mixesCache?.mixes ?? [];
+    }
+  }
+
+  /**
+   * THE WEEKLY CRATE (§9.7) — one edition per ISO week, persisted.
+   * Same week → the same crate comes back (restart-stable); a new week
+   * rebuilds with last week's ids as the anti-repeat anchor.
+   */
+  async weeklyCrate(force = false): Promise<WeeklyCrate | null> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return null;
+    const weekKey = weekKeyOf(Date.now());
+    if (!force) {
+      try {
+        const cached = await getWeeklyCrateCache();
+        if (cached && cached.weekKey === weekKey) {
+          this.weeklyMem = cached.crate;
+          return cached.crate;
+        }
+      } catch {
+        /* fall through to rebuild */
+      }
+    }
+    const ctx = this.surfaceCtx();
+    // 90d: "unheard" means never-listened in living memory, not merely
+    // unserved this week (critic round — the 7d serve window was a lie).
+    ctx.listens = await this.ledger.getListens(90);
+    try {
+      // The previous edition's ids — even a stale-week cache is the right
+      // anti-repeat anchor (plus the engine's serve-recency on top).
+      const prev = await getWeeklyCrateCache();
+      const prevIds = new Set(prev?.prevIds ?? []);
+      const crate = await buildWeeklyCrate(ctx, prevIds);
+      if (crate) {
+        this.weeklyMem = crate;
+        await setWeeklyCrateCache({ weekKey: crate.weekKey, crate, prevIds: crate.tracks.map((t) => t.id) });
+      }
+      return crate;
+    } catch {
+      // Never let a cold/boot hiccup wipe a still-valid edition: the
+      // memory mirror answers even when storage readback fails.
+      return this.weeklyMem && this.weeklyMem.weekKey === weekKey ? this.weeklyMem : null;
     }
   }
 

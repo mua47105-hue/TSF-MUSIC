@@ -93,6 +93,11 @@ export const CADENCE = {
   mixCoreBridgeFresh: [0.6, 0.25, 0.15] as const, // core/bridge/fresh split
   mixMaxRepeatFromYesterday: 0.3,
   refreshAfterSessions: 3, // mixes re-rank after every 3rd session
+  // ── THE WEEKLY CRATE (§9.7) — the Discover Weekly surface ──
+  weeklySize: 30, // the edition's shelf count (Spotify DW class)
+  weeklyCoreBridgeFresh: [0.35, 0.4, 0.25] as const, // discovery outweighs core
+  weeklyMaxPrevRepeat: 0.3, // ≤30% of last week's crate may return
+  weeklyMinTracks: 8, // below this the crate is an embarrassment → honest null
   aiPoolMin: 60,
   aiPoolMax: 120,
   aiOutput: 25,

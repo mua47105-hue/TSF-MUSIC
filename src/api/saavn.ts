@@ -484,7 +484,9 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
     return a.includes(needle) || needle.includes(a.split(' feat')[0]);
   });
   const pool = matched.length >= 3 ? matched : tracks;
-  return pool.slice(0, limit);
+  // (critic fix, wave 6): this catalog feeds Daily Mixes / Radio / the
+  // Weekly Crate — the safety filter is not optional on ANY surface.
+  return filterClean(pool).slice(0, limit);
 }
 
 // ── ARTIST CATALOG — the REAL artist page, not a capped name-search ─────

@@ -16,7 +16,6 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   Animated,
@@ -32,8 +31,10 @@ import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
 import { fetchPlainLyrics, fetchSyncedLyrics } from '../api/lrclib';
-import { parseLrc, type LrcLine } from '../player/singalong';
+import { parseLrc, activeLrcIndex, type LrcLine } from '../player/singalong';
 import { SingAlong } from '../components/SingAlong';
+import { ShareCard } from '../share/ShareCard';
+import { shareNowPlaying } from '../share/share';
 import { isDoubleTap } from '../player/miniModel';
 import { usePlayer } from '../player/PlayerProvider';
 import {
@@ -288,6 +289,10 @@ export function PlayerScreen() {
   // surface — two taps inside 320ms like the song with a heart burst
   // (Spotify/Resso-class delight). Timing rule locked in miniModel.
   const lastArtTap = useRef(0);
+  const shareCardRef = useRef<View>(null);
+  // wave 6a — capture contract: artwork settle + in-flight lock
+  const artSettledRef = useRef(false);
+  const shareBusyRef = useRef(false);
   const burstVal = useRef(new Animated.Value(0)).current;
   const [burstOn, setBurstOn] = useState(false);
   // snapshot (critic): the icon must not flip mid-animation when
@@ -336,14 +341,32 @@ export function PlayerScreen() {
     }
   };
 
+  // track change → the settle state is a NEW image's truth, not the old one's
+  useEffect(() => {
+    artSettledRef.current = false;
+  }, [active?.artwork]);
+
   const onShare = async () => {
-    if (!active) return;
+    if (!active || shareBusyRef.current) return; // no stacked sheets (critic)
+    shareBusyRef.current = true;
     try {
-      await Share.share({
-        message: `${active.title} — ${active.artist}\nPlaying on TSF Music`,
+      // WAVE 6a: capture the PULSE share card (artwork + the exact synced
+      // line we're standing in) → native share sheet. Artwork must be
+      // REAL (wait ≤2s) and any failure falls back to the v4.0.5 text
+      // line — the button can never regress.
+      const line = syncedLines
+        ? syncedLines[activeLrcIndex(syncedLines, position * 1000)]?.text ?? null
+        : null;
+      await shareNowPlaying(shareCardRef, active, line, async () => {
+        if (!active.artwork) return false; // no artwork → no card
+        const t0 = Date.now();
+        while (!artSettledRef.current && Date.now() - t0 < 2000) {
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        return artSettledRef.current;
       });
-    } catch {
-      /* user cancelled */
+    } finally {
+      shareBusyRef.current = false;
     }
   };
 
@@ -351,6 +374,22 @@ export function PlayerScreen() {
 
   return (
     <View style={styles.root}>
+      {/* WAVE 6a — the share card lives off-screen; SHARE captures it
+          into a real 1080px image. Never visible, never hittable. */}
+      <View style={styles.shareCardStage} pointerEvents="none">
+        <ShareCard
+          ref={shareCardRef}
+          active={active}
+          onArtworkSettled={(ok) => {
+            artSettledRef.current = ok;
+          }}
+          lyricLine={
+            syncedLines
+              ? syncedLines[activeLrcIndex(syncedLines, position * 1000)]?.text ?? null
+              : null
+          }
+        />
+      </View>
       {/* the artwork wash — 14% under a paper gradient (the prototype's
           playerBg), carrying a whisper of the song's palette hue */}
       <Image
@@ -750,6 +789,9 @@ function QueuePill({ label, active, onPress }: { label: string; active: boolean;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  // the off-screen stage for the share card — mounted (real to the
+  // capture layer), parked beyond the left edge, zero hittability
+  shareCardStage: { position: 'absolute', left: -9999, top: 0 },
   bgArt: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
   scroll: { paddingHorizontal: 24 },
   topRow: {

@@ -30,7 +30,7 @@ sleep 4 # let the fresh boot settle before flow 01 restarts it clean
 #    the CI network flakes (round-11: the popular-artists fetch) and one
 #    honest retry separates flake from regression ────────────────────────
 REQUIRED=(01-fresh-boot 02-search 03-playback 04-skip 05-artist 06-tour)
-STRETCH=(07-wire-vibe 08-download)
+STRETCH=(07-wire-vibe 08-download 09-share)
 FAIL=0
 for f in "${REQUIRED[@]}"; do
   echo "===== FLOW $f ====="
@@ -53,6 +53,10 @@ done
 
 kill $LOGCAT_PID 2>/dev/null || true
 sleep 1
+
+# ── harvest maestro screenshots (flow 09's share-sheet evidence) ──────
+mkdir -p "$ART/maestro-shots"
+cp -r "$HOME/.maestro/tests"/. "$ART/maestro-shots/" 2>/dev/null || true
 
 # ── metrics + hygiene verdict ──────────────────────────────────────────
 set +e

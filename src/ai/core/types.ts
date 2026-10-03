@@ -36,6 +36,7 @@ export type SourceSurface =
   | 'search'
   | 'chart'
   | 'daily_mix'
+  | 'weekly_crate'
   | 'smart_shuffle'
   | 'radio'
   | 'daylist'

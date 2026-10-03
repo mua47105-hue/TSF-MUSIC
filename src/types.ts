@@ -105,6 +105,12 @@ export interface DailyMix {
   tracks: Track[];
 }
 
+/** THE WEEKLY CRATE (§9.7) — one edition per ISO week, discovery-weighted. */
+export interface WeeklyCrate extends DailyMix {
+  /** ISO week key ('2026-W40') — the crate's identity + rollover lock. */
+  weekKey: string;
+}
+
 export interface PlayCountEntry {
   track: Track;
   count: number;

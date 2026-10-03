@@ -1,0 +1,51 @@
+# 09 — STRETCH (evidence only, does not gate the lab): the wave-6 share
+# card path. Playback → broadsheet player → SHARE foot → the native
+# share sheet takes the screen (the captured PULSE card rides inside as
+# a 1080px PNG). A screenshot is taken WITH THE SHEET OPEN as the
+# capture-path's on-device evidence (critic round: "web-only evidence
+# isn't done"). Then back out and assert the app survived either
+# terminal — sheet open → back returns to the player; no sheet → back
+# returns to the mini bar. Sheet chrome varies across Android skins,
+# hence stretch, never gating.
+appId: com.tsf.music
+name: "09 - stretch share card to native sheet"
+---
+- launchApp
+- runFlow:
+    when:
+      notVisible:
+        id: "player-dismiss"
+    commands:
+      - tapOn:
+          text: "Index"
+      - extendedWaitUntil:
+          visible:
+            id: "search-input"
+          timeout: 20000
+      - tapOn:
+          id: "search-input"
+      - inputText: "arijit"
+      - hideKeyboard
+      - extendedWaitUntil:
+          visible:
+            id: "search-top-result"
+          timeout: 20000
+      - tapOn:
+          id: "search-top-result"
+      - extendedWaitUntil:
+          visible:
+            id: "player-dismiss"
+          timeout: 15000
+- tapOn:
+    text: "SHARE"
+- waitForAnimationToEnd:
+    timeout: 6000
+- takeScreenshot: 09-share-sheet-open
+- pressKey: Back
+- runFlow:
+    when:
+      notVisible:
+        id: "player-dismiss"
+    commands:
+      - assertVisible:
+          id: "mini-player"

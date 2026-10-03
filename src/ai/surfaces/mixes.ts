@@ -149,7 +149,7 @@ export async function buildDailyMixesV2(
         if (isYesterday) yesterdayCount += 1;
         picks.push({
           ...track,
-          isRecommended: false,
+          isRecommended: true, // mixes ARE recommendations — their reasons must render
           reason: reasonLine(c.reasonCode, track.artist.split(' feat')[0]),
           reasonCode: c.reasonCode,
           exploration: c.explorationSlot,
