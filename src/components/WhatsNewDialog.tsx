@@ -11,14 +11,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_3';
+const SEEN_KEY = 'tsf.whatsNew.v4_0_5';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Your app wears a new face: the launcher icon is now the swirl-head artwork — the old equalizer logo is retired from the app drawer, settings and the store listing.',
-  'Cropped clean: the Gemini sparkle that rode along with the artwork is gone — what ships is pure icon, edge to edge, tuned for every launcher shape (circle, squircle, rounded square).',
-  'Nothing else moved: playback, search, downloads and your library are exactly as v4.0.2 left them.',
+  'Albums and shelves open FULL now: every record in your Crates shows its complete tracklist, and artist pages carry the deep catalog — Arijit Singh went from a couple dozen songs to 80+ (top hits, top albums, editorial playlists) — plus a TOP ALBUMS rail on every artist page.',
+  'Radios never dead-end: tapping Because-You-Listened, artist radios and joined-credit names (the Bibi Phonk case) always builds a playable queue instead of “couldn’t load”.',
+  'The SAAVN stamp is gone from every song row, artist photos now resolve for mid-credit artists (deep credit-map scan), and THE INDEX got a full-shelf redesign — bigger readable stack chips (no more mashed text), chart quick-chips and a tighter Wire banner.',
 ];
 
 export function WhatsNewDialog() {
@@ -61,7 +61,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0.3 — THE NEW FACE EDITION
+            TSF MUSIC 4.0.5 — THE FULL SHELF EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
