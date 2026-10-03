@@ -31,6 +31,7 @@ import { reasonLine } from '../ai/core/decision';
 import type { TasteProfile } from '../ai/core/types';
 import { useToast } from '../components/Toast';
 import { PressableScale } from '../components/PressableScale';
+import { dataSaverActive, setDataSaverActive, subscribeDataSaver } from '../player/audioQuality';
 import { colors, fonts, radius, spacing } from '../theme';
 import type { RootStackParamList } from './navigation';
 
@@ -53,6 +54,9 @@ export function TasteScreen() {
   const [profile, setProfile] = useState<TasteProfile | null>(null);
   const [recsOff, setRecsOff] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dataSaver, setDataSaver] = useState(dataSaverActive());
+
+  useEffect(() => subscribeDataSaver(setDataSaver), []);
 
   const reload = useCallback(() => {
     mindbeat.onProfile(() => undefined); // ensure listeners path is warm
@@ -313,6 +317,29 @@ export function TasteScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.controlTitle}>Export my data</Text>
               <Text style={styles.controlSub}>Full taste profile + listening ledger as JSON — your data, literally.</Text>
+            </View>
+          </PressableScale>
+          <PressableScale
+            haptic
+            style={styles.controlCard}
+            onPress={() =>
+              act(async () => {
+                await setDataSaverActive(!dataSaver);
+                setDataSaver(!dataSaver);
+              }, dataSaver ? 'Full quality restored — 320 kbps' : 'Data saver on — about a third of the data per song')
+            }
+          >
+            <Ionicons name={dataSaver ? 'speedometer-outline' : 'musical-notes-outline'} size={20} color={dataSaver ? colors.orange : colors.textDim} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.controlTitle}>Data saver</Text>
+              <Text style={styles.controlSub}>
+                {dataSaver
+                  ? 'Streaming at the catalog\'s native 96/160 kbps. Your mobile data says thanks.'
+                  : 'Streaming at full 320 kbps. Turn on to use about a third of the data.'}
+              </Text>
+            </View>
+            <View style={[styles.switchTrack, dataSaver && styles.switchOn]}>
+              <View style={[styles.switchThumb, dataSaver && { backgroundColor: colors.accentBright }]} />
             </View>
           </PressableScale>
           <PressableScale haptic style={styles.controlCard} onPress={resetProfile}>

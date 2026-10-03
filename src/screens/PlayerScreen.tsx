@@ -31,6 +31,14 @@ import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
 import { fetchPlainLyrics } from '../api/lrclib';
 import { usePlayer } from '../player/PlayerProvider';
+import {
+  armSleepTimer,
+  cancelSleepTimer,
+  getSleepTimerState,
+  subscribeSleepTimer,
+  type SleepTimerState,
+} from '../player/sleepTimer';
+import { dataSaverActive, subscribeDataSaver } from '../player/audioQuality';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
 import { Brutal, MonoText } from '../components/Brutal';
@@ -156,32 +164,59 @@ export function PlayerScreen() {
   const duration = liveDuration > 0 ? liveDuration : active?.duration ?? 0;
 
   const [showQueue, setShowQueue] = useState(false);
+  const [showSleep, setShowSleep] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [radioLoading, setRadioLoading] = useState(false);
+  // sleep timer (Task 28): session-scoped, armed from the queue sheet
+  const [sleep, setSleep] = useState<SleepTimerState>(getSleepTimerState());
+  const [, forceSleepTick] = useState(0);
+  useEffect(() => subscribeSleepTimer(setSleep), []);
+  const sleepArmed = sleep.endAt != null && sleep.endAt > Date.now();
+  useEffect(() => {
+    if (!sleepArmed) return undefined;
+    const t = setInterval(() => forceSleepTick((n) => n + 1), 5000); // minute-granular label
+    return () => clearInterval(t);
+  }, [sleepArmed]);
+  const sleepLabel = sleepArmed
+    ? `SLEEP · ${Math.max(1, Math.ceil((sleep.endAt! - Date.now()) / 60000))}M`
+    : 'SLEEP';
+  const [saver, setSaver] = useState(dataSaverActive());
+  useEffect(() => subscribeDataSaver(setSaver), []);
   // real lyrics (LRCLIB, on-device catalog lookup) — the broadsheet
-  // card prints the actual words, never a fabricated byline
+  // card prints the actual words, never a fabricated byline.
+  // lyricMiss closes the loop (v4.0.6): a null resolution means the desk
+  // genuinely found nothing — the panel must SAY so instead of claiming
+  // to fetch forever (dead-end audit, Task 28).
   const [lyricExcerpt, setLyricExcerpt] = useState<string | null>(null);
+  const [lyricMiss, setLyricMiss] = useState(false);
+  const [lyricAttempt, setLyricAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLyricExcerpt(null);
+    setLyricMiss(false);
     if (!active) return undefined;
     const ctrl = new AbortController();
     fetchPlainLyrics(active.title, active.artist, ctrl.signal)
       .then((lyrics) => {
-        if (cancelled || !lyrics) return;
+        if (cancelled) return;
+        if (!lyrics) {
+          setLyricMiss(true); // honest terminal state — never an eternal spinner
+          return;
+        }
         const lines = lyrics
           .split('\n')
           .map((l) => l.trim())
           .filter((l) => l && !l.startsWith('['));
         if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
+        else setLyricMiss(true);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
       ctrl.abort();
     };
-  }, [active?.id]);
+  }, [active?.id, lyricAttempt]);
 
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
@@ -271,7 +306,7 @@ export function PlayerScreen() {
           />
           <View style={styles.stamp}>
             <MonoText size={8} bold color={colors.ink} style={{ letterSpacing: 0.8, textAlign: 'center', lineHeight: 11 }}>
-              TSF{'\n'}320{'\n'}KBPS
+              {saver ? 'TSF\n96\nSAVER' : 'TSF\n320\nKBPS'}
             </MonoText>
           </View>
         </View>
@@ -356,7 +391,12 @@ export function PlayerScreen() {
         </View>
 
         {/* ── lyrics card — the real words via LRCLIB ──────────────── */}
-        <View style={styles.lyricsCard}>
+        <View
+          style={styles.lyricsCard}
+          {...(lyricMiss && !lyricExcerpt
+            ? { onStartShouldSetResponder: () => { setLyricAttempt((n) => n + 1); return false; } }
+            : {})}
+        >
           <MonoText size={8.5} bold color={colors.orange} style={{ letterSpacing: 2 }}>
             LYRICS · VIA LRCLIB
           </MonoText>
@@ -366,13 +406,19 @@ export function PlayerScreen() {
             </Text>
           ) : (
             <Text style={[styles.lyricsLine, { color: colors.ink40 }]} numberOfLines={2}>
-              {active
-                ? `${active.title} — ${active.artist}`
-                : 'The words land here once the catalog resolves this track'}
+              {lyricMiss
+                ? 'The desk checked the catalog — nothing filed for this one (instrumental, obscure, or not yet indexed). Tap to retry.'
+                : active
+                  ? `${active.title} — ${active.artist}`
+                  : 'The words land here once the catalog resolves this track'}
             </Text>
           )}
           <MonoText size={9.5} color={colors.ink40} style={{ marginTop: 5, letterSpacing: 0.8 }}>
-            {lyricExcerpt ? 'PLAIN LYRICS · ON DEVICE LOOKUP' : 'FETCHING FROM THE LYRICS DESK…'}
+            {lyricExcerpt
+              ? 'PLAIN LYRICS · ON DEVICE LOOKUP'
+              : lyricMiss
+                ? 'NO LYRICS FILED · INSTRUMENTAL OR OFF-DESK — TAP TO RETRY'
+                : 'FETCHING FROM THE LYRICS DESK…'}
           </MonoText>
         </View>
       </ScrollView>
@@ -404,6 +450,11 @@ export function PlayerScreen() {
             <View style={styles.queueToggles}>
               <QueuePill label="SMART SHUFFLE" active={smartShuffle} onPress={() => setSmartShuffle(!smartShuffle)} />
               <QueuePill label="AUTOPLAY" active={autoplay} onPress={() => setAutoplay(!autoplay)} />
+              <QueuePill
+                label={sleepLabel}
+                active={sleepArmed}
+                onPress={() => setShowSleep((v) => !v)}
+              />
             </View>
 
             {active ? (
@@ -456,6 +507,54 @@ export function PlayerScreen() {
                 ))
               )}
             </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── sleep timer sheet (Task 28 · godmode) ───────────────────── */}
+      <Modal visible={showSleep} transparent animationType="fade" onRequestClose={() => setShowSleep(false)}>
+        <Pressable style={styles.queueBackdrop} onPress={() => setShowSleep(false)}>
+          <Pressable style={styles.sleepSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.queueHeaderRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.queueHeader}>Sleep Timer</Text>
+                <MonoText size={9.5} color={colors.ink60} style={{ marginTop: 3, letterSpacing: 0.8 }}>
+                  {sleepArmed
+                    ? `MUSIC STOPS IN ${Math.max(1, Math.ceil((sleep.endAt! - Date.now()) / 60000))} MIN · FADES THE LAST 8S`
+                    : 'THE QUEUE WAVES GOODNIGHT — NO SUDDEN SILENCE'}
+                </MonoText>
+              </View>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShowSleep(false)} style={styles.chevBtn}>
+                <Ionicons name="close" size={16} color={colors.ink} />
+              </Brutal>
+            </View>
+            <View style={styles.sleepOpts}>
+              {[15, 30, 45, 60].map((m) => (
+                <Brutal
+                  key={m}
+                  haptic
+                  shadow={0}
+                  pressOffset={1}
+                  onPress={() => armSleepTimer(m)}
+                  style={[styles.sleepOpt, sleep.minutes === m && sleepArmed && styles.sleepOptOn]}
+                >
+                  <MonoText size={11} bold color={colors.ink}>
+                    {`${m} MIN`}
+                  </MonoText>
+                </Brutal>
+              ))}
+              <Brutal
+                haptic
+                shadow={0}
+                pressOffset={1}
+                onPress={() => cancelSleepTimer()}
+                style={styles.sleepOpt}
+              >
+                <MonoText size={11} bold color={colors.ink40}>
+                  {'TURN OFF'}
+                </MonoText>
+              </Brutal>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -708,10 +807,36 @@ const styles = StyleSheet.create({
   },
   queueToggles: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     paddingVertical: 12,
     borderBottomWidth: 2,
     borderBottomColor: colors.ink,
+  },
+  /* sleep timer sheet (Task 28) */
+  sleepSheet: {
+    backgroundColor: colors.paper,
+    borderTopWidth: 3,
+    borderTopColor: colors.ink,
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  sleepOpts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 14,
+  },
+  sleepOpt: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+  },
+  sleepOptOn: {
+    backgroundColor: colors.acid,
   },
   qPill: {
     flexDirection: 'row',

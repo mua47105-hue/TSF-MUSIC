@@ -21,9 +21,15 @@ let repeatMode: 'off' | 'queue' | 'track' = 'off';
 let shuffle = false;
 let tick: ReturnType<typeof setInterval> | null = null;
 
-const listeners: Array<(e?: any) => void> = [];
-function emit(event?: any) {
-  listeners.forEach((l) => l(event));
+const listeners: Array<{ event: string | null; handler: (e?: any) => void }> = [];
+/** Typed dispatch: each listener receives only the event kind it subscribed
+ * to (null = wildcard). Mirrors RNTP semantics so the web lab can exercise
+ * the SAME event-driven paths as the device — heartbeats (progress ticks),
+ * autoplay radio (queue ended) and transition instrumentation (Task 28 B5). */
+function emit(event: { type: string } & Record<string, any>) {
+  listeners.forEach((l) => {
+    if (l.event === null || l.event === event.type) l.handler(event);
+  });
 }
 
 function startTicker() {
@@ -32,10 +38,17 @@ function startTicker() {
     if (playing && duration > 0) {
       position += 0.5;
       if (position >= duration) {
+        const atEnd = activeIndex >= queue.length - 1;
         position = 0;
-        if (activeIndex < queue.length - 1) activeIndex += 1;
-        duration = Number(queue[activeIndex]?.duration ?? 214) || 214;
+        if (!atEnd) {
+          activeIndex += 1;
+          duration = Number(queue[activeIndex]?.duration ?? 214) || 214;
+        } else {
+          // real contract: RNTP emits queue-ended when the last item plays out
+          emit({ type: Event.PlaybackQueueEnded, track: queue[activeIndex], position: duration });
+        }
       }
+      emit({ type: Event.PlaybackProgressUpdated, position, duration, buffered: duration, track: queue[activeIndex] });
     }
   }, 500);
 }
@@ -147,9 +160,12 @@ const TrackPlayer = {
   registerPlaybackService(): void {
     /* no-op — service events never fire on web */
   },
-  addEventListener(_event: string, _handler: (e?: any) => void): { remove: () => void } {
-    listeners.push(_handler);
-    return { remove: () => undefined };
+  addEventListener(event: string, handler: (e?: any) => void): { remove: () => void } {
+    listeners.push({ event, handler });
+    return { remove: () => {
+      const i = listeners.findIndex((l) => l.handler === handler);
+      if (i >= 0) listeners.splice(i, 1);
+    } };
   },
 
   async load(track: RNTrack): Promise<void> {
@@ -158,6 +174,7 @@ const TrackPlayer = {
     duration = Number(track?.duration ?? 214) || 214;
     position = 0;
     playing = true;
+    emit({ type: Event.PlaybackActiveTrackChanged, index: 0, track });
   },
   async play(): Promise<void> {
     playing = true;
@@ -195,12 +212,14 @@ const TrackPlayer = {
     position = 0;
     duration = Number(queue[index]?.duration ?? 214) || 214;
     playing = true;
+    emit({ type: Event.PlaybackActiveTrackChanged, index, track: queue[index] });
   },
   async skipToNext(): Promise<void> {
     if (activeIndex < queue.length - 1) {
       activeIndex += 1;
       position = 0;
       duration = Number(queue[activeIndex]?.duration ?? 214) || 214;
+      emit({ type: Event.PlaybackActiveTrackChanged, index: activeIndex, track: queue[activeIndex] });
     }
   },
   async skipToPrevious(): Promise<void> {
@@ -212,6 +231,7 @@ const TrackPlayer = {
       activeIndex -= 1;
       position = 0;
       duration = Number(queue[activeIndex]?.duration ?? 214) || 214;
+      emit({ type: Event.PlaybackActiveTrackChanged, index: activeIndex, track: queue[activeIndex] });
     }
   },
   async seekTo(seconds: number): Promise<void> {
@@ -281,11 +301,15 @@ export function useActiveTrack(): RNTrack | null {
   return track;
 }
 
-export function useTrackPlayerEvents(_events: unknown[], handler: (e: any) => void) {
+export function useTrackPlayerEvents(events: readonly string[], handler: (e: any) => void) {
   useEffect(() => {
-    listeners.push(handler);
+    const wrapped = (e?: any) => {
+      if (!e || !events.includes(e.type)) return; // RNTP dispatches by kind
+      handler(e);
+    };
+    listeners.push({ event: null, handler: wrapped });
     return () => {
-      const i = listeners.indexOf(handler);
+      const i = listeners.findIndex((l) => l.handler === wrapped);
       if (i >= 0) listeners.splice(i, 1);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

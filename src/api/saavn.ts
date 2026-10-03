@@ -11,6 +11,7 @@ import CryptoJS from 'crypto-js';
 import type { Collection, Track } from '../types';
 import { filterClean, isClean } from '../safety';
 import { recordingKey, reconcileRecordings } from './recording';
+import { dataSaverActive } from '../player/audioQuality';
 
 const API = 'https://www.jiosaavn.com/api.php';
 const DES_KEY = CryptoJS.enc.Utf8.parse('38346591');
@@ -61,11 +62,14 @@ export function decryptMediaUrl(encrypted?: string): string | null {
   }
 }
 
-/** Resolve the highest-quality playable URL for a track. */
+/** Resolve the highest-quality playable URL for a track.
+ *  Data saver (Task 28): when ON, keep the catalog's native 96/160 bitrate —
+ *  the 320 upgrade is skipped, roughly a third of the data per song. */
 export function resolveStreamUrl(track: Track): string | null {
   if (track.localUri) return track.localUri;
   const base = decryptMediaUrl(track.encryptedUrl) ?? track.previewUrl ?? null;
   if (!base) return null;
+  if (dataSaverActive()) return base;
   // Upgrade to 320 kbps only when the provider says it exists.
   if (track.has320 === false) return base;
   return base.replace('_96.mp4', '_320.mp4').replace('_160.mp4', '_320.mp4');
@@ -82,7 +86,7 @@ export async function refreshStreamUrl(track: Track): Promise<string | null> {
     const fresh = decryptMediaUrl(enc);
     if (!fresh) return null;
     const has320 = song?.more_info?.['320kbps'] === 'true' || song?.['320kbps'] === 'true';
-    if (!has320) return fresh;
+    if (!has320 || dataSaverActive()) return fresh;
     return fresh.replace('_96.mp4', '_320.mp4').replace('_160.mp4', '_320.mp4');
   } catch {
     /* fall through */

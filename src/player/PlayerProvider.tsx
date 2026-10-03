@@ -55,6 +55,7 @@ import {
   toggleFavorite as storeToggleFavorite,
 } from '../storage/store';
 import { perfMark } from '../perf/perf';
+import { initDataSaver } from './audioQuality';
 
 let setupPromise: Promise<void> | null = null;
 let notifAsked = false;
@@ -189,6 +190,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     getFavorites().then((list) => setFavorites(new Set(list.map((t) => t.id))));
     getSmartShuffleSetting().then(setSmartShuffleState);
     getAutoplay().then(setAutoplayState);
+    initDataSaver(); // sync bridge for the stream resolver (Task 28)
   }, [refreshQueue]);
 
   // The background service may extend the queue with radio tracks while the

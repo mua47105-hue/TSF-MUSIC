@@ -20,6 +20,7 @@ const KEYS = {
   dailyMixes: 'tsf.dailyMixes.v1',
   autoplay: 'tsf.autoplay.v1',
   smartShuffle: 'tsf.smartShuffle.v1',
+  dataSaver: 'tsf.dataSaver.v1',
 };
 
 async function readJSON<T>(key: string, fallback: T): Promise<T> {
@@ -330,4 +331,15 @@ export async function getSmartShuffleSetting(): Promise<boolean> {
 
 export async function setSmartShuffleSetting(on: boolean): Promise<void> {
   await writeJSON(KEYS.smartShuffle, on);
+}
+
+/** Data saver (Task 28): stream at the catalog's native 96/160 instead of the
+ * 320 upgrade — roughly a third of the mobile data per song. Default OFF so
+ * the out-of-box experience stays maximally juicy. */
+export async function getDataSaver(): Promise<boolean> {
+  return readJSON<boolean>(KEYS.dataSaver, false);
+}
+
+export async function setDataSaver(on: boolean): Promise<void> {
+  await writeJSON(KEYS.dataSaver, on);
 }
