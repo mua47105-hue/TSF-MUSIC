@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, fonts } from '../theme';
 import { Artwork } from './Artwork';
 import { usePlayer } from '../player/PlayerProvider';
+import { miniDisplay } from '../player/miniModel';
 import type { RootStackParamList } from '../screens/navigation';
 import { EqualizerBars } from './TrackRow';
 import { MonoText } from './Brutal';
@@ -22,11 +23,15 @@ import { orangeShadow } from '../theme';
 
 export function MiniPlayer() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { active, isPlaying, loading, togglePlay, next, favorites, toggleLike } = usePlayer();
+  const { active, optimistic, isPlaying, loading, togglePlay, next, favorites, toggleLike } = usePlayer();
   const { position, duration } = useProgress(500);
-  if (!active) return null;
+  // INSTANT TAP (Task 29): the bar answers a row press the moment it
+  // happens — the tapped song shows with TUNING IN while the stream
+  // resolves; real playback always wins over the plant.
+  const { shown, tuning } = miniDisplay(active, optimistic);
+  if (!shown) return null;
   const pct = duration > 0 ? Math.min(1, position / duration) : 0;
-  const isFav = favorites.has(active.id);
+  const isFav = favorites.has(shown.id);
 
   return (
     <View style={[styles.card, orangeShadow(4)]}>
@@ -36,7 +41,7 @@ export function MiniPlayer() {
         testID="mini-player"
       >
         <View>
-          <Artwork uri={active.artwork} seed={active.id} size={38} bordered={false} style={styles.miniArt} />
+          <Artwork uri={shown.artwork} seed={shown.id} size={38} bordered={false} style={styles.miniArt} />
           {isPlaying ? (
             <View style={styles.eqOverlay}>
               <EqualizerBars playing size={12} />
@@ -45,17 +50,26 @@ export function MiniPlayer() {
         </View>
         <View style={styles.meta}>
           <Text style={styles.title} numberOfLines={1}>
-            {active.title}
+            {shown.title}
           </Text>
-          <MonoText size={9.5} color={colors.onInk60} style={{ marginTop: 1 }} numberOfLines={1}>
-            {active.artist}
-          </MonoText>
+          {tuning ? (
+            <View style={styles.tuningRow} testID="mini-tuning">
+              <View style={styles.tuningDot} />
+              <MonoText size={9.5} bold color={colors.acid} style={{ letterSpacing: 1.4 }}>
+                TUNING IN…
+              </MonoText>
+            </View>
+          ) : (
+            <MonoText size={9.5} color={colors.onInk60} style={{ marginTop: 1 }} numberOfLines={1}>
+              {shown.artist}
+            </MonoText>
+          )}
         </View>
 
         <Pressable
           hitSlop={10}
           style={styles.btn}
-          onPress={() => toggleLike(active)}
+          onPress={() => toggleLike(shown)}
           accessibilityLabel="Like"
           testID="mini-like"
         >
@@ -66,7 +80,7 @@ export function MiniPlayer() {
           />
         </Pressable>
         <Pressable hitSlop={10} style={styles.btn} onPress={togglePlay} accessibilityLabel="Play" testID="mini-toggle">
-          {loading ? (
+          {loading || tuning ? (
             <View style={styles.spinner} />
           ) : (
             <Ionicons name={isPlaying ? 'pause' : 'play'} size={21} color={colors.onInk} />
@@ -115,6 +129,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   btn: { padding: 7, alignItems: 'center', justifyContent: 'center' },
+  tuningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 1,
+  },
+  tuningDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: colors.acid,
+  },
   spinner: {
     width: 16,
     height: 16,

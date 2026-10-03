@@ -19,6 +19,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  Animated,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -33,6 +34,7 @@ import { mindbeat } from '../ai/mindbeat';
 import { fetchPlainLyrics, fetchSyncedLyrics } from '../api/lrclib';
 import { parseLrc, type LrcLine } from '../player/singalong';
 import { SingAlong } from '../components/SingAlong';
+import { isDoubleTap } from '../player/miniModel';
 import { usePlayer } from '../player/PlayerProvider';
 import {
   armSleepTimer,
@@ -280,6 +282,28 @@ export function PlayerScreen() {
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
 
+  // DOUBLE-TAP ARTWORK → LIKE (Task 29): the big square is a gesture
+  // surface — two taps inside 320ms like the song with a heart burst
+  // (Spotify/Resso-class delight). Timing rule locked in miniModel.
+  const lastArtTap = useRef(0);
+  const burstVal = useRef(new Animated.Value(0)).current;
+  const [burstOn, setBurstOn] = useState(false);
+  const onArtworkPress = () => {
+    const now = Date.now();
+    if (isDoubleTap(now, lastArtTap.current)) {
+      lastArtTap.current = 0;
+      if (!active) return;
+      void toggleLike(active);
+      setBurstOn(true);
+      burstVal.setValue(0);
+      Animated.timing(burstVal, { toValue: 1, duration: 640, useNativeDriver: true }).start(() =>
+        setBurstOn(false),
+      );
+      return;
+    }
+    lastArtTap.current = now;
+  };
+
   useEffect(() => {
     void refreshQueue();
   }, [refreshQueue]);
@@ -356,14 +380,33 @@ export function PlayerScreen() {
 
         {/* ── artwork + the 320 kbps stamp ─────────────────────────── */}
         <View style={[styles.artWrap, { width: artSize, height: artSize }]}>
-          <Artwork
-            uri={active?.artwork}
-            seed={trackKey}
-            size={artSize}
-            bordered={false}
-            style={styles.artCard}
-          />
-          <View style={styles.stamp}>
+          <Pressable onPress={onArtworkPress} testID="player-artwork" style={styles.artCard}>
+            <Artwork
+              uri={active?.artwork}
+              seed={trackKey}
+              size={artSize}
+              bordered={false}
+              style={styles.artCard}
+            />
+            {burstOn ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.burstHeart,
+                  {
+                    opacity: burstVal.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 1, 0] }),
+                    transform: [
+                      { scale: burstVal.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0.5, 1.15, 1.6] }) },
+                      { translateY: burstVal.interpolate({ inputRange: [0, 1], outputRange: [0, -46] }) },
+                    ],
+                  },
+                ]}
+              >
+                <Ionicons name={isFav ? 'heart-dislike' : 'heart'} size={74} color={colors.orange} />
+              </Animated.View>
+            ) : null}
+          </Pressable>
+          <View pointerEvents="none" style={styles.stamp}>
             <MonoText size={8} bold color={colors.ink} style={{ letterSpacing: 0.8, textAlign: 'center', lineHeight: 11 }}>
               {saver ? 'TSF\n96\nSAVER' : 'TSF\n320\nKBPS'}
             </MonoText>
@@ -716,6 +759,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
   },
   artWrap: {
+    position: 'relative',
     alignSelf: 'center',
     marginTop: 6,
   },
@@ -723,6 +767,15 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: colors.ink,
     ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 8, height: 8 }, elevation: 8 } as object),
+  },
+  burstHeart: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -37,
+    marginTop: -37,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stamp: {
     position: 'absolute',

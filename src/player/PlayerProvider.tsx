@@ -122,6 +122,10 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 interface PlayerState {
   active: Track | null;
+  /** Optimistic plant (Task 29): the tapped row shows in the mini bar
+   *  the instant it is pressed, BEFORE the stream resolves. Cleared when
+   *  the real track mounts, on failure, or after 8s. */
+  optimistic: Track | null;
   isPlaying: boolean;
   loading: boolean;
   queue: Track[];
@@ -154,6 +158,9 @@ const PlayerContext = createContext<PlayerState | null>(null);
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const [queue, setQueue] = useState<Track[]>([]);
+  // INSTANT TAP (Task 29): the row the user last asked to play, planted
+  // BEFORE any network work so the mini bar answers the tap immediately.
+  const [optimistic, setOptimistic] = useState<Track | null>(null);
   const [shuffle, setShuffleState] = useState(false);
   const [smartShuffle, setSmartShuffleState] = useState(false);
   const [autoplay, setAutoplayState] = useState(true);
@@ -223,6 +230,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // the new one starts, surface-tagged).
   const prevTrackId = useRef<string>('');
   useEffect(() => {
+    // INSTANT TAP: a real track mounting means the plant is obsolete —
+    // clear it no matter which song won (covers retry + service starts)
+    if (active?.id) setOptimistic((cur) => (cur ? null : cur));
     if (!active?.id || active.id === prevTrackId.current) return;
     perfMark('track-active', String(active.id));
     // SINGLE-OWNER RULE (mirror of the service gate): the provider owns
@@ -335,6 +345,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await ensureSetup();
       await askNotificationPermission();
       const wantedId = tracks[startIndex]?.id;
+      // INSTANT TAP (Task 29): answer the press NOW — the mini bar shows
+      // the tapped song with a TUNING IN state while the stream resolves.
+      if (wantedId) {
+        const planted = tracks[startIndex];
+        setOptimistic(planted);
+        setTimeout(() => {
+          // stale plant = honest reset (resolution never came back)
+          setOptimistic((cur) => (cur?.id === planted.id ? null : cur));
+        }, 8000);
+      }
       perfMark('play-request', String(wantedId));
       const playable = await buildPlayable(tracks);
       if (!playable.length || !wantedId) {
@@ -360,12 +380,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             await TrackPlayer.add(retry);
             await TrackPlayer.skip(startAt2);
             await TrackPlayer.play();
+            setOptimistic(null); // the real track takes over from the plant
             return;
           }
           // P1-3: the retry promise gets a FINAL honest answer, never silence
           toast.show({ message: 'That YouTube track is unavailable right now', icon: 'alert-outline' });
           if (__DEV__) console.warn('[yt] resolve failed:', trail);
         }
+        setOptimistic(null); // honest failure: the plant comes down
         return;
       }
       // the WANTED row itself dropped (others survived) — never start on a
@@ -380,6 +402,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               : 'Could not queue that song',
           icon: 'alert-outline',
         });
+        setOptimistic(null); // honest failure: the plant comes down
         return;
       }
       const startAt = Math.max(0, playable.findIndex((t) => t.id === wantedId));
@@ -390,12 +413,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await TrackPlayer.add(playable);
       await TrackPlayer.skip(startAt);
       await TrackPlayer.play();
+      setOptimistic(null); // the real track takes over from the plant
       perfMark('queue-started', String(wantedId));
       if (smartShuffle) {
         void injectRecommendations(startAt);
       }
     } catch {
       /* transient setup/network failure — next tap retries */
+      setOptimistic(null); // honest failure: the plant comes down
     }
   }
 
@@ -685,6 +710,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const value: PlayerState = useMemo(
     () => ({
       active,
+      optimistic,
       isPlaying,
       loading,
       queue,
@@ -710,7 +736,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       refreshQueue,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [active, isPlaying, loading, queue, shuffle, smartShuffle, autoplay, repeat, favorites],
+    [active, optimistic, isPlaying, loading, queue, shuffle, smartShuffle, autoplay, repeat, favorites],
   );
 
   return (
