@@ -15,7 +15,7 @@ name: Android E2E Lab
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'evolve/**']
     paths:
       - 'src/**'
       - 'App.tsx'
