@@ -257,12 +257,14 @@ export function PlayerScreen() {
           setLyricMiss(true); // honest terminal state — never an eternal spinner
           return;
         }
+        // strip LRC stamps first (critic: synced-only rows borrow the
+        // stamped text — those brackets are not “no lyrics filed”)
         const lines = lyrics
           .split('\n')
-          .map((l) => l.trim())
+          .map((l) => l.replace(/^(?:\s*\[[^\]]*\])+\s*/, '').trim())
           .filter((l) => l && !l.startsWith('['));
         if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
-        else setLyricMiss(true);
+        else setLyricMiss(true); // stamp-only file = instrumental — honest miss
       })
       .catch(() => undefined);
     fetchSyncedLyrics(active.title, active.artist, ctrl.signal)
@@ -288,17 +290,23 @@ export function PlayerScreen() {
   const lastArtTap = useRef(0);
   const burstVal = useRef(new Animated.Value(0)).current;
   const [burstOn, setBurstOn] = useState(false);
+  // snapshot (critic): the icon must not flip mid-animation when
+  // toggleLike's state lands ~100ms into the 640ms burst
+  const [burstFav, setBurstFav] = useState(false);
   const onArtworkPress = () => {
     const now = Date.now();
     if (isDoubleTap(now, lastArtTap.current)) {
       lastArtTap.current = 0;
       if (!active) return;
       void toggleLike(active);
+      setBurstFav(isFav); // the state BEFORE the toggle
       setBurstOn(true);
       burstVal.setValue(0);
-      Animated.timing(burstVal, { toValue: 1, duration: 640, useNativeDriver: true }).start(() =>
-        setBurstOn(false),
-      );
+      Animated.timing(burstVal, { toValue: 1, duration: 640, useNativeDriver: true }).start(({ finished }) => {
+        // critic: a finished:false callback (interrupted by a newer burst)
+        // must never unmount the newer burst's view
+        if (finished) setBurstOn(false);
+      });
       return;
     }
     lastArtTap.current = now;
@@ -380,7 +388,13 @@ export function PlayerScreen() {
 
         {/* ── artwork + the 320 kbps stamp ─────────────────────────── */}
         <View style={[styles.artWrap, { width: artSize, height: artSize }]}>
-          <Pressable onPress={onArtworkPress} testID="player-artwork" style={styles.artCard}>
+          <Pressable
+            onPress={onArtworkPress}
+            testID="player-artwork"
+            style={styles.artCard}
+            accessibilityRole="button"
+            accessibilityLabel="Now playing artwork. Double-tap to like or unlike this song."
+          >
             <Artwork
               uri={active?.artwork}
               seed={trackKey}
@@ -402,7 +416,7 @@ export function PlayerScreen() {
                   },
                 ]}
               >
-                <Ionicons name={isFav ? 'heart-dislike' : 'heart'} size={74} color={colors.orange} />
+                <Ionicons name={burstFav ? 'heart-dislike' : 'heart'} size={74} color={colors.orange} />
               </Animated.View>
             ) : null}
           </Pressable>
@@ -510,7 +524,7 @@ export function PlayerScreen() {
         {/* ── lyrics card — the real words via LRCLIB ──────────────── */}
         <View
           style={styles.lyricsCard}
-          {...(lyricMiss && !lyricExcerpt
+          {...(lyricMiss && !lyricExcerpt && !syncedLines
             ? { onStartShouldSetResponder: () => { setLyricAttempt((n) => n + 1); return false; } }
             : {})}
         >

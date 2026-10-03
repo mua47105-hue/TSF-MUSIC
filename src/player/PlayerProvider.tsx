@@ -161,6 +161,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // INSTANT TAP (Task 29): the row the user last asked to play, planted
   // BEFORE any network work so the mini bar answers the tap immediately.
   const [optimistic, setOptimistic] = useState<Track | null>(null);
+  // the 8s stale-plant timer (critic IT-3): cleared before every new plant
+  const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shuffle, setShuffleState] = useState(false);
   const [smartShuffle, setSmartShuffleState] = useState(false);
   const [autoplay, setAutoplayState] = useState(true);
@@ -341,20 +343,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   async function playQueue(tracks: Track[], startIndex = 0, surface: SourceSurface = 'user_playlist'): Promise<void> {
     surfaceRef.current = surface;
+    // INSTANT TAP (Task 29, critic IT-1): answer the press BEFORE any await
+    // — ensureSetup/notification-permission must never sit between the tap
+    // and the mini bar's TUNING IN.
+    const planted = tracks[startIndex];
+    if (planted?.id) {
+      if (staleTimer.current) clearTimeout(staleTimer.current);
+      setOptimistic(planted);
+      staleTimer.current = setTimeout(() => {
+        // stale plant = honest reset (resolution never came back)
+        setOptimistic((cur) => (cur?.id === planted.id ? null : cur));
+      }, 8000);
+    }
     try {
       await ensureSetup();
       await askNotificationPermission();
       const wantedId = tracks[startIndex]?.id;
-      // INSTANT TAP (Task 29): answer the press NOW — the mini bar shows
-      // the tapped song with a TUNING IN state while the stream resolves.
-      if (wantedId) {
-        const planted = tracks[startIndex];
-        setOptimistic(planted);
-        setTimeout(() => {
-          // stale plant = honest reset (resolution never came back)
-          setOptimistic((cur) => (cur?.id === planted.id ? null : cur));
-        }, 8000);
-      }
       perfMark('play-request', String(wantedId));
       const playable = await buildPlayable(tracks);
       if (!playable.length || !wantedId) {
@@ -413,6 +417,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await TrackPlayer.add(playable);
       await TrackPlayer.skip(startAt);
       await TrackPlayer.play();
+      if (staleTimer.current) clearTimeout(staleTimer.current);
       setOptimistic(null); // the real track takes over from the plant
       perfMark('queue-started', String(wantedId));
       if (smartShuffle) {
@@ -420,6 +425,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       /* transient setup/network failure — next tap retries */
+      if (staleTimer.current) clearTimeout(staleTimer.current);
       setOptimistic(null); // honest failure: the plant comes down
     }
   }

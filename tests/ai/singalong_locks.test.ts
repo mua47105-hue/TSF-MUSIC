@@ -32,8 +32,9 @@ describe('singalong · parseLrc', () => {
   });
 
   test('metadata tags and stamp-only (instrumental) lines are dropped', () => {
+    // the offset tag in the header now SHIFTS the timeline (+500)
     const lines = parseLrc('[ti:Song]\n[ar:Artist]\n[offset:+500]\n[00:05.00]real\n[00:15.00]');
-    expect(lines).toEqual([{ tMs: 5000, text: 'real' }]);
+    expect(lines).toEqual([{ tMs: 5500, text: 'real' }]);
   });
 
   test('empty / null input → []', () => {
@@ -41,6 +42,18 @@ describe('singalong · parseLrc', () => {
     expect(parseLrc(null)).toEqual([]);
     expect(parseLrc(undefined)).toEqual([]);
     expect(parseLrc('no stamps here')).toEqual([]);
+  });
+
+  test('[offset:+N] shifts the whole timeline (positive = later)', () => {
+    const up = parseLrc('[offset:+500]\n[00:10.00]a');
+    expect(up[0].tMs).toBe(10500);
+    const down = parseLrc('[offset:-1200]\n[00:10.00]a');
+    expect(down[0].tMs).toBe(8800);
+  });
+
+  test('over-precise fractions (4+ digits) truncate, never drop the line', () => {
+    const lines = parseLrc('[00:01.999999]a');
+    expect(lines).toEqual([{ tMs: 1999, text: 'a' }]);
   });
 });
 

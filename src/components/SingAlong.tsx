@@ -11,7 +11,7 @@
  * 250ms progress tick — no extra timer, no bridge spam.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '../theme';
 import { activeLrcIndex, type LrcLine } from '../player/singalong';
@@ -36,7 +36,13 @@ interface RowProps {
 
 const LrcRow = React.memo(function LrcRow({ line, active, onPress, testID }: RowProps) {
   return (
-    <Pressable onPress={() => onPress(line.tMs)} hitSlop={3} testID={testID}>
+    <Pressable
+      onPress={() => onPress(line.tMs)}
+      hitSlop={3}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`Jump to ${line.text}`}
+    >
       <Text style={[styles.lrc, active && styles.lrcOn]} numberOfLines={1}>
         {line.text}
       </Text>
@@ -60,7 +66,9 @@ export function SingAlong({ lines, positionMs, onSeek }: Props) {
     scrollRef.current?.scrollTo({ y: Math.max(0, target), animated: true });
   }, [activeIdx]);
 
-  const handlePress = (tMs: number) => seekRef.current(tMs / 1000);
+  // STABLE identity (critic SA-4): a fresh closure here every render would
+  // defeat LrcRow's memo — all rows would repaint on every 250ms tick.
+  const handlePress = useCallback((tMs: number) => seekRef.current(tMs / 1000), []);
 
   return (
     <ScrollView
