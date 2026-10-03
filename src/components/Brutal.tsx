@@ -31,6 +31,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, fonts, hardShadow, orangeShadow } from '../theme';
+import { sourceBadgeLabel } from './sourceBadge';
 
 export function Brutal({
   children,
@@ -192,12 +193,14 @@ export function MonoText({
   );
 }
 
-/** Track source chip — SAAVN outlined / YT inverted / others mapped. */
+/**
+ * Track source chip — YT inverted / PREVIEW / SAVED; saavn stays silent.
+ * (Label mapping lives in the pure sourceBadge.ts module — P-B v4.0.4.)
+ */
 export function SourceBadge({ source, style }: { source?: string; style?: StyleProp<ViewStyle> }) {
-  if (!source) return null;
+  const label = sourceBadgeLabel(source);
+  if (!label) return null;
   const yt = source === 'youtube';
-  const label =
-    source === 'youtube' ? 'YT' : source === 'itunes' ? 'PREVIEW' : source === 'local' ? 'SAVED' : 'SAAVN';
   return (
     <View style={[styles.src, yt && styles.srcYt, style]}>
       <MonoText size={8} bold color={yt ? colors.acid : colors.ink60} style={{ letterSpacing: 1 }}>

@@ -8,14 +8,14 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { Track } from '../types';
-import { getAlbumTracks, getCollectionTracks, searchSaavnClean } from '../api/saavn';
+import type { Track, Collection } from '../types';
+import { getAlbumTracks, getArtistCatalog, getCollectionTracks, searchSaavnClean } from '../api/saavn';
 import { lookupArtistPhoto } from '../api/artists';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
@@ -42,6 +42,14 @@ export function CollectionScreen() {
   );
   const [failed, setFailed] = useState(false);
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
+  // v4.0.4 P-D: artist pages now wear the artist's REAL album rail
+  const [artistAlbums, setArtistAlbums] = useState<Collection[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = () => {
+    setFailed(false);
+    setLoading(true);
+    setReloadToken((n) => n + 1);
+  };
 
   // ── Artist pages carry the artist's PHOTO (v4.0.1 fix) ────────────
   // The route often arrives with artwork: '' (the home rail only resolved
@@ -78,8 +86,15 @@ export function CollectionScreen() {
         if (collection.kind === 'chart') {
           list = await getCollectionTracks(collection.id);
         } else if (collection.kind === 'album') {
-          list = await getAlbumTracks(collection.id);
-        } else if ((collection.kind === 'search' || collection.kind === 'artist') && collection.query) {
+          // title powers the pre-release stub ladder (v4.0.4 P-A)
+          list = await getAlbumTracks(collection.id, collection.title);
+        } else if (collection.kind === 'artist' && collection.query) {
+          // v4.0.4 P-D: the REAL artist catalog (topSongs + dedicated
+          // playlist + name-matched search) instead of a capped search
+          const cat = await getArtistCatalog(collection.query);
+          list = cat.tracks;
+          if (!cancelled) setArtistAlbums(cat.albums);
+        } else if (collection.kind === 'search' && collection.query) {
           list = await searchSaavnClean(collection.query, 40);
         }
         if (!cancelled) {
@@ -95,7 +110,7 @@ export function CollectionScreen() {
     return () => {
       cancelled = true;
     };
-  }, [collection.id, collection.kind, collection.query, routeTracks]);
+  }, [collection.id, collection.kind, collection.query, routeTracks, reloadToken]);
 
   const play = (index: number) => {
     if (tracks && tracks.length) {
@@ -201,6 +216,44 @@ export function CollectionScreen() {
                 <MonoText size={10} color={colors.ink60} style={{ letterSpacing: 1, textAlign: 'center' }}>
                   {'COULDNT LOAD THIS — CHECK YOUR CONNECTION'}
                 </MonoText>
+                <Brutal haptic shadow={2} onPress={reload} style={styles.retryBtn} testID="collection-retry">
+                  <MonoText size={9.5} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                    TRY AGAIN
+                  </MonoText>
+                </Brutal>
+              </View>
+            ) : null}
+            {/* v4.0.4 P-D: the artist's REAL albums — every card opens a
+                full tracklist through the stub-safe album ladder */}
+            {isArtist && artistAlbums.length > 0 && tracks && tracks.length > 0 ? (
+              <View style={styles.albumRailWrap}>
+                <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2, marginBottom: 10 }}>
+                  ALBUMS · EPs
+                </MonoText>
+                <FlatList
+                  horizontal
+                  data={artistAlbums}
+                  keyExtractor={(c) => `alb-${c.id}`}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      testID={`artist-album-${item.id}`}
+                      onPress={() => nav.navigate('Collection', { collection: item })}
+                      style={({ pressed }) => [styles.albumCard, pressed && { opacity: 0.7 }]}
+                    >
+                      <Artwork uri={item.artwork} seed={item.id} size={108} bordered={false} initials={item.title} style={styles.albumArt} />
+                      <Text numberOfLines={2} style={styles.albumTitle} allowFontScaling={false}>
+                        {item.title}
+                      </Text>
+                      {item.trackCount ? (
+                        <MonoText size={8.5} color={colors.ink60} style={{ letterSpacing: 1 }}>
+                          {`${item.trackCount} SONGS`}
+                        </MonoText>
+                      ) : null}
+                    </Pressable>
+                  )}
+                />
               </View>
             ) : null}
           </View>
@@ -292,4 +345,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingWrap: { alignItems: 'center', gap: 12, paddingVertical: 32 },
+  retryBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    backgroundColor: colors.paper,
+    borderWidth: 2,
+    borderColor: colors.ink,
+  },
+  albumRailWrap: { alignSelf: 'stretch', marginTop: 10, marginLeft: -18 },
+  albumCard: { width: 108, gap: 6 },
+  albumArt: {
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+  },
+  albumTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 12,
+    lineHeight: 14,
+    textTransform: 'uppercase',
+  },
 });

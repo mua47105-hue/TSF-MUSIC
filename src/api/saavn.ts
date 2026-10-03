@@ -20,9 +20,33 @@ const BROWSER_HEADERS: Record<string, string> = {
   Accept: 'application/json, text/plain, */*',
 };
 
+/** Every provider GET gets a hard ceiling — a hung fetch on a flaky
+ *  mobile network used to spin shelves forever (user-reported: playlists
+ *  and charts "sometimes not loading"). Overridable for tests. */
+export const SAAVN_TIMEOUT_MS = 10_000;
+
+/** Compose the caller's signal (if any) with our own timeout/abort source. */
+function linkedSignal(signal: AbortSignal | undefined, ms: number): { sig: AbortSignal; done: () => void } {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(new Error('saavn: timeout')), ms);
+  const onOuter = () => ctl.abort(new Error('saavn: caller aborted'));
+  if (signal) {
+    if (signal.aborted) ctl.abort(signal.reason);
+    else signal.addEventListener('abort', onOuter, { once: true });
+  }
+  return {
+    sig: ctl.signal,
+    done: () => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onOuter);
+    },
+  };
+}
+
 export async function saavnGet(
   params: Record<string, string>,
   signal?: AbortSignal,
+  timeoutMs: number = SAAVN_TIMEOUT_MS,
 ): Promise<any> {
   const qs = new URLSearchParams({
     _format: 'json',
@@ -31,18 +55,46 @@ export async function saavnGet(
     ctx: 'web6dot0',
     ...params,
   });
-  const res = await fetch(`${API}?${qs.toString()}`, {
-    headers: BROWSER_HEADERS,
-    signal,
-  });
-  if (!res.ok) throw new Error(`saavn ${res.status}`);
-  const text = await res.text();
-  // JioSaavn occasionally prefixes junk before the JSON body.
-  const start = text.indexOf('{');
-  const arr = text.indexOf('[');
-  const from = start === -1 ? arr : arr === -1 ? start : Math.min(start, arr);
-  if (from === -1) throw new Error('saavn: no json');
-  return JSON.parse(text.slice(from));
+  // ONE honest retry: a dropped packet should not blank a shelf. Caller
+  // aborts are never retried (the user navigated away — respect that).
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('saavn: aborted');
+    const link = linkedSignal(signal, timeoutMs);
+    try {
+      const res = await fetch(`${API}?${qs.toString()}`, {
+        headers: BROWSER_HEADERS,
+        signal: link.sig,
+      });
+      if (!res.ok) {
+        // 5xx = provider blip → retry once; 4xx = our request is wrong → fail now
+        if (res.status >= 500 && attempt === 0) {
+          lastErr = new Error(`saavn ${res.status}`);
+          continue;
+        }
+        throw new Error(`saavn ${res.status}`);
+      }
+      const text = await res.text();
+      // JioSaavn occasionally prefixes junk before the JSON body.
+      const start = text.indexOf('{');
+      const arr = text.indexOf('[');
+      const from = start === -1 ? arr : arr === -1 ? start : Math.min(start, arr);
+      if (from === -1) throw new Error('saavn: no json');
+      return JSON.parse(text.slice(from));
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as any)?.message ?? e);
+      const callerAborted = !!signal?.aborted;
+      const ourTimeout = msg.includes('saavn: timeout');
+      const network = e instanceof TypeError || msg.includes('NetworkService') || msg.includes('Failed to fetch');
+      if (callerAborted) throw e;
+      if (attempt === 0 && (ourTimeout || network)) continue; // one honest retry
+      throw e;
+    } finally {
+      link.done();
+    }
+  }
+  throw lastErr ?? new Error('saavn: unreachable');
 }
 
 /** DES-ECB decrypt a JioSaavn encrypted_media_url into a playable CDN url. */
@@ -384,18 +436,86 @@ export async function searchAlbumCollections(
   }
 }
 
-export async function getAlbumTracks(albumId: string): Promise<Track[]> {
-  try {
-    const data = await saavnGet({ __call: 'content.getAlbumDetails', albumid: albumId });
-    const list = Array.isArray(data?.list)
-      ? data.list
-      : Array.isArray(data?.songs)
-        ? data.songs
-        : [];
-    return list.map(mapSaavnSong).filter(Boolean) as Track[];
-  } catch {
-    return [];
+const SAMPLE_TRAILER_RE = /sample trailer/i;
+
+/**
+ * Full album tracklist — powers album pages and "go to album".
+ *
+ * USER-REPORTED BUG (v4.0.4, P-A "album songs are not playing"): the
+ * homepage's new_albums rail lists PRE-RELEASE single stubs whose
+ * content.getAlbumDetails returns NO rows, or worse a literal
+ * "This is a sample trailer - testing" placeholder row (no encrypted
+ * url → mapSaavnSong drops it → 0 playable rows → taps do nothing).
+ * Live probe: the REAL song lives under a DIFFERENT album id that
+ * search.getAlbumResults finds (e.g. homepage stub 3E8fNHiW → real
+ * 81197164). Ladder:
+ *   1. getAlbumDetails(albumId) — works for normal albums (probe: 7/7).
+ *   2. getAlbumDetails on search.getAlbumResults(title) candidates.
+ *   3. search.getResults(title) rows whose album_id matches, or whose
+ *      album name matches the requested title (stub re-press case).
+ * Pass the album TITLE (CollectionScreen has it) — the ladder needs it.
+ */
+export async function getAlbumTracks(albumId: string, title?: string): Promise<Track[]> {
+  const usable = async (id: string): Promise<Track[]> => {
+    try {
+      const data = await saavnGet({ __call: 'content.getAlbumDetails', albumid: id });
+      const list = Array.isArray(data?.list)
+        ? data.list
+        : Array.isArray(data?.songs)
+          ? data.songs
+          : [];
+      // the trailer placeholder row carries an id but no encrypted url —
+      // mapSaavnSong already drops it; the explicit name check is the belt
+      // to that brace (a future API could attach an enc to the trailer).
+      return (list as any[])
+        .filter((it) => !SAMPLE_TRAILER_RE.test(String(it?.title ?? '')))
+        .map(mapSaavnSong)
+        .filter(Boolean) as Track[];
+    } catch {
+      return [];
+    }
+  };
+
+  // 1) the direct hit
+  const direct = await usable(albumId);
+  if (direct.length) return dedupeRecordings(direct);
+
+  // 2) real-album candidates by title (pre-release stub re-press case)
+  if (title && title.trim()) {
+    const candidates = await searchAlbumResults(title, 5).catch(() => [] as Array<{ id: string; title: string; music?: string }>);
+    for (const cand of candidates.slice(0, 3)) {
+      if (!cand?.id || String(cand.id) === String(albumId)) continue;
+      const alt = await usable(String(cand.id));
+      if (alt.length) return dedupeRecordings(alt);
+    }
+
+    // 3) song search filtered to the album's name — the stub's songs are
+    //    re-pressed under a different album id, but the ALBUM NAME on the
+    //    song rows still equals the stub's title
+    try {
+      const data = await saavnGet({
+        __call: 'search.getResults',
+        q: title,
+        p: '1',
+        n: '30',
+      });
+      const rows = Array.isArray(data?.results) ? data.results : [];
+      const want = title.toLowerCase().replace(/\s+/g, ' ').trim();
+      const matches = (rows as any[])
+        .filter((it) => {
+          const mi = it?.more_info ?? {};
+          if (String(mi.album_id ?? '') === String(albumId)) return true;
+          const albumName = String(mi.album ?? it?.album ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+          return !!albumName && (albumName === want || want.startsWith(albumName) || albumName.startsWith(want));
+        })
+        .map(mapSaavnSong)
+        .filter(Boolean) as Track[];
+      if (matches.length) return dedupeRecordings(matches);
+    } catch {
+      /* fall through to honest empty */
+    }
   }
+  return [];
 }
 
 /**
@@ -411,6 +531,100 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
   });
   const pool = matched.length >= 3 ? matched : tracks;
   return pool.slice(0, limit);
+}
+
+// ── ARTIST CATALOG (v4.0.4, P-D "artists have less songs") ──────────────
+
+export interface ArtistCatalog {
+  tracks: Track[];
+  albums: Collection[];
+  artistId?: string;
+}
+
+/**
+ * The REAL artist page, not a capped name-search.
+ *
+ * USER-REPORTED BUG: artist pages were `searchSaavnClean(name, 40)` —
+ * ≤40 name-matched rows, no albums, no ordering truth. The provider's
+ * artist page (artist.getArtistPageDetails) carries topSongs (real rows
+ * with encrypted urls), topAlbums (real album ids the album ladder can
+ * open) and a dedicated editorial playlist (25+ rows for a-listers).
+ *
+ * Merge order = artist-first truth: topSongs → dedicated playlist →
+ * name-matched search rows, deduped by recording key. Every step
+ * degrades honestly — a tiny artist with no page still gets the old
+ * search behavior, never worse than v4.0.3.
+ */
+export async function getArtistCatalog(name: string, limit = 60): Promise<ArtistCatalog> {
+  // resolve the artist id + seed search rows in one call
+  const seed = await searchSaavn(name, 40).catch(() => [] as Track[]);
+  const needle = name.toLowerCase().trim();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const matched = seed.filter((t) => {
+    const a = t.artist.toLowerCase();
+    return a.includes(needle) || needle.includes(a.split(' feat')[0]);
+  });
+  let artistId: string | undefined;
+  try {
+    const data = await saavnGet({ __call: 'search.getResults', q: name, p: '1', n: '10' });
+    const rows = Array.isArray(data?.results) ? data.results : [];
+    for (const row of rows as any[]) {
+      const primary: any[] = row?.more_info?.artistMap?.primary_artists ?? [];
+      const hit = primary.find((a) => norm(String(a?.name ?? '')) === needle);
+      if (hit?.id) {
+        artistId = String(hit.id);
+        break;
+      }
+    }
+  } catch {
+    /* id stays undefined → search-only fallback below */
+  }
+
+  if (!artistId) {
+    // honest fallback: exactly the v4.0.3 behavior
+    const pool = matched.length >= 3 ? matched : seed;
+    return { tracks: pool.slice(0, limit), albums: [] };
+  }
+
+  const page = await saavnGet({
+    __call: 'artist.getArtistPageDetails',
+    artistId,
+  }).catch(() => null);
+
+  // topSongs — the provider's own ordering, real playable rows
+  const topRaw = Array.isArray(page?.topSongs) ? page.topSongs : [];
+  const topSongs = topRaw
+    .filter((it: any) => !SAMPLE_TRAILER_RE.test(String(it?.title ?? '')))
+    .map(mapSaavnSong)
+    .filter(Boolean) as Track[];
+
+  // topAlbums — tappable cards; ids feed getAlbumTracks (ladder-safe)
+  const albRaw = Array.isArray(page?.topAlbums) ? page.topAlbums : [];
+  const albums: Collection[] = albRaw
+    .map((a: any): Collection => ({
+      id: String(a?.id ?? ''),
+      title: decodeEntities(String(a?.title ?? '')),
+      subtitle: a?.subtitle ? decodeEntities(String(a.subtitle)) : 'Album',
+      artwork: art500(a?.image),
+      trackCount: a?.more_info?.song_count ? Number(a.more_info.song_count) || undefined : undefined,
+      kind: 'album' as const,
+    }))
+    .filter((c: Collection) => c.id && c.title && collectionIsClean(c))
+    .slice(0, 12);
+
+  // dedicated editorial playlist — the deep catalog rows
+  const dp = Array.isArray(page?.dedicated_artist_playlist) ? page.dedicated_artist_playlist : [];
+  const dedicatedId = dp[0]?.id ? String(dp[0].id) : null;
+  const dedicated = dedicatedId
+    ? await getCollectionTracks(dedicatedId).catch(() => [] as Track[])
+    : [];
+
+  const merged = dedupeRecordings(filterClean([...topSongs, ...dedicated, ...matched]));
+  return {
+    tracks: merged.slice(0, limit),
+    albums,
+    artistId,
+  };
 }
 
 /** Trending songs for home — always safety-filtered, always deduped

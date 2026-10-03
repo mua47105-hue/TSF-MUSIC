@@ -84,6 +84,9 @@ export function HomeScreen() {
 
   const [mixes, setMixes] = useState<DailyMix[] | null>(null);
   const [trending, setTrending] = useState<Track[] | null>(null);
+  // v4.0.4 P-E/F: per-shelf honest failure — a failed fetch no longer
+  // silently blanks a shelf; a retry chip takes its place.
+  const [shelfFails, setShelfFails] = useState({ trending: false, charts: false, feed: false });
   const [because, setBecause] = useState<Array<{ artist: string; seedTrack?: Track }>>([]);
   const [charts, setCharts] = useState<Collection[]>([]);
   const [recents, setRecents] = useState<Track[]>([]);
@@ -203,6 +206,7 @@ export function HomeScreen() {
       }
     } catch {
       /* cached shelves (if any) stay up */
+      setShelfFails((f) => ({ ...f, feed: !newAlbums.length && !featured.length }));
     }
   }, []);
 
@@ -230,9 +234,17 @@ export function HomeScreen() {
       void loadFeed(force);
 
       try {
+        let trendFailed = false;
+        let chartsFailed = false;
         const [trend, chartList] = await Promise.all([
-          getTrending(14).catch(() => [] as Track[]),
-          getCharts().catch(() => [] as Collection[]),
+          getTrending(14).catch(() => {
+            trendFailed = true;
+            return [] as Track[];
+          }),
+          getCharts().catch(() => {
+            chartsFailed = true;
+            return [] as Collection[];
+          }),
         ]);
         if (trend.length) setTrending(trend);
         if (chartList.length) {
@@ -246,6 +258,11 @@ export function HomeScreen() {
             })
             .catch(() => undefined);
         }
+        setShelfFails((f) => ({
+          ...f,
+          trending: trendFailed && !trending,
+          charts: chartsFailed && !charts.length,
+        }));
         setOffline(false);
         if (!trend.length && !chartList.length) setOffline(true);
       } catch {
@@ -254,8 +271,14 @@ export function HomeScreen() {
         feedPrimedRef.current = true;
       }
     },
-    [loadFeed, loadPopularArtists],
+    [loadFeed, loadPopularArtists, trending, charts],
   );
+
+  // v4.0.4 P-E/F: the retry chips on failed shelves re-run the loaders
+  const retryShelves = useCallback(() => {
+    setShelfFails({ trending: false, charts: false, feed: false });
+    void load(true);
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -435,6 +458,8 @@ export function HomeScreen() {
             newAlbums={newAlbums}
             featured={featured}
             charts={charts}
+            shelfFails={shelfFails}
+            onRetryShelves={retryShelves}
             winWidth={winWidth}
             play={play}
             openTrackCollection={openTrackCollection}
@@ -588,6 +613,32 @@ const FeedFooter = React.memo(function FeedFooter({
 
 /** The fixed shelves. Memo'd: feed appends and feed-state flips CANNOT
  *  re-render this subtree — only actual shelf data changes do. */
+/**
+ * (v4.0.4 P-E/F) ShelfRetry — the honest "this shelf didn't load" chip.
+ * No shelf ever vanishes silently again: a failed fetch leaves a tappable
+ * Brutal chip in the shelf's place. Memo'd like the shelves it serves.
+ */
+const ShelfRetry = React.memo(function ShelfRetry({
+  label,
+  onPress,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  testID?: string;
+}) {
+  return (
+    <View style={styles.shelfRetryWrap}>
+      <Brutal haptic shadow={2} onPress={onPress} style={styles.shelfRetryBtn} testID={testID}>
+        <Ionicons name="refresh" size={13} color={colors.ink} />
+        <MonoText size={9.5} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+          {` ${label} DIDN'T LOAD · TAP TO RETRY`}
+        </MonoText>
+      </Brutal>
+    </View>
+  );
+});
+
 const HomeHeader = React.memo(function HomeHeader({
   chip,
   setChip,
@@ -607,6 +658,8 @@ const HomeHeader = React.memo(function HomeHeader({
   newAlbums,
   featured,
   charts,
+  shelfFails,
+  onRetryShelves,
   winWidth,
   play,
   openTrackCollection,
@@ -631,6 +684,9 @@ const HomeHeader = React.memo(function HomeHeader({
   newAlbums: Collection[];
   featured: Collection[];
   charts: Collection[];
+  /** v4.0.4 P-E/F: honest per-shelf failure + retry */
+  shelfFails: { trending: boolean; charts: boolean; feed: boolean };
+  onRetryShelves: () => void;
   winWidth: number;
   play: (tracks: Track[], index: number) => void;
   openTrackCollection: (title: string, tracks: Track[]) => void;
@@ -936,6 +992,8 @@ const HomeHeader = React.memo(function HomeHeader({
                 />
               ))}
             </Shelf>
+          ) : shelfFails.trending ? (
+            <ShelfRetry testID="retry-trending" label="TRENDING" onPress={onRetryShelves} />
           ) : null}
 
           {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
@@ -992,36 +1050,41 @@ const HomeHeader = React.memo(function HomeHeader({
             </Shelf>
           ))}
 
-          {newAlbums.length > 0 ? (
-            <Shelf kicker="FRESH INK" title="New Releases">
-              {newAlbums.map((c) => (
-                <ShelfCard
-                  key={c.id}
-                  title={c.title}
-                  subtitle={c.subtitle}
-                  artwork={c.artwork}
-                  seed={`album-${c.id}`}
-                  size={150}
-                  onPress={() => nav.navigate('Collection', { collection: c })}
-                />
-              ))}
-            </Shelf>
-          ) : null}
-
-          {featured.length > 0 ? (
-            <Shelf kicker="FROM THE EDITORS" title="Featured Playlists">
-              {featured.map((c) => (
-                <ShelfCard
-                  key={c.id}
-                  title={c.title}
-                  subtitle={c.subtitle}
-                  artwork={c.artwork}
-                  seed={`feat-${c.id}`}
-                  size={150}
-                  onPress={() => nav.navigate('Collection', { collection: c })}
-                />
-              ))}
-            </Shelf>
+          {newAlbums.length > 0 || featured.length > 0 ? (
+            <>
+              {newAlbums.length > 0 ? (
+                <Shelf kicker="FRESH INK" title="New Releases">
+                  {newAlbums.map((c) => (
+                    <ShelfCard
+                      key={c.id}
+                      title={c.title}
+                      subtitle={c.subtitle}
+                      artwork={c.artwork}
+                      seed={`album-${c.id}`}
+                      size={150}
+                      onPress={() => nav.navigate('Collection', { collection: c })}
+                    />
+                  ))}
+                </Shelf>
+              ) : null}
+              {featured.length > 0 ? (
+                <Shelf kicker="FROM THE EDITORS" title="Featured Playlists">
+                  {featured.map((c) => (
+                    <ShelfCard
+                      key={c.id}
+                      title={c.title}
+                      subtitle={c.subtitle}
+                      artwork={c.artwork}
+                      seed={`feat-${c.id}`}
+                      size={150}
+                      onPress={() => nav.navigate('Collection', { collection: c })}
+                    />
+                  ))}
+                </Shelf>
+              ) : null}
+            </>
+          ) : shelfFails.feed ? (
+            <ShelfRetry testID="retry-feed" label="FRESH SHELVES" onPress={onRetryShelves} />
           ) : null}
 
           {charts.length > 0 ? (
@@ -1039,6 +1102,8 @@ const HomeHeader = React.memo(function HomeHeader({
                 />
               ))}
             </Shelf>
+          ) : shelfFails.charts ? (
+            <ShelfRetry testID="retry-charts" label="POPULAR CHARTS" onPress={onRetryShelves} />
           ) : null}
         </>
       )}
@@ -1270,4 +1335,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   feedEndWrap: { alignItems: 'center', paddingVertical: 22 },
+  // v4.0.4 P-E/F: failed-shelf retry chip
+  shelfRetryWrap: { paddingHorizontal: 18, paddingVertical: 8 },
+  shelfRetryBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+  },
 });

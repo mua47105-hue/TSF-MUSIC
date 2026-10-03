@@ -11,14 +11,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_3';
+const SEEN_KEY = 'tsf.whatsNew.v4_0_4';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Your app wears a new face: the launcher icon is now the swirl-head artwork — the old equalizer logo is retired from the app drawer, settings and the store listing.',
-  'Cropped clean: the Gemini sparkle that rode along with the artwork is gone — what ships is pure icon, edge to edge, tuned for every launcher shape (circle, squircle, rounded square).',
-  'Nothing else moved: playback, search, downloads and your library are exactly as v4.0.2 left them.',
+  'Albums play again: brand-new pre-release singles no longer dead-end — every album page now resolves its real songs, even when the provider serves a placeholder.',
+  'Artist pages got deep: real catalogs (up to 57+ songs), plus an ALBUMS · EPs rail where every card opens a full tracklist.',
+  'The trending wall is clean: the source stamp is gone from song rows — what plays is what matters, not who serves it.',
+  'Flaky shelves now fight back: charts, playlists and YouTube get network timeouts, one honest retry, and a TAP TO RETRY chip instead of silent empty space.',
 ];
 
 export function WhatsNewDialog() {
@@ -61,7 +62,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0.3 — THE NEW FACE EDITION
+            TSF MUSIC 4.0.4 — THE EVERYTHING WORKS EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (

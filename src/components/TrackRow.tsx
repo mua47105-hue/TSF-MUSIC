@@ -97,7 +97,7 @@ export const TrackRow = React.memo(function TrackRow({
   subtitle?: string;
   /** acid reason chip (truthful MINDBEAT lines) */
   reasonLabel?: string;
-  /** SAAVN / YT source chip */
+  /** YT / PREVIEW / SAVED source chip (saavn rows stay clean — P-B) */
   showSource?: boolean;
 }) {
   const { active, isPlaying, favorites, toggleLike } = usePlayer();

@@ -360,6 +360,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           // P1-3: the retry promise gets a FINAL honest answer, never silence
           toast.show({ message: 'That YouTube track is unavailable right now', icon: 'alert-outline' });
           if (__DEV__) console.warn('[yt] resolve failed:', trail);
+        } else {
+          // v4.0.4 P-A: a Saavn queue that resolves to NOTHING was silent —
+          // the user tapped, nothing happened, no explanation. Say it.
+          toast.show({
+            message: 'Could not start that song — check your connection and try again',
+            icon: 'alert-outline',
+          });
         }
         return;
       }

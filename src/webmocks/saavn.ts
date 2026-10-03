@@ -248,7 +248,7 @@ export async function getCollectionTracks(collectionId: string): Promise<Track[]
   return TRACKS.slice(idx).concat(TRACKS.slice(0, idx));
 }
 
-export async function getAlbumTracks(albumId: string): Promise<Track[]> {
+export async function getAlbumTracks(albumId: string, _title?: string): Promise<Track[]> {
   await new Promise((r) => setTimeout(r, 120));
   return TRACKS.filter((t) => t.albumId === albumId);
 }
@@ -257,6 +257,21 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
   await new Promise((r) => setTimeout(r, 120));
   const pool = TRACKS.filter((t) => t.artist.includes(artistName));
   return (pool.length ? pool : TRACKS).slice(0, limit);
+}
+
+// ── v4.0.4 parity additions (L-PARITY lock) ────────────────────────────
+
+export const SAAVN_TIMEOUT_MS = 10_000;
+
+export interface ArtistCatalog {
+  tracks: Track[];
+  albums: Collection[];
+  artistId?: string;
+}
+
+export async function getArtistCatalog(artistName: string, limit = 60): Promise<ArtistCatalog> {
+  const tracks = await getArtistTracks(artistName, limit);
+  return { tracks, albums: [], artistId: undefined };
 }
 
 export async function getTrending(limit = 14): Promise<Track[]> {

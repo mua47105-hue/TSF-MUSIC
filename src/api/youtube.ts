@@ -108,6 +108,31 @@ export function setYtFetch(fn: typeof fetch | null): void {
   ytFetch = (fn ?? ((input, init) => fetch(input as any, init as any))) as typeof fetch;
 }
 
+/** USER-REPORTED P-C (v4.0.4): "YouTube section sometimes not working" —
+ *  InnerTube calls had NO ceiling, so a hung socket read on a flaky
+ *  network froze the section with no error and no ladder rotation. Every
+ *  InnerTube fetch now dies at 8s (caller signal still wins when sooner),
+ *  which lets the client ladder rotate instead of hanging forever. */
+const YT_FETCH_TIMEOUT_MS = 8_000;
+
+/** Compose the caller's signal with the InnerTube ceiling. */
+function ytSignal(signal: AbortSignal | undefined, ms: number): { sig: AbortSignal; done: () => void } {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(new Error('yt: timeout')), ms);
+  const onOuter = () => ctl.abort(new Error('yt: caller aborted'));
+  if (signal) {
+    if (signal.aborted) ctl.abort(signal.reason);
+    else signal.addEventListener('abort', onOuter, { once: true });
+  }
+  return {
+    sig: ctl.signal,
+    done: () => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onOuter);
+    },
+  };
+}
+
 /** PO-token provider — the hidden-WebView minter (ytPoToken.ts) plugs in
  *  here. Returns the SESSION PAIR: the visitorData the challenge was served
  *  with + the visitor-bound web pot (GVS). A videoId-bound player pot is
@@ -247,22 +272,27 @@ async function innertube(endpoint: string, client: YtClient, body: Record<string
   }
   const host = client.musicOrigin ? 'https://music.youtube.com/youtubei/v1' : YTI;
   const keyQ = client.apiKey ? `key=${client.apiKey}&` : '';
-  const res = await ytFetch(`${host}/${endpoint}?${keyQ}prettyPrint=false`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': client.userAgent,
-      'X-Goog-Api-Format-Version': '2',
-      ...(client.musicOrigin ? { Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/' } : {}),
-      'X-YouTube-Client-Name': clientNameIndex(client.clientName),
-      'X-YouTube-Client-Version': client.clientVersion,
-      ...(client.headers ?? {}),
-    },
-    body: JSON.stringify({ context, ...body }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`yt ${client.name} http ${res.status}`);
-  return res.json();
+  const link = ytSignal(signal, YT_FETCH_TIMEOUT_MS);
+  try {
+    const res = await ytFetch(`${host}/${endpoint}?${keyQ}prettyPrint=false`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': client.userAgent,
+        'X-Goog-Api-Format-Version': '2',
+        ...(client.musicOrigin ? { Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/' } : {}),
+        'X-YouTube-Client-Name': clientNameIndex(client.clientName),
+        'X-YouTube-Client-Version': client.clientVersion,
+        ...(client.headers ?? {}),
+      },
+      body: JSON.stringify({ context, ...body }),
+      signal: link.sig,
+    });
+    if (!res.ok) throw new Error(`yt ${client.name} http ${res.status}`);
+    return res.json();
+  } finally {
+    link.done();
+  }
 }
 
 function clientNameIndex(name: string): string {
