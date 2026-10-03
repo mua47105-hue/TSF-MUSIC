@@ -11,14 +11,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_0_5';
+const SEEN_KEY = 'tsf.whatsNew.v4_1_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'Albums and shelves open FULL now: every record in your Crates shows its complete tracklist, and artist pages carry the deep catalog — Arijit Singh went from a couple dozen songs to 80+ (top hits, top albums, editorial playlists) — plus a TOP ALBUMS rail on every artist page.',
-  'Radios never dead-end: tapping Because-You-Listened, artist radios and joined-credit names (the Bibi Phonk case) always builds a playable queue instead of “couldn’t load”.',
-  'The SAAVN stamp is gone from every song row, artist photos now resolve for mid-credit artists (deep credit-map scan), and THE INDEX got a full-shelf redesign — bigger readable stack chips (no more mashed text), chart quick-chips and a tighter Wire banner.',
+  'SING ALONG — synced karaoke lyrics that ink line-by-line as the song plays, auto-scroll with the music, and jump anywhere when you tap a line. Plain lyrics stay as a graceful fallback.',
+  'INSTANT TAP — the app answers the moment your press lands: the mini player plants itself instantly (TUNING IN) while the stream resolves, so no more dead air between tap and music. Double-tap any artwork to like the song with a heart burst.',
+  'THE SHARE CARD — share what you’re playing as a beautiful image card: artwork, song, and the exact lyric line playing right now, straight to any app via the native share sheet.',
+  'THE WEEKLY CRATE — a fresh made-for-you edition every week: discovery-weighted, capped at 30, honest reasons on every row, and a cold start that never pretends.',
+  'Plus: a sleep timer with fade-out, data saver (96/320 kbps), the VIBE strip to shift your mood mid-session, lyrics that never dead-end, and richer honest shelves everywhere.',
 ];
 
 export function WhatsNewDialog() {
@@ -61,7 +63,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.0.5 — THE FULL SHELF EDITION
+            TSF MUSIC 4.1.0 — THE GODMODE EDITION
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
