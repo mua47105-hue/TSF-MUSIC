@@ -20,15 +20,18 @@ const UA = 'TSF-Music/3.3 (https://github.com/mua47105-hue/TSF-MUSIC)';
 interface CacheEntry {
   at: number;
   lyrics: string | null;
+  /** raw synced LRC ([mm:ss.xx] line) — null when the row carries none */
+  synced: string | null;
 }
 
 const cache = new Map<string, CacheEntry>(); // insertion-ordered LRU
-const inFlight = new Map<string, Promise<string | null>>();
+const inFlight = new Map<string, Promise<CacheEntry>>();
 
 function lruGet(key: string, now: number): CacheEntry | undefined {
   const hit = cache.get(key);
   if (!hit) return undefined;
-  const ttl = hit.lyrics ? HIT_TTL_MS : NULL_TTL_MS;
+  const hasAny = hit.lyrics != null || hit.synced != null;
+  const ttl = hasAny ? HIT_TTL_MS : NULL_TTL_MS;
   if (now - hit.at >= ttl) {
     cache.delete(key);
     return undefined;
@@ -62,7 +65,15 @@ function linkAbort(external: AbortSignal | undefined, ctrl: AbortController): vo
   });
 }
 
-async function fetchOnce(title: string, artist: string, external?: AbortSignal): Promise<string | null> {
+/**
+ * One catalog lookup that returns BOTH lyric shapes. The S2 pipeline and
+ * the plain card read `.lyrics`; the sing-along card reads `.synced`.
+ * Same two-shot search as before, same row discipline: the FIRST row is
+ * the song match — plain and synced are read from that row independently
+ * (never borrow synced from a different row: a cover version's timings
+ * would be a lie).
+ */
+async function fetchBoth(title: string, artist: string, external?: AbortSignal): Promise<CacheEntry> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   linkAbort(external, ctrl);
@@ -71,7 +82,7 @@ async function fetchOnce(title: string, artist: string, external?: AbortSignal):
     const qs1 = new URLSearchParams({ track_name: title, artist_name: artist });
     const qs2 = new URLSearchParams({ q: `${title} ${artist}` });
     for (const qs of [qs1, qs2]) {
-      if (ctrl.signal.aborted) return null;
+      if (ctrl.signal.aborted) return { at: Date.now(), lyrics: null, synced: null };
       const res = await fetch(`https://lrclib.net/api/search?${qs.toString()}`, {
         headers: { 'User-Agent': UA, Accept: 'application/json' },
         signal: ctrl.signal,
@@ -81,12 +92,16 @@ async function fetchOnce(title: string, artist: string, external?: AbortSignal):
       if (Array.isArray(rows) && rows.length > 0) {
         const first = rows[0] as { plainLyrics?: string; syncedLyrics?: string };
         const plain = first?.plainLyrics || first?.syncedLyrics || '';
-        if (plain) return plain;
+        const synced = first?.syncedLyrics || '';
+        if (plain || synced) {
+          return { at: Date.now(), lyrics: plain || null, synced: synced || null };
+        }
       }
     }
-    return null;
+    return { at: Date.now(), lyrics: null, synced: null };
   } catch {
-    return null; // unreachable/blocked/timeout/aborted — silent by contract
+    // unreachable/blocked/timeout/aborted — silent by contract
+    return { at: Date.now(), lyrics: null, synced: null };
   } finally {
     clearTimeout(timer);
   }
@@ -102,24 +117,45 @@ export function fetchPlainLyrics(
   artist: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  if (signal?.aborted) return Promise.resolve(null);
+  return resolveBoth(title, artist, signal).then((entry) => entry.lyrics);
+}
+
+/** Shared resolve path: cache → in-flight → fetchBoth (aborts never cache). */
+function resolveBoth(title: string, artist: string, signal?: AbortSignal): Promise<CacheEntry> {
+  if (signal?.aborted) {
+    return Promise.resolve({ at: Date.now(), lyrics: null, synced: null });
+  }
   const key = `${title.toLowerCase().trim()}|${artist.toLowerCase().trim()}`;
   const now = Date.now();
   const cached = lruGet(key, now);
-  if (cached) return Promise.resolve(cached.lyrics);
+  if (cached) return Promise.resolve(cached);
   const existing = inFlight.get(key);
   if (existing) return existing;
-  const p = fetchOnce(title, artist, signal).then((lyrics) => {
+  const p = fetchBoth(title, artist, signal).then((entry) => {
     // aborted generations never write the cache (P0-3)
-    if (!signal?.aborted) lruSet(key, { at: Date.now(), lyrics });
-    return lyrics;
+    if (!signal?.aborted) lruSet(key, entry);
+    return entry;
   });
-  // fetchOnce never rejects, but guard anyway — and always clear the
+  // fetchBoth never rejects, but guard anyway — and always clear the
   // in-flight slot via a tracked chain (no floating promise)
-  const guarded = p.catch(() => null);
+  const guarded = p.catch(() => ({ at: Date.now(), lyrics: null, synced: null }));
   void guarded.finally(() => inFlight.delete(key));
   inFlight.set(key, guarded);
   return guarded;
+}
+
+/**
+ * Fetch RAW SYNCED lyrics (LRC: `[mm:ss.xx] line`) for the sing-along
+ * card. Same contract as fetchPlainLyrics: null on any failure, LRU-100,
+ * in-flight deduped, never rejects, honors the caller's AbortSignal.
+ * Shares ONE catalog call with fetchPlainLyrics (same cache + in-flight).
+ */
+export function fetchSyncedLyrics(
+  title: string,
+  artist: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  return resolveBoth(title, artist, signal).then((entry) => entry.synced);
 }
 
 // ── S1 · fragment resolution ───────────────────────────────────────────

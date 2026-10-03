@@ -30,7 +30,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
-import { fetchPlainLyrics } from '../api/lrclib';
+import { fetchPlainLyrics, fetchSyncedLyrics } from '../api/lrclib';
+import { parseLrc, type LrcLine } from '../player/singalong';
+import { SingAlong } from '../components/SingAlong';
 import { usePlayer } from '../player/PlayerProvider';
 import {
   armSleepTimer,
@@ -234,13 +236,18 @@ export function PlayerScreen() {
   const [lyricExcerpt, setLyricExcerpt] = useState<string | null>(null);
   const [lyricMiss, setLyricMiss] = useState(false);
   const [lyricAttempt, setLyricAttempt] = useState(0);
+  // SING-ALONG (Task 29): synced timeline from the same catalog row —
+  // non-null (≥4 lines) upgrades the card to the karaoke view.
+  const [syncedLines, setSyncedLines] = useState<LrcLine[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLyricExcerpt(null);
     setLyricMiss(false);
+    setSyncedLines(null);
     if (!active) return undefined;
     const ctrl = new AbortController();
+    // both shapes share ONE catalog call (in-flight dedupe in lrclib)
     fetchPlainLyrics(active.title, active.artist, ctrl.signal)
       .then((lyrics) => {
         if (cancelled) return;
@@ -254,6 +261,14 @@ export function PlayerScreen() {
           .filter((l) => l && !l.startsWith('['));
         if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
         else setLyricMiss(true);
+      })
+      .catch(() => undefined);
+    fetchSyncedLyrics(active.title, active.artist, ctrl.signal)
+      .then((raw) => {
+        if (cancelled || !raw) return;
+        const parsed = parseLrc(raw);
+        // a real timeline, not a fragment: <4 timed lines is not singable
+        setSyncedLines(parsed.length >= 4 ? parsed : null);
       })
       .catch(() => undefined);
     return () => {
@@ -457,9 +472,11 @@ export function PlayerScreen() {
             : {})}
         >
           <MonoText size={8.5} bold color={colors.orange} style={{ letterSpacing: 2 }}>
-            LYRICS · VIA LRCLIB
+            {syncedLines ? 'SING ALONG' : 'LYRICS · VIA LRCLIB'}
           </MonoText>
-          {lyricExcerpt ? (
+          {syncedLines ? (
+            <SingAlong lines={syncedLines} positionMs={position * 1000} onSeek={(sec) => void seek(sec)} />
+          ) : lyricExcerpt ? (
             <Text style={styles.lyricsLine} numberOfLines={3}>
               {lyricExcerpt}
             </Text>
@@ -473,11 +490,13 @@ export function PlayerScreen() {
             </Text>
           )}
           <MonoText size={9.5} color={colors.ink40} style={{ marginTop: 5, letterSpacing: 0.8 }}>
-            {lyricExcerpt
-              ? 'PLAIN LYRICS · ON DEVICE LOOKUP'
-              : lyricMiss
-                ? 'NO LYRICS FILED · INSTRUMENTAL OR OFF-DESK — TAP TO RETRY'
-                : 'FETCHING FROM THE LYRICS DESK…'}
+            {syncedLines
+              ? 'SYNCED · TAP ANY LINE TO JUMP THERE'
+              : lyricExcerpt
+                ? 'PLAIN LYRICS · ON DEVICE LOOKUP'
+                : lyricMiss
+                  ? 'NO LYRICS FILED · INSTRUMENTAL OR OFF-DESK — TAP TO RETRY'
+                  : 'FETCHING FROM THE LYRICS DESK…'}
           </MonoText>
         </View>
       </ScrollView>
