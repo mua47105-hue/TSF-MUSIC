@@ -1587,3 +1587,146 @@ Stage Summary:
   Home FlatList + memo rows, ytAppend wiring, testIDs, window policy).
 - The gauntlet loop is won blind 6/6 against the user's own prototype,
   with two real behavior bugs fixed along the way.
+
+---
+Task ID: 22-24 (v4.0.2 STEADY SEARCH + v4.0.3 NEW FACE + E2E lab, reconstructed)
+Agent: Super Z (main agent)
+
+Task: Reconstruct the worklog for the v4.0.2/v4.0.3 era (entries lost to an
+inter-session environment reset; rebuilt from the commit ledger).
+
+Work Log:
+- v4.0.2 THE STEADY SEARCH EDITION (9adc5ce): the search 22->0 wipe class —
+  engine final paint no longer stomps fast page-2 appends; a post-early
+  engine failure no longer wipes painted results; artist-intent queries no
+  longer wipe their own rows (hidden bug #15); split paint marks (early/
+  final/yt/vibe/wipe) to decode the wipe; E2E lab rounds 2-12 (real
+  emulator CI, KVM fix, a11y-tree testID truth, extendedWaitUntil,
+  keyboard occlusion, scroll-position truth, broadsheet player flow).
+- v4.0.3 THE NEW FACE EDITION (59abef2): the user-designed swirl-head
+  icon shipped as the app identity.
+- archive/v4.0.4-everything-works (85fc2fc): the v4.0.4 attempt was judged
+  a regression by the user and fully rolled back — main restored to
+  v4.0.3, tag/Release cleared, the work preserved on the archive branch.
+
+Stage Summary:
+- v4.0.3 is the stable baseline the user chose; the E2E emulator lab is
+  part of the gate from here on.
+
+---
+Task ID: 25 (v4.0.5 FULL SHELF — the six user bugs, reconstructed)
+Agent: Super Z (main agent)
+
+Task: The user's six reported bugs (empty-feeling home + awkward browse
+chips, artist photos missing, "saavan" stamp on every row, Because-You-
+Listened dead end, Crates→album tap blank, artist pages with partial
+catalogs), fixed end-to-end and verified.
+
+Work Log:
+- abc6691 round-2 fixes: crates album rows carry albumId + collected
+  tracks (the REAL album page, never 'tracks: []'); empty route arrays
+  no longer trusted (0-SONGS dead end) — album ladder stub rescue,
+  artist catalog topSongs + TOP ALBUMS rail + deep playlist expand;
+  artist photos deep-scan every credited artist (primary + featured,
+  image OR id salvage) with full home rail coverage; SAAVN source chip
+  removed everywhere; THE INDEX stacks redesigned (equal width, 2-line
+  labels, counting-house chips from cache, wire banner + colophon).
+- ecacf60 critic round: safety-filter on the degraded catalog path,
+  collected-album dedupe, one search round-trip for seed+id.
+- 2592384 v4.0.5 version sync + whatsnew bulletin. 321/321 green, tsc
+  clean, emulator E2E results committed.
+
+Stage Summary:
+- All six reported issues fixed and locked (user_issues_round2_locks, 13
+  tests + webmock L-PARITY). Shipped to main as v4.0.5.
+
+---
+Task ID: 26-27 (godmode branch + OpenEvolve lab, reconstructed)
+Agent: Super Z (main agent)
+
+Task: Understand github.com/algorithmicsuperintelligence/openevolve and
+turn it into a skill; use its method to improve the app end-to-end;
+user-perspective UX audit; experimental features on a branch (never
+main); deep-research the best features of every music app.
+
+Work Log:
+- The openevolve skill was written from a full read of the framework
+  (v0.4.0): SKILL.md (the 7 laws: evaluator-is-everything, gate hard
+  keep artifacts, MAP-Elites archive, islands+migration, mixed parent
+  sampling, diff-only mutation, honest budgets) + references/
+  (architecture, playbook) + scripts/evolve.mjs (runnable harness:
+  2-dim MAP-Elites, 3 islands, SEARCH/REPLACE mutation, hard gate,
+  GLM mutations via a local OpenAI-compatible shim).
+- The evolution lab ran against src/search/rank.ts (Path B playbook):
+  10 hard-gate scenarios + p95 budget as the evaluator; 14 generations,
+  3 islands. Result: HONEST NO-LAND — no mutant beat the seed (the
+  ranker is already at a local optimum under the metric); two evaluator
+  lessons recorded (empty-island sampling fallback; comment-stripping
+  gaming vector fixed in the metric). evolution/README.md has the run.
+- The user-perspective UX audit drove the branch features (cc7b58d,
+  fd965d8, fea7a9f): lyrics never dead-end; sleep timer with fade
+  (session-scoped, Spotify-class); data saver 96/320 as a sync bridge
+  (hot-path safe, default bit-identical to v4.0.5); VIBE strip + SHIFT
+  (the session brain's mood state machine made visible and shiftable);
+  richer search stacks + honest zero-state actions; webmock typed
+  events. godmode_locks (8) + 321/321 green.
+
+Stage Summary:
+- Branch evolve/godmode carries all experimental work; main untouched.
+- The openevolve skill is registered (skills/openevolve) and battle-
+  tested on a real target.
+
+---
+Task ID: 28 (godmode wave 2: SING ALONG + INSTANT TAP — gauntlet-verified)
+Agent: Super Z (main agent)
+
+Task: The audited UX gaps, fixed end-to-end on the branch with the full
+gauntlet loop (fresh-context blind critic) and the web E2E lab.
+
+Work Log:
+- godmode 4 (6708e0a) SING ALONG — time-synced karaoke lyrics (the
+  research-validated most-loved feature class: Apple Music Sing,
+  Spotify Karaoke, Musixmatch): lrclib ONE catalog call now returns
+  both shapes (plain + raw synced LRC; row discipline: synced never
+  borrowed from a different row — a cover's timings would be a lie);
+  singalong.ts pure LRC parser (2/3-digit fractions, multi-stamp chorus
+  expansion, metadata/instrumental drop, [offset:+/-ms] timeline shift,
+  over-precise fractions truncate) + binary-search active-line index;
+  SingAlong card (active line grows + prints ink, auto-scrolls ONLY on
+  line change, ANY line tap = seek); graceful plain fallback.
+- godmode 5 (ae70c2e) INSTANT TAP — the audit's dead air (playQueue
+  resolved stream URLs BEFORE any UI changed: 0.5-1s of nothing after
+  every row tap): playQueue plants an OPTIMISTIC track at entry (now
+  hoisted above ensureSetup/notification permission per the critic);
+  mini bar mounts instantly with TUNING IN (acid dot + mono label);
+  honest lifecycle (cleared on real-track mount / every failure path /
+  8s stale timer, real playback always wins via miniDisplay);
+  double-tap artwork → like with an orange heart burst (320ms window
+  locked in miniModel; built-in Animated only).
+- Gauntlet (6c...c7267ad): fresh-context blind critic judged SA-1..5 +
+  IT-1..6 → FIX-FIRST (2 majors, 5 minors): plant hoisted above the
+  setup awaits (first-run permission dialog = dead air otherwise);
+  SingAlong's stable useCallback (React.memo was defeated — every row
+  repainted 4x/sec); stale-plant timer tracked + cleared; burst icon
+  snapshots the pre-toggle state (no mid-animation flip) and
+  finished:false can't unmount a newer burst; stamp-strip before the
+  excerpt filter (synced-only rows no longer lie "nothing filed");
+  retry-responder gated on !syncedLines; a11y roles on artwork + rows;
+  +2 parser locks. All applied.
+- E2E lab (web, playwright, webmock): CAUGHT A REAL CRASH — the metro
+  web swap (api/lrclib → webmocks/lrclib) served a mock without
+  fetchSyncedLyrics → every player open on web threw. Fixed (270012b):
+  the webmock mirrors the dual-shape contract with a deterministic LRC
+  fixture (demo boot track 'Mashooqa' covered, 3.2s/line timeline).
+- Walkthrough 11/11: player opens, SING ALONG active line highlighted,
+  tap-to-seek hint, honest lyrics states, double-tap burst clean,
+  INSTANT TAP answers in 0.94s, zero page errors. Harness: outer-lab
+  scripts/e2e_godmode_wave2.py; results download/e2e-godmode-wave2.json.
+- Workflow: the E2E lab's push trigger extended to evolve/** (31111d5);
+  emulator E2E dispatched on the branch.
+- Gates: tsc clean; 348/348 tests (was 329 at wave start).
+
+Stage Summary:
+- The branch now carries the two highest-value audited features, both
+  blind-critic-fixed and E2E-walked. NO main push, NO release/tag —
+  everything experimental waits on this branch for the user's verdict.
