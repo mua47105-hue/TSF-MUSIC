@@ -1,0 +1,51 @@
+{
+  "checks": [
+    {
+      "name": "onboarding typing stays exact (regression guard)",
+      "ok": true,
+      "detail": "field='hiz'"
+    },
+    {
+      "name": "R2-1 no SAAVN chip on front rows",
+      "ok": true,
+      "detail": "exact-text SAAVN nodes: 0"
+    },
+    {
+      "name": "R2-2 index shows BROWSE THE STACKS",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "R2-2 full genre label readable (BOLLYWOOD)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "R2-2 no '0X STACK' chip suffix anywhere",
+      "ok": true,
+      "detail": "matches: 0"
+    },
+    {
+      "name": "R2-2 chip texts never overlap geometrically",
+      "ok": true,
+      "detail": "12 chips checked, 0 overlapping"
+    },
+    {
+      "name": "R2-3 artist page shows real song count",
+      "ok": true,
+      "detail": "5 SONGS"
+    },
+    {
+      "name": "R2-3 artist page wears TOP ALBUMS rail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "R2-4 no page errors during the walk",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "passed": 9,
+  "failed": 0
+}

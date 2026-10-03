@@ -34,7 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { Track } from '../types';
+import type { Collection, Track } from '../types';
 import {
   searchMusicV2,
   type EngineDeps,
@@ -45,7 +45,7 @@ import { YtAppendController, YT_END_NOTE } from '../search/ytAppend';
 import { useStableField } from '../hooks/useStableField';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
-import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, type AutocompleteBundle } from '../api/saavn';
+import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, collectionIsClean, type AutocompleteBundle } from '../api/saavn';
 import { browseColumnsFor } from '../ui/windowing';
 import { planSearch } from '../search/plan';
 import { verifyLyrics, type Candidate } from '../search/verify';
@@ -54,6 +54,7 @@ import { artistAffinity } from '../ai/core/decision';
 import { usePlayer } from '../player/PlayerProvider';
 import {
   clearRecentSearches,
+  getChartsCache,
   getRecentSearches,
   pushRecentSearch,
 } from '../storage/store';
@@ -110,7 +111,7 @@ function engineDeps(): EngineDeps {
 export function SearchScreen() {
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
-  const browseCols = browseColumnsFor(winWidth);
+  const browseCols = Math.min(3, browseColumnsFor(winWidth));
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
   // ── the field is UNCONTROLLED (v4.0.1 "hihiz" fix) ────────────────
@@ -178,6 +179,10 @@ export function SearchScreen() {
   const ytContRef = useRef<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [browseArt, setBrowseArt] = useState<string[]>([]);
+  // THE COUNTING HOUSE quick chips — chart collections from the home
+  // feed's storage cache (ZERO network on this screen); hidden until the
+  // user's home has cached charts. Fills the old empty tail of the Index.
+  const [cachedCharts, setCachedCharts] = useState<Collection[]>([]);
   const [searched, setSearched] = useState(false);
   const [vibe, setVibe] = useState(false); // Keyword | Vibe mode (§9.8)
   const [source, setSource] = useState<'catalog' | 'youtube'>('catalog');
@@ -205,6 +210,12 @@ export function SearchScreen() {
     getRecentSearches().then(setRecentSearches);
     getTrending(24)
       .then((tracks) => setBrowseArt(tracks.map((t) => t.artwork).filter(Boolean)))
+      .catch(() => undefined);
+    // chart chips come from the home feed's cache — no network here
+    getChartsCache()
+      .then((cached) => {
+        if (cached?.length) setCachedCharts(cached.map((s) => s.collection).filter(collectionIsClean));
+      })
       .catch(() => undefined);
     return () => {
       abortRef.current?.abort();
@@ -818,33 +829,77 @@ export function SearchScreen() {
           }
           renderItem={({ item, index }) => {
             return (
-              <Brutal
-                onPress={() => openGenre(item.label, item.query)}
-                shadow={3}
-                haptic
-                style={styles.gcard}
-              >
-                <Text style={styles.gcardLabel} numberOfLines={1}>
-                  {item.label}
-                </Text>
-                <MonoText size={9} color={colors.ink40} style={styles.gcardNum}>
-                  {String(index + 1).padStart(2, '0')} STACK
-                </MonoText>
-              </Brutal>
+              <View style={{ flex: 1 }}>
+                <Brutal
+                  onPress={() => openGenre(item.label, item.query)}
+                  shadow={3}
+                  haptic
+                  style={styles.gcard}
+                  testID="stack-chip"
+                >
+                  <Text style={styles.gcardLabel} numberOfLines={2} allowFontScaling={false}>
+                    {item.label}
+                  </Text>
+                  <MonoText size={8.5} color={colors.ink40} style={styles.gcardNum}>
+                    {String(index + 1).padStart(2, '0')}
+                  </MonoText>
+                </Brutal>
+              </View>
             );
           }}
           ListFooterComponent={
-            <Brutal
-              onPress={() => nav.navigate('AI')}
-              shadow={3}
-              haptic
-              style={[styles.gcard, styles.gcardWide, { backgroundColor: colors.acid }]}
-            >
-              <Text style={styles.gcardLabel}>MINDBEAT WIRE</Text>
-              <MonoText size={9} color={colors.ink60} style={styles.gcardNum}>
-                TYPE A VIBE · GET 25
-              </MonoText>
-            </Brutal>
+            <View>
+              {cachedCharts.length > 0 ? (
+                <View style={styles.chartsBlock}>
+                  <View style={styles.secLabel}>
+                    <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2.2 }}>
+                      THE COUNTING HOUSE
+                    </MonoText>
+                    <View style={styles.secRule} />
+                  </View>
+                  <View style={styles.chartsChips}>
+                    {cachedCharts.slice(0, 6).map((c, i) => (
+                      <Brutal
+                        key={c.id}
+                        shadow={2}
+                        haptic
+                        style={styles.chartChip}
+                        testID="chart-chip"
+                        onPress={() => nav.navigate('Collection', { collection: c })}
+                      >
+                        <MonoText size={8.5} bold color={colors.orangeDeep} style={{ letterSpacing: 1 }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </MonoText>
+                        <MonoText size={10.5} bold color={colors.ink} numberOfLines={1} style={{ flexShrink: 1 }}>
+                          {c.title}
+                        </MonoText>
+                      </Brutal>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              <View style={styles.wireWrap}>
+                <Brutal
+                  onPress={() => nav.navigate('AI')}
+                  shadow={3}
+                  haptic
+                  style={styles.wireBanner}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.wireBannerTitle} allowFontScaling={false}>
+                      MINDBEAT WIRE
+                    </Text>
+                    <MonoText size={9} color={colors.ink60} style={{ letterSpacing: 1 }}>
+                      TYPE A VIBE · GET 25 SONGS
+                    </MonoText>
+                  </View>
+                  <Ionicons name="arrow-forward" size={18} color={colors.ink} />
+                </Brutal>
+                <MonoText size={9} color={colors.ink40} style={styles.colophon}>
+                  TSF MUSIC · THE INDEX · 320 KBPS ALWAYS
+                </MonoText>
+              </View>
+            </View>
           }
         />
       ) : showSuggestRail ? (
@@ -1054,7 +1109,6 @@ export function SearchScreen() {
               onPress={() => play(index + 1)}
               showHeart={false}
               reasonLabel={item.reason}
-              showSource
             />
           ))}
           {loadingMore ? (
@@ -1238,24 +1292,64 @@ const styles = StyleSheet.create({
   },
   genreRow: { gap: 10, marginBottom: 10, paddingHorizontal: 18 },
   gcard: {
-    flex: 1,
-    aspectRatio: 2.4,
+    aspectRatio: 1.45,
     borderWidth: 1.5,
     borderColor: colors.ink,
     backgroundColor: colors.paper,
     paddingHorizontal: 11,
-    paddingTop: 9,
-    paddingBottom: 7,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
-  gcardWide: { aspectRatio: 2.4 },
   gcardLabel: {
     color: colors.ink,
     fontFamily: fonts.display,
-    fontSize: 13.5,
+    fontSize: 13,
+    lineHeight: 15,
     textTransform: 'uppercase',
     letterSpacing: 0.2,
   },
-  gcardNum: { position: 'absolute', right: 9, bottom: 7 },
+  gcardNum: { marginTop: 'auto' },
+  chartsBlock: { marginTop: 6 },
+  chartsChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingBottom: 4,
+  },
+  chartChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    maxWidth: '100%',
+  },
+  wireWrap: { paddingHorizontal: 18, paddingTop: 10 },
+  wireBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.acid,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  wireBannerTitle: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 14,
+    textTransform: 'uppercase',
+  },
+  colophon: {
+    textAlign: 'center',
+    letterSpacing: 1.4,
+    marginTop: 24,
+  },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 40 },
   sigNote: {
     marginHorizontal: 18,

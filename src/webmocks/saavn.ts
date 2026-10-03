@@ -248,7 +248,7 @@ export async function getCollectionTracks(collectionId: string): Promise<Track[]
   return TRACKS.slice(idx).concat(TRACKS.slice(0, idx));
 }
 
-export async function getAlbumTracks(albumId: string): Promise<Track[]> {
+export async function getAlbumTracks(albumId: string, _title?: string): Promise<Track[]> {
   await new Promise((r) => setTimeout(r, 120));
   return TRACKS.filter((t) => t.albumId === albumId);
 }
@@ -257,6 +257,43 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
   await new Promise((r) => setTimeout(r, 120));
   const pool = TRACKS.filter((t) => t.artist.includes(artistName));
   return (pool.length ? pool : TRACKS).slice(0, limit);
+}
+
+// ── ARTIST CATALOG webmock (L-PARITY with src/api/saavn.ts) ────────────
+
+export interface ArtistCatalog {
+  tracks: Track[];
+  albums: Collection[];
+  artistId?: string;
+  expand: () => Promise<Track[]>;
+}
+
+export function primaryArtistName(name: string): string {
+  return name
+    .split(' feat')[0]!
+    .split(' ft.')[0]!
+    .split(',')[0]!
+    .trim();
+}
+
+export async function getArtistCatalog(name: string, limit = 60): Promise<ArtistCatalog> {
+  await new Promise((r) => setTimeout(r, 150));
+  const primary = primaryArtistName(name) || name.trim();
+  const pool = TRACKS.filter(
+    (t) => t.artist.toLowerCase().includes(primary.toLowerCase()) || primary.toLowerCase().includes(t.artist.toLowerCase()),
+  );
+  const fallback = pool.length ? pool : TRACKS;
+  const albums: Collection[] = NEW_ALBUMS.slice(0, 6);
+  return {
+    tracks: fallback.slice(0, limit),
+    albums,
+    artistId: `mock-${primary.toLowerCase().replace(/\s+/g, '-')}`,
+    expand: async () => {
+      await new Promise((r) => setTimeout(r, 200));
+      const deep = TRACKS.filter((t) => fallback.includes(t) || Math.random() > 0.7);
+      return deep.length > fallback.length ? deep : [];
+    },
+  };
 }
 
 export async function getTrending(limit = 14): Promise<Track[]> {

@@ -36,6 +36,7 @@ import {
   getCollectionTracks,
   getHomepageFeed,
   getTrending,
+  primaryArtistName,
   searchAlbumCollections,
   searchSaavn,
 } from '../api/saavn';
@@ -173,7 +174,10 @@ export function HomeScreen() {
     setPopularArtists(rail);
     rail
       .filter((a) => !a.image)
-      .slice(0, 6)
+      // every photo-less rail name gets a lookup (the old 6-cap starved
+      // the tail of a 10-name rail — tiles wore initials unnecessarily);
+      // lookupArtistPhoto memoizes negatives, so repeats are free
+      .slice(0, POPULAR_ARTIST_COUNT)
       .forEach((a) => {
         lookupArtistPhoto(a.name)
           .then((img) => {
@@ -373,7 +377,9 @@ export function HomeScreen() {
           subtitle: 'Artist',
           artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
           kind: 'artist',
-          query: artist,
+          // joined credit strings search 0 rows on the provider — the
+          // radio must be seeded with the PRIMARY name (probe-verified)
+          query: primaryArtistName(artist) || artist,
         },
       }),
     [nav, popularArtists],
@@ -508,7 +514,7 @@ const FeedSongRow = React.memo(function FeedSongRow({
 }) {
   return (
     <View testID="endless-feed-song">
-      <TrackRow track={track} showSource onPress={() => onPlay(track)} />
+      <TrackRow track={track} onPress={() => onPlay(track)} />
     </View>
   );
 });
@@ -983,7 +989,7 @@ const HomeHeader = React.memo(function HomeHeader({
                         subtitle: 'Artist radio',
                         artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
                         kind: 'artist',
-                        query: artist,
+                        query: primaryArtistName(artist) || artist,
                       },
                     })
                   }

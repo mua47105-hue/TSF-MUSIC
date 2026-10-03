@@ -180,23 +180,89 @@ export async function getArtistPhoto(artistId?: string): Promise<string> {
 const nameToSeed = new Map<string, ArtistInfo>(ARTIST_SEEDS.map((a) => [norm(a.name), a]));
 
 /**
- * Photo by artist NAME — seeds first (instant), then a live id lookup
- * (cached across calls). Used by Home's "Popular artists" rail and any
- * surface that knows a name from the listening profile.
+ * DEEP artist scan — one search round-trip, every credited artist
+ * inspected. The old path read only primary_artists[0] per row, so an
+ * artist credited mid-list ("…, Slowboy") was invisible and their
+ * artistId was lost — the tile then wore initials even though the
+ * provider KNEW the artist (probe: Slowboy has id 6200292 in song rows
+ * but an empty image there; his page-details call resolves the id).
+ * Returns the exact-normalized match's photo (sanitized) and/or id.
+ */
+async function deepScanArtist(
+  name: string,
+): Promise<{ image: string; id?: string }> {
+  const out: { image: string; id?: string } = { image: '' };
+  try {
+    const data = await saavnGet({
+      __call: 'search.getResults',
+      q: name,
+      p: '1',
+      n: '40',
+    });
+    const results = Array.isArray(data?.results) ? data.results : [];
+    for (const raw of results) {
+      const am = raw?.more_info?.artistMap ?? raw?.artistMap ?? {};
+      const pools = [am.primary_artists, am.featured_artists];
+      for (const pool of pools) {
+        for (const a of Array.isArray(pool) ? pool : []) {
+          if (norm(String(a?.name ?? '')) !== norm(name)) continue;
+          if (!out.image) out.image = sanitizeArtistImage(a?.image);
+          if (!out.id && a?.id) out.id = String(a.id);
+          if (out.image && out.id) return out;
+        }
+      }
+    }
+  } catch {
+    /* offline → caller falls back */
+  }
+  return out;
+}
+
+/** Autocomplete's artist section as a last-chance photo source. The
+ *  sanitizer rejects the generic artist-default placeholder. */
+async function autocompleteArtistImage(name: string): Promise<string> {
+  try {
+    const data = await saavnGet({ __call: 'autocomplete.get', query: name });
+    const list = Array.isArray(data?.artists?.data) ? data.artists.data : [];
+    const hit = list.find((a: any) => norm(String(a?.title ?? '')) === norm(name));
+    return hit ? sanitizeArtistImage(hit?.image) : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Name-level memo — popular rails re-resolve on every reload; a '' is
+ *  a REAL negative result (honest initials) and is cached as such. */
+const namePhotoCache = new Map<string, string>();
+
+/**
+ * Photo by artist NAME — seeds first (instant), then the deep scan
+ * (image and/or artist id → page-details photo), then autocomplete.
+ * Used by Home's "Popular artists" rail and any surface that knows a
+ * name from the listening profile.
  *
  * v4.0.1: joined credits ("A, B") resolve against the PRIMARY name only
  * (a search for the full joined string returns a different artist), and
  * the live hit must match the requested name EXACTLY — the old first-
- * result fallback could put a stranger's face on the hero.
+ * result fallback could put a stranger's face on the hero. v4.0.5: the
+ * hit itself may hide anywhere in the credit map (deep scan), and the
+ * artist id is salvaged even when the row image is empty.
  */
 export async function lookupArtistPhoto(name: string): Promise<string> {
   if (!name.trim()) return '';
   const primary = name.split(',')[0]!.trim();
-  const seed = nameToSeed.get(norm(primary));
-  if (seed?.image) return seed.image;
-  const found = await searchSaavnArtists(primary, 5);
-  const hit = found.find((a) => norm(a.name) === norm(primary));
-  if (hit?.image) return hit.image;
-  if (hit?.id) return getArtistPhoto(hit.id);
-  return '';
+  const cacheKey = norm(primary);
+  const memo = namePhotoCache.get(cacheKey);
+  if (memo !== undefined) return memo;
+  const seed = nameToSeed.get(cacheKey);
+  if (seed?.image) {
+    namePhotoCache.set(cacheKey, seed.image);
+    return seed.image;
+  }
+  const scan = await deepScanArtist(primary);
+  let photo = scan.image;
+  if (!photo && scan.id) photo = await getArtistPhoto(scan.id);
+  if (!photo) photo = await autocompleteArtistImage(primary);
+  namePhotoCache.set(cacheKey, photo);
+  return photo;
 }

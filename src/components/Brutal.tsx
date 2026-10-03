@@ -9,7 +9,6 @@
  *               an 8-direction zero-radius text-shadow stack.
  * Kicker      — orange-deep mono micro label (the editorial eyebrow).
  * MonoText    — Space Mono uppercase meta text.
- * SourceBadge — the SAAVN / YT source chip (YT inverted).
  * PulseDot    — blinking orange square (live wire indicator).
  * Ticker      — the marquee strip: ink bar, mono uppercase, acid dots,
  *               26s linear loop, native driver.
@@ -192,21 +191,6 @@ export function MonoText({
   );
 }
 
-/** Track source chip — SAAVN outlined / YT inverted / others mapped. */
-export function SourceBadge({ source, style }: { source?: string; style?: StyleProp<ViewStyle> }) {
-  if (!source) return null;
-  const yt = source === 'youtube';
-  const label =
-    source === 'youtube' ? 'YT' : source === 'itunes' ? 'PREVIEW' : source === 'local' ? 'SAVED' : 'SAAVN';
-  return (
-    <View style={[styles.src, yt && styles.srcYt, style]}>
-      <MonoText size={8} bold color={yt ? colors.acid : colors.ink60} style={{ letterSpacing: 1 }}>
-        {label}
-      </MonoText>
-    </View>
-  );
-}
-
 /** Blinking orange square — the live-wire indicator. */
 export function PulseDot({ size = 8, color = colors.orange }: { size?: number; color?: string }) {
   const op = useRef(new Animated.Value(1)).current;
@@ -289,14 +273,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2.2,
     textTransform: 'uppercase',
   },
-  src: {
-    borderWidth: 1.5,
-    borderColor: colors.ink,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    alignSelf: 'flex-start',
-  },
-  srcYt: { backgroundColor: colors.ink },
   ticker: {
     backgroundColor: colors.ink,
     overflow: 'hidden',

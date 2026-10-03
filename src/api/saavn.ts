@@ -384,18 +384,85 @@ export async function searchAlbumCollections(
   }
 }
 
-export async function getAlbumTracks(albumId: string): Promise<Track[]> {
-  try {
-    const data = await saavnGet({ __call: 'content.getAlbumDetails', albumid: albumId });
-    const list = Array.isArray(data?.list)
-      ? data.list
-      : Array.isArray(data?.songs)
-        ? data.songs
-        : [];
-    return list.map(mapSaavnSong).filter(Boolean) as Track[];
-  } catch {
-    return [];
+const SAMPLE_TRAILER_RE = /sample trailer/i;
+
+/**
+ * Full album tracklist — powers "go to album", crates albums and the
+ * artist-page albums rail.
+ *
+ * USER-REPORTED BUG (probe-verified): some provider listings carry
+ * PRE-RELEASE STUB album ids — content.getAlbumDetails returns no rows,
+ * or a literal "This is a sample trailer - testing" placeholder row
+ * (no encrypted url → mapSaavnSong drops it → 0 playable rows). The
+ * real songs live under a DIFFERENT album id. Ladder (each step
+ * degrades honestly; never throws):
+ *   1. getAlbumDetails(albumId) — works for normal albums.
+ *   2. getAlbumDetails on search.getAlbumResults(title) candidates.
+ *   3. search.getResults(title) rows whose album_id matches or whose
+ *      album name matches the requested title.
+ * Pass the album TITLE (CollectionScreen has it) — the ladder needs it.
+ */
+export async function getAlbumTracks(albumId: string, title?: string): Promise<Track[]> {
+  const usable = async (id: string): Promise<Track[]> => {
+    try {
+      const data = await saavnGet({ __call: 'content.getAlbumDetails', albumid: id });
+      const list = Array.isArray(data?.list)
+        ? data.list
+        : Array.isArray(data?.songs)
+          ? data.songs
+          : [];
+      // the trailer placeholder row carries an id but no encrypted url —
+      // mapSaavnSong already drops it; the explicit name check is the belt
+      // to that brace (a future API could attach an enc to the trailer).
+      return (list as any[])
+        .filter((it) => !SAMPLE_TRAILER_RE.test(String(it?.title ?? '')))
+        .map(mapSaavnSong)
+        .filter(Boolean) as Track[];
+    } catch {
+      return [];
+    }
+  };
+
+  // 1) the direct hit
+  const direct = await usable(albumId);
+  if (direct.length) return dedupeRecordings(direct);
+
+  // 2) real-album candidates by title (pre-release stub re-press case)
+  if (title && title.trim()) {
+    const candidates = await searchAlbumResults(title, 5).catch(() => [] as Array<{ id: string; title: string; music?: string }>);
+    for (const cand of candidates.slice(0, 3)) {
+      if (!cand?.id || String(cand.id) === String(albumId)) continue;
+      const alt = await usable(String(cand.id));
+      if (alt.length) return dedupeRecordings(alt);
+    }
+
+    // 3) song search filtered to the album's name — the stub's songs are
+    //    re-pressed under a different album id, but the ALBUM NAME on the
+    //    song rows still equals the stub's title
+    try {
+      const data = await saavnGet({
+        __call: 'search.getResults',
+        q: title,
+        p: '1',
+        n: '30',
+      });
+      const rows = Array.isArray(data?.results) ? data.results : [];
+      const want = title.toLowerCase().replace(/\s+/g, ' ').trim();
+      const matches = (rows as any[])
+        .filter((it) => {
+          const mi = it?.more_info ?? {};
+          if (String(mi.album_id ?? '') === String(albumId)) return true;
+          const albumName = String(mi.album ?? it?.album ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+          return !!albumName && (albumName === want || want.startsWith(albumName) || albumName.startsWith(want));
+        })
+        .map(mapSaavnSong)
+        .filter(Boolean) as Track[];
+      if (matches.length) return dedupeRecordings(matches);
+    } catch {
+      /* fall through to honest empty */
+    }
   }
+  return [];
 }
 
 /**
@@ -411,6 +478,151 @@ export async function getArtistTracks(artistName: string, limit = 14): Promise<T
   });
   const pool = matched.length >= 3 ? matched : tracks;
   return pool.slice(0, limit);
+}
+
+// ── ARTIST CATALOG — the REAL artist page, not a capped name-search ─────
+
+export interface ArtistCatalog {
+  tracks: Track[];
+  albums: Collection[];
+  artistId?: string;
+  /**
+   * Deep expansion — pulls the artist's dedicated editorial playlists
+   * (up to 3) and merges them into the quick list. Await in the
+   * background AFTER painting `tracks`; call once.
+   */
+  expand: () => Promise<Track[]>;
+}
+
+/**
+ * Split a (possibly joined) credit string to the primary artist name.
+ * "Bibi Babydoll, DJ FKU" → "Bibi Babydoll". Local copy (artists.ts
+ * imports THIS module — no reverse import).
+ */
+export function primaryArtistName(name: string): string {
+  return decodeEntities(name)
+    .split(' feat')[0]!
+    .split(' ft.')[0]!
+    .split(',')[0]!
+    .trim();
+}
+
+/** Name-match discipline shared by the catalog steps. */
+function artistNameMatches(artistField: string, needle: string): boolean {
+  const a = artistField.toLowerCase();
+  return a.includes(needle) || needle.includes(a.split(' feat')[0]);
+}
+
+/**
+ * USER-REPORTED BUGS (probe-verified): (a) artist pages were a capped
+ * name-search — "only some of his songs"; (b) radio collections built on
+ * JOINED credit strings ("Bibi Babydoll, DJ FKU") search 0 rows →
+ * "COULDN'T LOAD THIS". The provider's artist page
+ * (artist.getArtistPageDetails) carries topSongs (real playable rows),
+ * topAlbums and up to TEN dedicated editorial playlists (25 rows each).
+ *
+ * Quick list = topSongs → name-matched search rows (paints in ~1 round
+ * trip). expand() = the dedicated playlists, merged unique. Every step
+ * degrades honestly: no artist page → exactly the v4.0.3 search
+ * behavior, never worse. The joined-credit retry is done on the PRIMARY
+ * name (probe: joined string searches 0 rows, primary name searches rows).
+ */
+export async function getArtistCatalog(rawName: string, limit = 60): Promise<ArtistCatalog> {
+  const primary = primaryArtistName(rawName) || rawName.trim();
+  const needle = primary.toLowerCase().trim();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // seed search rows + resolve the artist id in one pass
+  const seed = (await searchSaavn(primary, 40).catch(() => [] as Track[])) || [];
+  let matched = seed.filter((t) => artistNameMatches(t.artist, needle));
+  if (!matched.length && primary !== rawName.trim()) {
+    // the primary name found nothing — try the full credit string once
+    const alt = await searchSaavn(rawName.trim(), 40).catch(() => [] as Track[]);
+    seed.push(...alt);
+    matched = alt.filter((t) => artistNameMatches(t.artist, rawName.trim().toLowerCase()));
+  }
+  let artistId: string | undefined;
+  try {
+    const data = await saavnGet({ __call: 'search.getResults', q: primary, p: '1', n: '10' });
+    const rows = Array.isArray(data?.results) ? data.results : [];
+    for (const row of rows as any[]) {
+      const am = row?.more_info?.artistMap ?? {};
+      const pools: any[][] = [am.primary_artists, am.featured_artists];
+      for (const pool of pools) {
+        const hit = (Array.isArray(pool) ? pool : []).find((a) => norm(String(a?.name ?? '')) === norm(primary));
+        if (hit?.id) {
+          artistId = String(hit.id);
+          break;
+        }
+      }
+      if (artistId) break;
+    }
+  } catch {
+    /* id stays undefined → search-only fallback below */
+  }
+
+  if (!artistId) {
+    // honest fallback: exactly the v4.0.3 behavior
+    const pool = matched.length >= 3 ? matched : seed;
+    return { tracks: pool.slice(0, limit), albums: [], expand: async () => [] };
+  }
+
+  const page = await saavnGet({
+    __call: 'artist.getArtistPageDetails',
+    artistId,
+  }).catch(() => null);
+
+  // topSongs — the provider's own ordering, real playable rows
+  const topRaw = Array.isArray(page?.topSongs) ? page.topSongs : [];
+  const topSongs = topRaw
+    .filter((it: any) => !SAMPLE_TRAILER_RE.test(String(it?.title ?? '')))
+    .map(mapSaavnSong)
+    .filter(Boolean) as Track[];
+
+  // topAlbums — tappable cards; ids feed getAlbumTracks (ladder-safe)
+  const albRaw = Array.isArray(page?.topAlbums) ? page.topAlbums : [];
+  const albums: Collection[] = albRaw
+    .map((a: any): Collection => ({
+      id: String(a?.id ?? ''),
+      title: decodeEntities(String(a?.title ?? '')),
+      subtitle: a?.subtitle ? decodeEntities(String(a.subtitle)) : 'Album',
+      artwork: art500(a?.image),
+      trackCount: a?.more_info?.song_count ? Number(a.more_info.song_count) || undefined : undefined,
+      kind: 'album' as const,
+    }))
+    .filter((c: Collection) => c.id && c.title && collectionIsClean(c))
+    .slice(0, 12);
+
+  // dedicated editorial playlists — the DEEP catalog rows (up to 3 lists,
+  // probe: a-listers carry ~10 lists × 25 rows)
+  const dp = Array.isArray(page?.dedicated_artist_playlist) ? page.dedicated_artist_playlist : [];
+  const dedicatedIds: string[] = dp
+    .map((l: any) => (l?.id ? String(l.id) : ''))
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const quick = dedupeRecordings(filterClean([...topSongs, ...matched]));
+
+  // one-shot: the deep pull happens once per catalog — repeat calls
+  // return [] and never re-download the same playlists
+  let expandCalled = false;
+  const expand = async (): Promise<Track[]> => {
+    if (expandCalled || !dedicatedIds.length) return [];
+    expandCalled = true;
+    const lists = await Promise.all(
+      dedicatedIds.map((id) => getCollectionTracks(id).catch(() => [] as Track[])),
+    );
+    const deep = dedupeRecordings(filterClean([...topSongs, ...lists.flat(), ...matched]));
+    // only grow the list — never shrink what the user is already seeing
+    return deep.length > quick.length ? deep : [];
+  };
+
+  return {
+    tracks: quick.slice(0, limit),
+    albums,
+    artistId,
+    expand,
+  };
 }
 
 /** Trending songs for home — always safety-filtered, always deduped

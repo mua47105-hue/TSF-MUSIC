@@ -25,7 +25,6 @@ import { colors, fonts } from '../theme';
 import { Artwork } from './Artwork';
 import { usePlayer } from '../player/PlayerProvider';
 import { isDownloaded } from '../storage/downloads';
-import { SourceBadge } from './Brutal';
 
 /** Three looping acid bars on an ink block — the playing heartbeat. */
 export function EqualizerBars({ playing, size = 14, color = colors.acid }: { playing: boolean; size?: number; color?: string }) {
@@ -84,7 +83,6 @@ export const TrackRow = React.memo(function TrackRow({
   right,
   subtitle,
   reasonLabel,
-  showSource = false,
 }: {
   track: Track;
   index?: number;
@@ -97,8 +95,6 @@ export const TrackRow = React.memo(function TrackRow({
   subtitle?: string;
   /** acid reason chip (truthful MINDBEAT lines) */
   reasonLabel?: string;
-  /** SAAVN / YT source chip */
-  showSource?: boolean;
 }) {
   const { active, isPlaying, favorites, toggleLike } = usePlayer();
   const [downloaded, setDownloaded] = React.useState(!!track.localUri);
@@ -179,7 +175,6 @@ export const TrackRow = React.memo(function TrackRow({
       </View>
 
       <View style={styles.side}>
-        {showSource ? <SourceBadge source={track.source} /> : null}
         {right ??
           (showHeart ? (
             <Pressable hitSlop={12} onPress={() => toggleLike(track)} style={styles.likeBtn}>

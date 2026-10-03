@@ -8,18 +8,19 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import type { Track } from '../types';
-import { getAlbumTracks, getCollectionTracks, searchSaavnClean } from '../api/saavn';
+import type { Collection, Track } from '../types';
+import { getAlbumTracks, getArtistCatalog, getCollectionTracks, primaryArtistName, searchSaavnClean } from '../api/saavn';
 import { lookupArtistPhoto } from '../api/artists';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
+import { ShelfCard } from '../components/Shelf';
 import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
@@ -36,12 +37,19 @@ export function CollectionScreen() {
   const { playQueue } = usePlayer();
   const { collection, tracks: routeTracks } = route.params;
 
-  const [tracks, setTracks] = useState<Track[] | null>(routeTracks ?? null);
+  // An EMPTY route array (e.g. a crates album row that has no stored
+  // tracks) used to be trusted forever — "0 SONGS" with no retry. Only
+  // a NON-EMPTY route list counts as truth; anything else lazy-loads.
+  const carriedTracks = routeTracks?.length ? routeTracks : null;
+
+  const [tracks, setTracks] = useState<Track[] | null>(carriedTracks);
   const [loading, setLoading] = useState(
-    !routeTracks && !!(collection.kind === 'chart' || collection.kind === 'search' || collection.kind === 'album' || collection.kind === 'artist'),
+    !carriedTracks && !!(collection.kind === 'chart' || collection.kind === 'search' || collection.kind === 'album' || collection.kind === 'artist'),
   );
   const [failed, setFailed] = useState(false);
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
+  // artist pages carry the provider's own top-albums (tappable cards)
+  const [artistAlbums, setArtistAlbums] = useState<Collection[]>([]);
 
   // ── Artist pages carry the artist's PHOTO (v4.0.1 fix) ────────────
   // The route often arrives with artwork: '' (the home rail only resolved
@@ -70,7 +78,7 @@ export function CollectionScreen() {
   }, [isArtist, collection.artwork, collection.title]);
 
   useEffect(() => {
-    if (routeTracks) return;
+    if (carriedTracks) return;
     let cancelled = false;
     (async () => {
       try {
@@ -78,9 +86,46 @@ export function CollectionScreen() {
         if (collection.kind === 'chart') {
           list = await getCollectionTracks(collection.id);
         } else if (collection.kind === 'album') {
-          list = await getAlbumTracks(collection.id);
-        } else if ((collection.kind === 'search' || collection.kind === 'artist') && collection.query) {
-          list = await searchSaavnClean(collection.query, 40);
+          // title powers the stub-rescue ladder (see getAlbumTracks)
+          list = await getAlbumTracks(collection.id, collection.title);
+        } else if (collection.kind === 'artist') {
+          // the REAL artist page: topSongs + name-matched rows paint
+          // first, dedicated playlists deepen the list in the background.
+          // Falls back to the v4.0.3 search behavior on any failure.
+          const name = collection.title || collection.query || '';
+          const catalog = await getArtistCatalog(name).catch(() => null);
+          if (catalog && catalog.tracks.length) {
+            if (!cancelled) {
+              setTracks(catalog.tracks);
+              setArtistAlbums(catalog.albums);
+              setLoading(false);
+              setFailed(false);
+            }
+            const deep = await catalog.expand().catch(() => [] as Track[]);
+            if (!cancelled && deep.length) setTracks(deep);
+            return;
+          }
+          // catalog empty → the old search ladder, with the primary-name
+          // retry (joined credit strings search 0 rows on the provider)
+          const q = collection.query || name;
+          list = await searchSaavnClean(q, 40).catch(() => [] as Track[]);
+          if (list.length < 3) {
+            const primary = primaryArtistName(name) || q;
+            if (primary.toLowerCase() !== q.toLowerCase()) {
+              const alt = await searchSaavnClean(primary, 40).catch(() => [] as Track[]);
+              if (alt.length > list.length) list = alt;
+            }
+          }
+        } else if (collection.kind === 'search' && collection.query) {
+          list = await searchSaavnClean(collection.query, 40).catch(() => [] as Track[]);
+          if (list.length < 3) {
+            // same joined-credits rescue for search-kind pages
+            const primary = primaryArtistName(collection.query);
+            if (primary && primary.toLowerCase() !== collection.query.toLowerCase()) {
+              const alt = await searchSaavnClean(primary, 40).catch(() => [] as Track[]);
+              if (alt.length > list.length) list = alt;
+            }
+          }
         }
         if (!cancelled) {
           setTracks(list);
@@ -95,7 +140,7 @@ export function CollectionScreen() {
     return () => {
       cancelled = true;
     };
-  }, [collection.id, collection.kind, collection.query, routeTracks]);
+  }, [collection.id, collection.kind, collection.query, collection.title, carriedTracks]);
 
   const play = (index: number) => {
     if (tracks && tracks.length) {
@@ -203,6 +248,33 @@ export function CollectionScreen() {
                 </MonoText>
               </View>
             ) : null}
+            {artistAlbums.length > 0 && !loading ? (
+              <View style={styles.artistAlbumsWrap}>
+                <View style={styles.artistAlbumsHead}>
+                  <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+                    TOP ALBUMS
+                  </MonoText>
+                  <View style={styles.artistAlbumsRule} />
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}
+                >
+                  {artistAlbums.map((c) => (
+                    <ShelfCard
+                      key={c.id}
+                      title={c.title}
+                      subtitle={c.subtitle}
+                      artwork={c.artwork}
+                      seed={`artist-album-${c.id}`}
+                      size={140}
+                      onPress={() => nav.navigate('Collection', { collection: c })}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
           </View>
         }
         renderItem={({ item, index }) => (
@@ -292,4 +364,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingWrap: { alignItems: 'center', gap: 12, paddingVertical: 32 },
+  artistAlbumsWrap: { alignSelf: 'stretch', marginTop: 10, gap: 8 },
+  artistAlbumsHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18 },
+  artistAlbumsRule: { flex: 1, height: 1.5, backgroundColor: colors.ink16 },
 });

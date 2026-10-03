@@ -52,6 +52,9 @@ interface LibItem {
   kind: 'liked' | 'stats' | 'playlist' | 'ai' | 'artist' | 'album' | 'track';
   playlistId?: string;
   tracks?: Track[];
+  /** provider album id (from any track of this album) — powers the
+   *  REAL album page lazy-load instead of an empty local list */
+  albumId?: string;
   circle?: boolean;
 }
 
@@ -196,18 +199,33 @@ export function LibraryScreen() {
     });
     items.sort((a, b) => a.title.localeCompare(b.title));
   } else if (chip === 'albums') {
-    const seen = new Set<string>();
+    // Every album row carries its tracks + provider album id. Tapping
+    // opens the REAL album page (full tracklist from the provider) when
+    // an id exists; the collected tracks are the offline fallback — the
+    // old empty `tracks: []` route is what made crates albums show
+    // "0 SONGS" forever (user-reported).
+    const byAlbum = new Map<string, { tracks: Track[]; albumId?: string; artwork?: string; artist?: string }>();
     [...recents, ...favorites].forEach((t) => {
       const alb = t.album ?? '';
-      if (!alb || seen.has(alb)) return;
-      seen.add(alb);
+      if (!alb) return;
+      const entry = byAlbum.get(alb);
+      if (entry) {
+        entry.tracks.push(t);
+        if (!entry.albumId && t.albumId) entry.albumId = t.albumId;
+      } else {
+        byAlbum.set(alb, { tracks: [t], albumId: t.albumId, artwork: t.artwork, artist: t.artist });
+      }
+    });
+    byAlbum.forEach((entry, alb) => {
       items.push({
         key: `album-${alb}`,
         title: alb,
-        subtitle: `Album · ${t.artist}`,
-        artwork: t.artwork,
+        subtitle: `Album · ${entry.artist ?? 'Unknown'}`,
+        artwork: entry.artwork,
         seed: alb,
         kind: 'album',
+        albumId: entry.albumId,
+        tracks: entry.tracks,
       });
     });
     items.sort((a, b) => a.title.localeCompare(b.title));
@@ -239,7 +257,30 @@ export function LibraryScreen() {
           query: item.title,
         },
       });
-    if (item.kind === 'album' || item.kind === 'track')
+    if (item.kind === 'album') {
+      if (item.albumId) {
+        // REAL album page — lazy-loads the provider's full tracklist
+        return nav.navigate('Collection', {
+          collection: {
+            id: item.albumId,
+            title: item.title,
+            subtitle: 'Album',
+            artwork: item.artwork ?? '',
+            kind: 'album',
+          },
+        });
+      }
+      // no provider id (local-only track) — open the collected rows
+      return nav.navigate('Collection', {
+        collection: {
+          id: `local-${item.title}`,
+          title: item.title,
+          artwork: item.artwork ?? '',
+        },
+        tracks: item.tracks ?? [],
+      });
+    }
+    if (item.kind === 'track')
       return nav.navigate('Collection', {
         collection: {
           id: `local-${item.title}`,
