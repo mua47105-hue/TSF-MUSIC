@@ -466,12 +466,15 @@ export async function getAlbumTracks(albumId: string, title?: string): Promise<T
 }
 
 /**
- * Artist top-tracks — the backbone of song radio / "because you listened".
+ * Artist top-tracks — the backbone of song radio / daily mixes.
  * Searches the artist name and keeps results whose artist matches.
+ * Joined credit strings seed by PRIMARY name ("A, B" searches 0 rows
+ * on the provider — the same dead-end class as the radio bug).
  */
 export async function getArtistTracks(artistName: string, limit = 14): Promise<Track[]> {
-  const tracks = await searchSaavn(artistName, Math.max(20, limit * 2));
-  const needle = artistName.toLowerCase().trim();
+  const wanted = primaryArtistName(artistName) || artistName.trim();
+  const tracks = await searchSaavn(wanted, Math.max(20, limit * 2));
+  const needle = wanted.toLowerCase().trim();
   const matched = tracks.filter((t) => {
     const a = t.artist.toLowerCase();
     return a.includes(needle) || needle.includes(a.split(' feat')[0]);
@@ -532,8 +535,17 @@ export async function getArtistCatalog(rawName: string, limit = 60): Promise<Art
   const needle = primary.toLowerCase().trim();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-  // seed search rows + resolve the artist id in one pass
-  const seed = (await searchSaavn(primary, 40).catch(() => [] as Track[])) || [];
+  // ONE raw search round-trip feeds BOTH the seed tracks and the id
+  // probe (the critic caught the redundant second call)
+  let seed: Track[] = [];
+  let rawRows: any[] = [];
+  try {
+    const data = await saavnGet({ __call: 'search.getResults', q: primary, p: '1', n: '40' });
+    rawRows = Array.isArray(data?.results) ? data.results : [];
+    seed = dedupeRecordings(rawRows.map(mapSaavnSong).filter(Boolean) as Track[]);
+  } catch {
+    /* offline → honest empty, fallback below */
+  }
   let matched = seed.filter((t) => artistNameMatches(t.artist, needle));
   if (!matched.length && primary !== rawName.trim()) {
     // the primary name found nothing — try the full credit string once
@@ -543,9 +555,7 @@ export async function getArtistCatalog(rawName: string, limit = 60): Promise<Art
   }
   let artistId: string | undefined;
   try {
-    const data = await saavnGet({ __call: 'search.getResults', q: primary, p: '1', n: '10' });
-    const rows = Array.isArray(data?.results) ? data.results : [];
-    for (const row of rows as any[]) {
+    for (const row of rawRows) {
       const am = row?.more_info?.artistMap ?? {};
       const pools: any[][] = [am.primary_artists, am.featured_artists];
       for (const pool of pools) {
@@ -562,9 +572,10 @@ export async function getArtistCatalog(rawName: string, limit = 60): Promise<Art
   }
 
   if (!artistId) {
-    // honest fallback: exactly the v4.0.3 behavior
+    // honest fallback: the v4.0.3 search behavior, safety-filter included
+    // (critic fix: raw seed rows must pass filterClean like searchSaavnClean)
     const pool = matched.length >= 3 ? matched : seed;
-    return { tracks: pool.slice(0, limit), albums: [], expand: async () => [] };
+    return { tracks: filterClean(pool).slice(0, limit), albums: [], expand: async () => [] };
   }
 
   const page = await saavnGet({

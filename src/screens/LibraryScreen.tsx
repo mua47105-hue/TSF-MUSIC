@@ -210,7 +210,8 @@ export function LibraryScreen() {
       if (!alb) return;
       const entry = byAlbum.get(alb);
       if (entry) {
-        entry.tracks.push(t);
+        // a track that is BOTH liked and recently played must appear once
+        if (!entry.tracks.some((x) => x.id === t.id)) entry.tracks.push(t);
         if (!entry.albumId && t.albumId) entry.albumId = t.albumId;
       } else {
         byAlbum.set(alb, { tracks: [t], albumId: t.albumId, artwork: t.artwork, artist: t.artist });
