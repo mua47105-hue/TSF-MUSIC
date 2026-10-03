@@ -62,6 +62,7 @@ import { Artwork } from '../components/Artwork';
 import { TrackRow } from '../components/TrackRow';
 import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { colors, fonts, genreGradient } from '../theme';
+import { dataSaverActive } from '../player/audioQuality';
 import type { RootStackParamList } from './navigation';
 import { perfMark } from '../perf/perf';
 
@@ -85,6 +86,30 @@ const GENRES: Array<{ label: string; query: string }> = [
   { label: 'Sad Songs', query: 'sad songs hindi' },
   { label: 'Instrumental', query: 'instrumental' },
 ];
+
+/** Stack-card hints (Task 28): honest genre taxonomy lines so the cards read
+ *  like a stocked shelf instead of an empty frame. Descriptive, not data —
+ *  nothing here pretends to be a song or a chart. */
+const GENRE_HINTS: Record<string, string> = {
+  Bollywood: 'FILM ANTHEMS · MASALA · EVERGREEN',
+  Punjabi: 'BHANGRA · DESI HIP-HOP · FOLK POP',
+  'Hip-Hop': 'RAP · DESI BARS · TRAP',
+  Pop: 'CHART POP · SING-ALONGS',
+  Indie: 'INDIA INDIE · BEDROOM POP',
+  Romance: 'LOVE SONGS · SLOW BURNS',
+  Rock: 'ALT ROCK · STADIUM ANTHEMS',
+  'Lo-Fi': 'STUDY BEATS · CHILL MIXES',
+  Party: 'DANCE FLOOR · BANGER PACKS',
+  Workout: 'GYM PUSH · HIGH BPM',
+  Sufi: 'QAWWALI · DEVOTIONAL SOUL',
+  Devotional: 'BHAJAN · MANTRA · AARTI',
+  Ghazal: 'MEHFIL · URDU POETRY',
+  '90s Hits': 'CASSETTE GOLD · MELLOWS',
+  '2000s Hits': 'CD ERA · REMIX CULTURE',
+  Dance: 'EDM · CLUB · DROPS',
+  'Sad Songs': 'HEARTBREAK · RAINY NIGHTS',
+  Instrumental: 'FLUTE · PIANO · LOOPS',
+};
 
 const DEBOUNCE_MS = 700; // search debounce: leaves a visible typeahead
 // window (suggestions at 120 ms render while the search waits); the
@@ -840,6 +865,11 @@ export function SearchScreen() {
                   <Text style={styles.gcardLabel} numberOfLines={2} allowFontScaling={false}>
                     {item.label}
                   </Text>
+                  {GENRE_HINTS[item.label] ? (
+                    <MonoText size={7.5} color={colors.ink40} style={styles.gcardHint} allowFontScaling={false}>
+                      {GENRE_HINTS[item.label]}
+                    </MonoText>
+                  ) : null}
                   <MonoText size={8.5} color={colors.ink40} style={styles.gcardNum}>
                     {String(index + 1).padStart(2, '0')}
                   </MonoText>
@@ -896,7 +926,7 @@ export function SearchScreen() {
                   <Ionicons name="arrow-forward" size={18} color={colors.ink} />
                 </Brutal>
                 <MonoText size={9} color={colors.ink40} style={styles.colophon}>
-                  TSF MUSIC · THE INDEX · 320 KBPS ALWAYS
+                  {dataSaverActive() ? 'TSF MUSIC · THE INDEX · DATA SAVER ON' : 'TSF MUSIC · THE INDEX · 320 KBPS ALWAYS'}
                 </MonoText>
               </View>
             </View>
@@ -954,6 +984,32 @@ export function SearchScreen() {
               {'Nothing verified matches that query. MINDBEAT filed it — results may land as the catalog updates.'}
             </MonoText>
           )}
+          {/* dead-end audit (Task 28): the zero state always offers a way
+              forward — a YouTube fallback or the Wire's vibe generator */}
+          <View style={styles.zeroActions} testID="zero-actions">
+            {source === 'catalog' ? (
+              <Brutal
+                haptic
+                shadow={2}
+                style={styles.zeroBtn}
+                onPress={() => {
+                  setSource('youtube');
+                  runSearch(field.getValue().trim());
+                }}
+              >
+                <Ionicons name="logo-youtube" size={14} color={colors.ink} />
+                <MonoText size={10} bold color={colors.ink}>
+                  TRY YOUTUBE
+                </MonoText>
+              </Brutal>
+            ) : null}
+            <Brutal haptic shadow={2} style={styles.zeroBtn} onPress={() => nav.navigate('AI')}>
+              <Ionicons name="sparkles-outline" size={14} color={colors.ink} />
+              <MonoText size={10} bold color={colors.ink}>
+                FILE THE VIBE
+              </MonoText>
+            </Brutal>
+          </View>
         </View>
       ) : (
         <ScrollView
@@ -1309,6 +1365,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   gcardNum: { marginTop: 'auto' },
+  gcardHint: {
+    marginTop: 6,
+    letterSpacing: 0.6,
+    lineHeight: 11,
+  },
+  zeroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+    marginTop: 18,
+  },
+  zeroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: colors.paper,
+  },
   chartsBlock: { marginTop: 6 },
   chartsChips: {
     flexDirection: 'row',
