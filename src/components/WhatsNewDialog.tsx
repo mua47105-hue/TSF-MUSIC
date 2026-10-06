@@ -110,7 +110,12 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 360,
-    maxHeight: '85%',
+    // v4.3.1: a DEFINITE height (not maxHeight) — RN Android cannot clamp
+    // a ScrollView through flexShrink under a maxHeight parent (the E2E
+    // lab probe: the list clipped mid-line and the CTA left the a11y
+    // tree). A definite height makes the flex: 1 list bounded and the
+    // CTA always visible.
+    height: '88%',
     backgroundColor: colors.paper,
     borderWidth: 2,
     borderColor: colors.ink,
@@ -119,7 +124,7 @@ const styles = StyleSheet.create({
     ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 8, height: 8 }, elevation: 8 } as object),
   },
   /** The list scrolls inside the sheet; header + CTA stay pinned. */
-  scroll: { flexShrink: 1 },
+  scroll: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   edDot: { width: 7, height: 7, backgroundColor: colors.orange },
