@@ -170,6 +170,24 @@ export const ONBOARDING = {
   firstSessionsExplore: 5, // sessions 1–5 run exploration-heavy
 } as const;
 
+// ── Captured genre evidence (GENIUS P1 — the free lunch) ───────────────
+// Providers (iTunes primaryGenreName, JioSaavn genre when present) give
+// genre strings away on every response. Captured genres flow into
+// genreAffinities through the SAME bump path as the mood pseudo-genres
+// (profile.ts: w · 0.3 per graded listen, already there). The two new
+// numbers below are the only extra weight genre evidence may carry:
+export const GENRE_CAPTURE = {
+  /** One-time bump when a genre is backfilled onto a stored favorite —
+   *  heart-class evidence (the user chose to keep this song), so it earns
+   *  0.5 × ONBOARDING.genreSeedWeight (2.2 · 0.5 = 1.1). A favorite is one
+   *  strong signal, not a listening history — hence the hard 0.5 cap. */
+  favoriteBackfillWeight: 1.1,
+  /** Safety cap on genre entries contributed purely by captured evidence
+   *  in one rebuild — keeps a genre-heavy session from drowning the
+   *  artist axis in the decision engine's 0.4 × genreAffinity term. */
+  maxAffinityEntries: 40,
+} as const;
+
 // ── Profile normalization (§6.2) ────────────────────────────────────────
 export const NORMALIZATION = {
   topArtistRead: 10,

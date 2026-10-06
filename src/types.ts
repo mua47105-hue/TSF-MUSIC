@@ -25,6 +25,10 @@ export interface Track {
   has320?: boolean;
   /** Catalog language (hindi/punjabi/english/…) — powers language affinity */
   language?: string;
+  /** Provider genre when the response carries one (iTunes primaryGenreName,
+   *  JioSaavn genre when present) — free evidence for genre affinity (§6.2).
+   *  Optional everywhere: every consumer must work when it is missing. */
+  genre?: string;
   /** Release year — powers era affinity */
   year?: number;
   /** Attached by MINDBEAT surfaces — the truthful explanation line */

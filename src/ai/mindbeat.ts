@@ -10,12 +10,13 @@
 import { Platform } from 'react-native';
 import { EventLedger } from './core/ledger';
 import { buildProfile, emptyProfile, topArtists } from './core/profile';
+import { GENRE_CAPTURE } from './core/constants';
 import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory via metro redirect
 import { SessionBrain } from './core/session';
 import { estimateFeatures } from './core/features';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
-import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache } from '../storage/store';
+import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
@@ -23,6 +24,7 @@ import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
+import { recordingKey } from '../api/recording';
 
 const CATALOG = {
   search: (q: string, limit = 20) => searchSaavnClean(q, limit),
@@ -119,6 +121,10 @@ class Mindbeat {
         corrections: priorCorrections,
       });
       // Liked songs are heart-tier evidence even before a TRACK_LIKE event lands.
+      // GENIUS P1: a favorite's captured genre is heart-class genre evidence
+      // too (the user chose to keep the song) — one bounded bump per genre,
+      // recomputed from scratch on every rebuild (deterministic, no drift).
+      const favGenres = new Map<string, number>();
       for (const f of favorites.slice(0, 200)) {
         const key = f.artist.trim().toLowerCase();
         if (key && profile.artists[key]?.source !== 'heart') {
@@ -131,6 +137,26 @@ class Mindbeat {
           if (!profile.artists[key]) continue;
           profile.artists[key]!.w = Math.max(profile.artists[key]!.w, 2.5);
           profile.artists[key]!.source = 'heart';
+        }
+        const g = f.genre?.toLowerCase().trim();
+        if (g) favGenres.set(g, (favGenres.get(g) ?? 0) + 1);
+      }
+      const genreEntries = [...favGenres.entries()]
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+        .slice(0, GENRE_CAPTURE.maxAffinityEntries);
+      for (const [g] of genreEntries) {
+        const cur = profile.genres[g];
+        if (cur) {
+          cur.w = Math.max(cur.w, GENRE_CAPTURE.favoriteBackfillWeight);
+          cur.evidenceCount += 1;
+          cur.lastEventTs = Math.max(cur.lastEventTs, Date.now());
+        } else {
+          profile.genres[g] = {
+            w: GENRE_CAPTURE.favoriteBackfillWeight,
+            lastEventTs: Date.now(),
+            evidenceCount: 1,
+            source: 'organic',
+          };
         }
       }
       this.profile = profile;
@@ -165,6 +191,9 @@ class Mindbeat {
         durationMs: (track.duration || 210) * 1000,
         energy: feats.energy,
         valence: feats.valence,
+        // GENIUS P1: captured genre rides into the graded listen — the
+        // profile's genre-affinity path reads ListenRecord.genre.
+        genre: track.genre,
         wasRecommended: !!track.isRecommended,
         reasonCode: track.reasonCode as ReasonCode | undefined,
         explorationSlot: !!track.exploration,
@@ -230,6 +259,38 @@ class Mindbeat {
 
   async searchClicked(trackId: string, rank: number): Promise<void> {
     await this.ledger?.searchClicked(trackId, rank);
+  }
+
+  /**
+   * GENIUS P1 — lazy genre backfill: an old stored favorite that predates
+   * genre capture has no genre; when the same recording shows up in a fresh
+   * result row that carries one, write it back (exactly once — rows that
+   * already have a genre are never overwritten). Fire-and-forget from the
+   * search paths; never blocks the UI and honors the kill switch.
+   */
+  async backfillGenresFrom(tracks: Track[]): Promise<number> {
+    if (this.disabled || !tracks.length) return 0;
+    try {
+      const favorites = await getFavorites();
+      if (!favorites.length) return 0;
+      const freshByRecording = new Map<string, Track>();
+      for (const t of tracks) {
+        if (!t.genre) continue;
+        const key = recordingKey(t);
+        if (!freshByRecording.has(key)) freshByRecording.set(key, t);
+      }
+      if (!freshByRecording.size) return 0;
+      let n = 0;
+      for (const fav of favorites) {
+        if (fav.genre) continue;
+        const fresh = freshByRecording.get(recordingKey(fav));
+        if (!fresh) continue;
+        if (await backfillFavoriteGenre(fav.id, fresh.genre!)) n += 1;
+      }
+      return n;
+    } catch {
+      return 0; // best-effort — never break the caller
+    }
   }
 
   /** SEARCH V2 (§5.6) — correlated, joinable search evidence.

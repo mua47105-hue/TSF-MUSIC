@@ -168,6 +168,12 @@ function mapSaavnSong(raw: any): Track | null {
     has320: mi?.['320kbps'] === 'true' || raw?.['320kbps'] === 'true' || undefined,
     explicit: truthyExplicit(mi?.explicit_content ?? raw?.explicit_content),
     language: String(mi?.language ?? raw?.language ?? '').toLowerCase() || undefined,
+    // GENIUS P1: JioSaavn rarely sends genre on song rows, but when a field
+    // is present (album/playlist-scoped responses) capture it — bonus
+    // evidence, never required (every consumer works when it is undefined).
+    genre: typeof (mi?.genre ?? raw?.genre) === 'string' && (mi?.genre ?? raw?.genre)
+      ? decodeEntities(mi?.genre ?? raw?.genre)
+      : undefined,
     year: parseInt(mi?.year ?? raw?.year ?? '0', 10) || undefined,
     playCount: Number(raw?.play_count ?? mi?.play_count ?? 0) || undefined,
     releaseDate:

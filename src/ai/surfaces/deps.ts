@@ -35,8 +35,15 @@ export function toCandidate(track: Track, pool: Candidate['pool']): Candidate {
     artist: track.artist,
     artistId: track.artistId,
     language: track.language,
-    genre: undefined,
-    features: estimateFeatures({ artist: track.artist, title: track.title, album: track.album }),
+    // GENIUS P1: captured genre rides into scoring (0.4 × genreAffinity
+    // term) — was hardcoded `undefined` and threw the free evidence away.
+    genre: track.genre,
+    features: estimateFeatures({
+      artist: track.artist,
+      title: track.title,
+      album: track.album,
+      genres: track.genre ? [track.genre] : undefined,
+    }),
     pool,
   };
 }

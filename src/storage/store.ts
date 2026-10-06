@@ -83,6 +83,26 @@ export async function isFavorite(track: Track): Promise<boolean> {
   return list.some((t) => t.id === track.id);
 }
 
+/**
+ * GENIUS P1 — lazy genre backfill: write a captured genre onto a stored
+ * favorite that predates genre capture. Exactly-once semantics: a row that
+ * already carries a genre is NEVER overwritten (old evidence is still
+ * evidence). Same serialized write discipline as toggleFavorite; the row is
+ * edited in place, so no streamUrl can be introduced here.
+ */
+export async function backfillFavoriteGenre(trackId: string, genre: string): Promise<boolean> {
+  if (!trackId || !genre) return false;
+  return serialized(async () => {
+    const list = await getFavorites();
+    const idx = list.findIndex((t) => t.id === trackId);
+    if (idx < 0) return false;
+    if (list[idx].genre) return false;
+    list[idx] = { ...list[idx], genre };
+    await writeJSON(KEYS.favorites, list.slice(0, 500));
+    return true;
+  });
+}
+
 // ── Play history ───────────────────────────────────────────────────────
 
 export async function getRecents(): Promise<Track[]> {

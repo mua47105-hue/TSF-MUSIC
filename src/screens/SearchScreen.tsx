@@ -295,6 +295,7 @@ export function SearchScreen() {
       publishRows: (rows) => {
         resultsRef.current = rows;
         setResults(rows);
+        void mindbeat.backfillGenresFrom(rows); // GENIUS P1 lazy backfill
       },
       publishState: (s) => {
         setHasMoreBoth(s.hasMore);
@@ -358,6 +359,7 @@ export function SearchScreen() {
       appendedPagesRef.current = mergeUniqueTracks(appendedPagesRef.current, allowed);
       resultsRef.current = merged; // keep the mirror in sync immediately
       setResults(merged);
+      void mindbeat.backfillGenresFrom(allowed); // GENIUS P1 lazy backfill
       if (!searchHasMore(page.length, fresh)) {
         setHasMoreBoth(false);
         setEndNote('END OF RESULTS');
@@ -415,6 +417,7 @@ export function SearchScreen() {
           if (gen !== searchGen.current) return;
           perfMark('search-yt', ytr.tracks.length);
           setResults(ytr.tracks);
+          void mindbeat.backfillGenresFrom(ytr.tracks); // GENIUS P1 lazy backfill
           setMeta({
             degraded: false,
             sigState: undefined,
@@ -444,6 +447,7 @@ export function SearchScreen() {
           if (gen !== searchGen.current) return;
           perfMark('search-vibe', r.tracks.length);
           setResults(r.tracks);
+          void mindbeat.backfillGenresFrom(r.tracks); // GENIUS P1 lazy backfill
           setMeta({ degraded: false });
           setHasMoreBoth(false);
           setEndNote(null);
