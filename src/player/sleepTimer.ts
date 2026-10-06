@@ -9,9 +9,16 @@
  *
  * Single-owner: PlayerScreen subscribes for the countdown chip; the engine
  * itself owns TrackPlayer so it survives sheet unmounts.
+ *
+ * THE TEN wave 1: the fade no longer writes TrackPlayer.setVolume
+ * directly — it reports its ramp factor to the VOLUME BUS (the single
+ * writer), where it COMPOSES with Smart Volume (multiplier × fade) and
+ * outranks focus/crossfade fades (VOLUME_FADE_PRECEDENCE: sleep first).
+ * Releasing the factor restores the product of the remaining sources.
  */
 
 import TrackPlayer from 'react-native-track-player';
+import { clearFadeFactor, setFadeFactor } from './volumeBus';
 
 export interface SleepTimerState {
   /** epoch ms when the timer fires; null = disarmed */
@@ -39,14 +46,6 @@ function notify() {
   listeners.forEach((fn) => fn(s));
 }
 
-async function setVolume(v: number) {
-  try {
-    await TrackPlayer.setVolume(Math.max(0, Math.min(1, v)));
-  } catch {
-    /* volume is best-effort (web mock is a no-op) */
-  }
-}
-
 async function fire() {
   clearTimers();
   try {
@@ -54,7 +53,7 @@ async function fire() {
   } catch {
     /* the timer must never crash the app */
   }
-  await setVolume(1); // restore for the next session
+  clearFadeFactor('sleep'); // release the ramp — the bus restores the rest
   endAt = null;
   minutes = null;
   notify();
@@ -70,7 +69,7 @@ function clearTimers() {
 /** Arm (or re-arm) the timer for `mins` minutes. */
 export function armSleepTimer(mins: number) {
   clearTimers();
-  void setVolume(1); // any re-arm resets a mid-fade ramp
+  clearFadeFactor('sleep'); // any re-arm resets a mid-fade ramp
   minutes = mins;
   endAt = Date.now() + mins * 60_000;
   notify();
@@ -85,8 +84,9 @@ export function armSleepTimer(mins: number) {
       return;
     }
     if (remaining <= FADE_MS) {
-      // linear ramp inside the fade window; no re-arming mid-fade
-      await setVolume(remaining / FADE_MS);
+      // linear ramp inside the fade window; no re-arming mid-fade.
+      // The bus multiplies with Smart Volume and outranks focus/crossfade.
+      setFadeFactor('sleep', remaining / FADE_MS);
     }
   }, 500);
 }
@@ -94,7 +94,7 @@ export function armSleepTimer(mins: number) {
 /** Disarm — volume restored, playback untouched (user cancelled). */
 export function cancelSleepTimer() {
   clearTimers();
-  void setVolume(1);
+  clearFadeFactor('sleep');
   endAt = null;
   minutes = null;
   notify();

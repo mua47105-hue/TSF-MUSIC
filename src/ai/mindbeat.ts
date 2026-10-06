@@ -13,7 +13,7 @@ import { buildProfile, emptyProfile, topArtists } from './core/profile';
 import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory via metro redirect
 import { SessionBrain } from './core/session';
 import { estimateFeatures, calibrate, setLyricDeltaProvider } from './core/features';
-import { loadFeatureTable } from './core/featureTable';
+import { loadFeatureTable, lookupBakedFeatures } from './core/featureTable';
 import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
@@ -653,6 +653,19 @@ class Mindbeat {
       energy: this.brain?.sessionEnergy ?? 0,
       listens: state?.window.length ?? 0,
     };
+  }
+
+  /**
+   * THE TEN F1 — the track's RAW baked energy for the playback path
+   * (Smart Volume's loudness curve). null = no baked row ⇒ the caller
+   * no-ops (multiplier 1.0, byte-identical to the pre-feature app).
+   * Reads the same lazy table as the estimator — call after
+   * warmHeavyTables(); an early call simply returns null and the next
+   * track picks it up (an honest no-op, never a blocker).
+   */
+  bakedEnergyFor(track: { title?: string; artist?: string }): number | null {
+    const hit = lookupBakedFeatures({ title: track.title, artist: track.artist });
+    return hit ? hit.e : null;
   }
 
   // ── Phase 6 — SOUND ALIKE (the tag-overlap similarity engine) ────────

@@ -21,6 +21,9 @@ import { ytRefreshStream } from '../api/youtube';
 import { getRadio } from '../ai/engine';
 import { getAutoplay } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
+import { crossfadeTick, initCrossfade, resetCrossfadeRamp } from './crossfade';
+import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
+import { initPlaybackRate } from './playbackRate';
 import type { Track } from '../types';
 
 let refreshing = false;
@@ -30,6 +33,13 @@ let radioServedCount = 0;
 let radioListenRatios: number[] = [];
 
 export async function playbackService(): Promise<void> {
+  // THE TEN wave 1 (critic R2): the headless context must honor persisted
+  // preferences too — the UI provider may never run (app killed,
+  // ContinuePlayback). All three are idempotent + catch-swallowed.
+  initSmartVolume();
+  initCrossfade();
+  initPlaybackRate();
+
   TrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
   TrackPlayer.addEventListener(Event.RemotePause, () => TrackPlayer.pause());
 
@@ -48,6 +58,13 @@ export async function playbackService(): Promise<void> {
   TrackPlayer.addEventListener(Event.RemotePrevious, () => TrackPlayer.skipToPrevious());
   TrackPlayer.addEventListener(Event.RemoteSeek, (e) => TrackPlayer.seekTo(e.position));
 
+  // THE TEN F2 — the transition INSTANT releases the crossfade ramp: the
+  // 1s progress ticks would otherwise let the next track start near-silent
+  // for up to one tick (critic round 1). Idempotent through the bus.
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, () => {
+    resetCrossfadeRamp();
+  });
+
   // Heartbeat feed: 1s ticks → the ledger batches them at 10s cadence.
   // SINGLE-OWNER RULE: the UI provider owns track-start/finish while the
   // app is foregrounded; the service takes over ONLY in background/headless
@@ -65,6 +82,13 @@ export async function playbackService(): Promise<void> {
               // Headless/background transition: finalize prev, start new.
               void mindbeat.trackFinished(false, 'jump');
               void mindbeat.trackStarted(t, t.isRecommended ? 'radio' : 'user_queue');
+              // THE TEN F1 — headless transitions get Smart Volume too: the
+              // UI provider may be dead (AppKilledPlaybackBehavior.
+              // ContinuePlayback keeps audio alive), so the service owns
+              // the multiplier here. THE TEN F3 — the persisted rate boots
+              // lazily in the headless context (the provider never ran).
+              applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: t.title, artist: t.artist }));
+              initPlaybackRate();
             }
             radioServedCount += t.isRecommended ? 1 : 0;
           }
@@ -72,6 +96,9 @@ export async function playbackService(): Promise<void> {
             radioListenRatios.push(Math.min(1, e.position / Math.max(1, e.duration)));
             if (radioListenRatios.length > 400) radioListenRatios.shift();
           }
+          // THE TEN F2 — the crossfade ramp is fed HERE so it works with
+          // the UI killed (headless); the bus arbitrates with sleep/focus.
+          crossfadeTick(e.position, e.duration);
           await mindbeat.heartbeat(e.position * 1000);
         }
       }
@@ -119,6 +146,9 @@ export async function playbackService(): Promise<void> {
   // so it survives the UI being killed. Radio v2: multi-seed, dedup-aware,
   // every pick explained; v2.1 single-artist radio is the fallback ladder.
   TrackPlayer.addEventListener(Event.PlaybackQueueEnded, async () => {
+    // THE TEN F2 — the queue ended mid-fade: release the ramp so the
+    // next session never starts silently (the bus restores the product).
+    resetCrossfadeRamp();
     if (extending) return;
     extending = true;
     try {

@@ -84,6 +84,24 @@ run_mutation "feature table cluster rung dead (decorated titles miss)" \
   src/ai/core/featureTable.ts 's/if (clustered \&\& clustered !== bare) {/if (false) {/' \
   tests/ai/baked_features_locks.test.ts
 
+# ── THE TEN · WAVE 1 (the playback engine) ──────────────────────────────
+
+run_mutation "W1: smart volume clamp removed (extrapolation escapes [0.8,1.05])" \
+  src/player/smartVolume.ts 's/return Math.max(min, Math.min(max, m));/return m;/' \
+  tests/ai/wave1_playback_locks.test.ts
+
+run_mutation "W1: composeVolume overwrites instead of multiplying (the race)" \
+  src/player/volumeBus.ts 's/const v = m \* f;/const v = Math.max(m, f);/' \
+  tests/ai/wave1_playback_locks.test.ts
+
+run_mutation "W1: crossfade fadeSeconds>0 guard removed (0 = always fading)" \
+  src/player/crossfade.ts "s/if (!(fadeSeconds > 0) || !(durationSec > 0)) return 1.0;/if (false) return 1.0;/" \
+  tests/ai/wave1_playback_locks.test.ts
+
+run_mutation "W1: rate snapping removed (raw value applied)" \
+  src/player/playbackRate.ts 's/let bestDist = Infinity;/let bestDist = -Infinity;/' \
+  tests/ai/wave1_playback_locks.test.ts
+
 echo "──"
 echo "mutations caught: $PASS / $((PASS+FAIL))"
 if [ "$FAIL" -gt 0 ]; then

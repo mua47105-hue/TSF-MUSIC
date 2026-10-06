@@ -22,6 +22,10 @@ const KEYS = {
   autoplay: 'tsf.autoplay.v1',
   smartShuffle: 'tsf.smartShuffle.v1',
   dataSaver: 'tsf.dataSaver.v1',
+  // ── THE TEN · wave 1 (playback engine) ──
+  smartVolume: 'tsf.smartVolume.v1',
+  crossfade: 'tsf.crossfade.v1',
+  playbackRate: 'tsf.playbackRate.v1',
 };
 
 async function readJSON<T>(key: string, fallback: T): Promise<T> {
@@ -386,4 +390,39 @@ export async function getDataSaver(): Promise<boolean> {
 
 export async function setDataSaver(on: boolean): Promise<void> {
   await writeJSON(KEYS.dataSaver, on);
+}
+
+// ── THE TEN · wave 1 (playback engine settings) ────────────────────────
+// Raw accessors only: each feature module owns its default (mirrors the
+// audioQuality pattern — storage never hard-codes a tuning decision).
+
+/** FEATURE 1 — Smart Volume toggle. null = never set (the module maps it
+ *  to SMART_VOLUME.defaultOn). */
+export async function getSmartVolumeSetting(): Promise<boolean | null> {
+  const v = await readJSON<boolean | null>(KEYS.smartVolume, null);
+  return typeof v === 'boolean' ? v : null;
+}
+
+export async function setSmartVolumeSetting(on: boolean): Promise<void> {
+  await writeJSON(KEYS.smartVolume, on);
+}
+
+/** FEATURE 2 — crossfade seconds. null = never set (module default 0). */
+export async function getCrossfadeSeconds(): Promise<number | null> {
+  const v = await readJSON<number | null>(KEYS.crossfade, null);
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+export async function setCrossfadeSeconds(seconds: number): Promise<void> {
+  await writeJSON(KEYS.crossfade, seconds);
+}
+
+/** FEATURE 3 — playback speed. null = never set (module default 1.0). */
+export async function getPlaybackRateSetting(): Promise<number | null> {
+  const v = await readJSON<number | null>(KEYS.playbackRate, null);
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+export async function setPlaybackRateSetting(rate: number): Promise<void> {
+  await writeJSON(KEYS.playbackRate, rate);
 }

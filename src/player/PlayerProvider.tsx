@@ -56,6 +56,9 @@ import {
 } from '../storage/store';
 import { perfMark } from '../perf/perf';
 import { initDataSaver } from './audioQuality';
+import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
+import { initCrossfade, resetCrossfadeRamp } from './crossfade';
+import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 
 let setupPromise: Promise<void> | null = null;
 let notifAsked = false;
@@ -206,6 +209,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     getSmartShuffleSetting().then(setSmartShuffleState);
     getAutoplay().then(setAutoplayState);
     initDataSaver(); // sync bridge for the stream resolver (Task 28)
+    // THE TEN wave 1 — playback-engine settings load once, fire-and-forget
+    // (the audioQuality pattern: nothing here blocks play or first paint).
+    initSmartVolume();
+    initCrossfade();
+    initPlaybackRate();
   }, [refreshQueue]);
 
   // The background service may extend the queue with radio tracks while the
@@ -239,6 +247,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // clear it no matter which song won (covers retry + service starts)
     if (active?.id) setOptimistic((cur) => (cur ? null : cur));
     if (!active?.id || active.id === prevTrackId.current) return;
+    // THE TEN F1 — Smart Volume: the new track's BAKED energy sets the
+    // stream multiplier through the volume bus (composes with any fade;
+    // off/unknown ⇒ 1.0). Runs BEFORE the foreground gate so background
+    // transitions (service-owned) get the smoothing too.
+    applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: active.title, artist: active.artist }));
     perfMark('track-active', String(active.id));
     // SINGLE-OWNER RULE (mirror of the service gate): the provider owns
     // track transitions only while FOREGROUNDED; the background service
@@ -420,6 +433,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await TrackPlayer.add(playable);
       await TrackPlayer.skip(startAt);
       await TrackPlayer.play();
+      void reapplyPlaybackRate(); // THE TEN F3 — a queue reset resets the engine rate
+      // THE TEN F2 — a fresh queue starts from a clean ramp (no stale fade)
+      resetCrossfadeRamp();
       if (staleTimer.current) clearTimeout(staleTimer.current);
       setOptimistic(null); // the real track takes over from the plant
       perfMark('queue-started', String(wantedId));

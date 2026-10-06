@@ -293,3 +293,60 @@ export const SEARCH_VIBE = {
 /** Phase 1 — captured (free) genre evidence weight = explicit seed × 0.5.
  *  The listener never typed it, so it carries half an onboarding pick. */
 export const CAPTURED_GENRE_WEIGHT = ONBOARDING.genreSeedWeight * 0.5;
+
+// ── THE TEN (v4.3.0 mission) — WAVE 1: the playback engine ──────────────
+
+/** FEATURE 1 — Smart Volume (ReplayGain-style loudness smoothing from the
+ *  baked Spotify `energy` column — no audio analysis, a pure lookup). */
+export const SMART_VOLUME = {
+  /** Baked energy at/above which attenuation begins (top-tier bangers). */
+  highEnergy: 0.85,
+  /** Baked energy at/below which the lift begins (ambient/lofi floor). */
+  lowEnergy: 0.3,
+  /** Attenuation target at energy 1.0 — bangers ride noticeably quieter. */
+  highFloor: 0.82,
+  /** Lift target at energy 0.0 — near-silent tracks get headroom back. */
+  lowLift: 1.05,
+  /** Absolute clamp — the multiplier can never leave [0.8, 1.05], even
+   *  for out-of-range energies (defensive; baked rows are 0..1). */
+  min: 0.8,
+  max: 1.05,
+  /** Default ON (Spotify's volume normalization defaults on too; the max
+   *  effect is ±0.18 and the OFF path is byte-identical to v4.2.0 — the
+   *  multiplier pins to exactly 1.0). Documented decision, not an accident. */
+  defaultOn: true,
+} as const;
+
+/** FEATURE 2 — Crossfade / transition fade. RNTP v4.1.1 exposes NO
+ *  crossfade API and its single ExoPlayer instance cannot overlap two
+ *  streams, so this ships as a volume-automation fade with the honest
+ *  limitation stated in the UI (never claims true gapless). */
+export const CROSSFADE = {
+  /** Hard clamp — the control can never request a longer ramp. */
+  maxSeconds: 12,
+  /** Offered durations (PULSE chips; 0 = off — the native queue
+   *  transition, i.e. today's behavior byte-identically). */
+  choicesSeconds: [0, 2, 4, 6, 8, 12] as const,
+  /** Default OFF: transitions untouched until the listener asks. */
+  defaultSeconds: 0,
+  /** Playhead regression that counts as a NEW track (seek protection):
+   *  a backward jump larger than this resets the fade ramp. */
+  backJumpToleranceSec: 0.25,
+} as const;
+
+/** FEATURE 3 — Playback speed (lectures/lofi at 0.75×–2×). ExoPlayer
+ *  time-stretches with Sonic so pitch is preserved; RNTP v4 exposes no
+ *  remote speed capability, so the control is in-app by design. */
+export const PLAYBACK_RATE = {
+  /** The whole allowed set — anything else snaps to the nearest member. */
+  allowed: [0.75, 1.0, 1.25, 1.5, 2.0] as const,
+  /** 1.0 is always one tap away and the boot default. */
+  defaultRate: 1.0,
+} as const;
+
+/** Wave-1 volume arbitration: SINGLE WRITER of TrackPlayer.setVolume.
+ *  effective = smartVolumeMultiplier × activeFadeFactor, where at most
+ *  ONE fade owner is honored at a time — FEATURE 10's single-owner rule
+ *  (sleep timer outranks focus outranks crossfade; a lower-priority
+ *  engine's factor waits its turn instead of fighting). */
+export const VOLUME_FADE_PRECEDENCE = ['sleep', 'focus', 'crossfade'] as const;

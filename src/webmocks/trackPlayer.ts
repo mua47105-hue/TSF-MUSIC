@@ -19,6 +19,8 @@ let position = 47;
 let duration = 224;
 let repeatMode: 'off' | 'queue' | 'track' = 'off';
 let shuffle = false;
+let volume = 1.0;
+let rate = 1.0;
 let tick: ReturnType<typeof setInterval> | null = null;
 
 const listeners: Array<{ event: string | null; handler: (e?: any) => void }> = [];
@@ -36,7 +38,8 @@ function startTicker() {
   if (tick) return;
   tick = setInterval(() => {
     if (playing && duration > 0) {
-      position += 0.5;
+      // THE TEN F3 — the mock honors the playback rate like the engine does
+      position += 0.5 * rate;
       if (position >= duration) {
         const atEnd = activeIndex >= queue.length - 1;
         position = 0;
@@ -240,8 +243,14 @@ const TrackPlayer = {
   async seekBy(offset: number): Promise<void> {
     position = Math.max(0, Math.min(duration, position + offset));
   },
-  async setVolume(): Promise<void> {
-    /* no-op */
+  async setVolume(v: number): Promise<void> {
+    volume = v;
+  },
+  async setRate(r: number): Promise<void> {
+    rate = r;
+  },
+  async getRate(): Promise<number> {
+    return rate;
   },
   async setRepeatMode(mode: number): Promise<void> {
     repeatMode = mode === 1 ? 'track' : mode === 2 ? 'queue' : 'off';
@@ -337,6 +346,8 @@ if (typeof window !== 'undefined') {
         duration,
         playing,
         title: queue[activeIndex]?.title ?? null,
+        volume,
+        rate,
       };
     },
   };

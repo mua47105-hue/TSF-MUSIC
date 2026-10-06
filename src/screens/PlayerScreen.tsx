@@ -45,6 +45,14 @@ import {
   type SleepTimerState,
 } from '../player/sleepTimer';
 import { dataSaverActive, subscribeDataSaver } from '../player/audioQuality';
+import {
+  setSmartVolumeActive,
+  smartVolumeActive,
+  subscribeSmartVolume,
+} from '../player/smartVolume';
+import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
+import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
+import { CROSSFADE } from '../ai/core/constants';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
 import { Brutal, MonoText } from '../components/Brutal';
@@ -200,6 +208,17 @@ export function PlayerScreen() {
     : 'SLEEP';
   const [saver, setSaver] = useState(dataSaverActive());
   useEffect(() => subscribeDataSaver(setSaver), []);
+  // THE TEN wave 1 — the playback engine, live in the queue sheet:
+  //   F1 Smart Volume pill · F3 speed chips · F2 transition-fade chips.
+  const [smartVol, setSmartVol] = useState(smartVolumeActive());
+  useEffect(() => subscribeSmartVolume(setSmartVol), []);
+  const [rate, setRate] = useState(currentRate());
+  useEffect(() => subscribePlaybackRate(setRate), []);
+  const [xfade, setXfade] = useState(clampCrossfadeSeconds(crossfadeSeconds()));
+  const pickCrossfade = (s: number) => {
+    setXfade(clampCrossfadeSeconds(s));
+    void setCrossfadeSeconds(s);
+  };
   // VIBE readout (Task 28): the session brain's mood state machine, finally
   // visible in the player. Refreshes on track change + every 20s so a
   // SKIP_STORM shows up while the screen is open.
@@ -634,6 +653,44 @@ export function PlayerScreen() {
                 active={sleepArmed}
                 onPress={() => setShowSleep((v) => !v)}
               />
+              <QueuePill
+                label="SMART VOL"
+                active={smartVol}
+                onPress={() => void setSmartVolumeActive(!smartVol)}
+              />
+            </View>
+
+            {/* THE TEN F3 — playback speed (pitch preserved by the engine's
+                time-stretch; 1.0× is always one tap away) */}
+            <View style={styles.engineRow}>
+              <MonoText size={8.5} bold color={colors.ink60} style={styles.engineLabel}>
+                SPEED
+              </MonoText>
+              <View style={styles.chipRow}>
+                {ALLOWED_RATES.map((r) => (
+                  <Chip key={r} label={`${r}×`} active={rate === r} onPress={() => void setPlaybackRate(r)} />
+                ))}
+              </View>
+              <MonoText size={7.5} color={colors.ink40} style={styles.engineNote}>
+                PITCH STAYS NATURAL · ENGINE TIME-STRETCH
+              </MonoText>
+            </View>
+
+            {/* THE TEN F2 — transition fade. HONEST LIMITATION: the engine
+                plays one stream at a time, so this is a volume fade into
+                the native transition, NOT an overlapping DJ crossfade. */}
+            <View style={styles.engineRow}>
+              <MonoText size={8.5} bold color={colors.ink60} style={styles.engineLabel}>
+                TRANSITION
+              </MonoText>
+              <View style={styles.chipRow}>
+                {CROSSFADE.choicesSeconds.map((s) => (
+                  <Chip key={s} label={s === 0 ? 'OFF' : `${s}S`} active={xfade === s} onPress={() => pickCrossfade(s)} />
+                ))}
+              </View>
+              <MonoText size={7.5} color={colors.ink40} style={styles.engineNote}>
+                VOLUME FADE AT TRACK END · NO AUDIO OVERLAP
+              </MonoText>
             </View>
 
             {active ? (
@@ -786,6 +843,17 @@ function QueuePill({ label, active, onPress }: { label: string; active: boolean;
     <Brutal haptic shadow={0} pressOffset={1} onPress={onPress} style={[styles.qPill, active && { backgroundColor: colors.acid }]}>
       <View style={[styles.qSw, active && { backgroundColor: colors.orange }]} />
       <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 0.8 }}>
+        {label}
+      </MonoText>
+    </Brutal>
+  );
+}
+
+/** THE TEN wave 1 — one playback-engine chip (speed / transition). */
+function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Brutal haptic shadow={0} pressOffset={1} onPress={onPress} style={[styles.chip, active && { backgroundColor: colors.acid }]}>
+      <MonoText size={9.5} bold color={colors.ink}>
         {label}
       </MonoText>
     </Brutal>
@@ -1069,6 +1137,21 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   qSw: { width: 8, height: 8, backgroundColor: colors.ink40 },
+  // THE TEN wave 1 — the playback-engine rows (speed / transition chips)
+  engineRow: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    gap: 6,
+  },
+  engineLabel: { letterSpacing: 2 },
+  engineNote: { letterSpacing: 0.6 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: {
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
   queueCurrentRow: {
     flexDirection: 'row',
     alignItems: 'center',
