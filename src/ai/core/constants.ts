@@ -188,6 +188,30 @@ export const GENRE_CAPTURE = {
   maxAffinityEntries: 40,
 } as const;
 
+// ── Thompson sampling bandit (GENIUS P3 — learns from every tap) ───────
+export const BANDIT = {
+  /**
+   * Weight of the bandit's additive score term: weight · (Beta − 0.5).
+   * 0.5 keeps the term within ±0.25 — a REFINEMENT of the ordering next
+   * to profileAffinity 1.0 / sessionFit 1.2, never a takeover; the
+   * exploration budget (ε floors) stays the authority for novelty.
+   */
+  weight: 0.5,
+  /**
+   * Hard cap on persisted arms. Each arm is ~40 bytes in kv — 2000 arms
+   * ≈ 80 KB worst case (potato-phone rule 8). Eviction removes the
+   * LOWEST alpha+beta first: the least-learned-about tracks, whose loss
+   * costs nothing (they resample cold as {1,1} if they return).
+   */
+  maxArms: 2000,
+  /**
+   * Debounce for the kv flush of dirty arms — one write per 15 s quiet
+   * window instead of one per skip (a skip storm must not thrash flash
+   * storage; appBackground checkpoints regardless of the timer).
+   */
+  flushDebounceMs: 15_000,
+} as const;
+
 // ── Baked feature table (GENIUS P2 — the biggest intelligence jump) ────
 export const FEATURE_TABLE = {
   /**

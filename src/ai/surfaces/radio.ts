@@ -95,7 +95,7 @@ export async function buildRadioV2(
       requested: count,
     },
     { profile, session, now },
-    { excludeTrackIds: exclude, serveRecency },
+    { excludeTrackIds: exclude, serveRecency, banditArms: ctx.banditArms },
   );
 
   // ── Drift: every 5th slot swaps toward an adjacent mood cell (§9.2) ────

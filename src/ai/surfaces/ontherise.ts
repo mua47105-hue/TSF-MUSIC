@@ -83,7 +83,7 @@ export async function buildOnTheRise(ctx: SurfaceCtx, count = 25): Promise<OnThe
       requested: count,
     },
     { profile, session, now },
-    { serveRecency, forceExploration: true },
+    { serveRecency, forceExploration: true, banditArms: ctx.banditArms },
   );
 
   const picks: RisePick[] = [];

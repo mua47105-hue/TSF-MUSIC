@@ -8,6 +8,7 @@
 
 import type { Track } from '../../types';
 import { estimateFeatures } from '../core/features';
+import type { BanditArms } from '../core/bandit';
 import type { Candidate, SessionState, SourceSurface, TasteProfile } from '../core/types';
 import type { ListenRecord } from '../core/types';
 
@@ -26,6 +27,9 @@ export interface SurfaceCtx {
   listens: ListenRecord[];
   /** Emit REC_EXPOSURE for every served recommendation (survivorship-safe §5.1). */
   onExposure?: (trackId: string, surface: SourceSurface, rankInPool: number, exploration: boolean) => void;
+  /** GENIUS P3 — bandit arms (kv-backed, capped). Absent → the engine's
+   *  bandit term is 0 for every candidate (byte-identical legacy scoring). */
+  banditArms?: BanditArms;
 }
 
 /** Track → engine candidate (proxy features attached). */

@@ -15,6 +15,8 @@ import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory v
 import { SessionBrain } from './core/session';
 import { estimateFeatures } from './core/features';
 import { loadFeatureTable } from './core/featureTable';
+import { updateArms, type BanditArms } from './core/bandit';
+import { BANDIT } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
 import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -49,6 +51,10 @@ class Mindbeat {
   private riseCache: { at: number; card: OnTheRiseCard | null } | null = null;
   private sessionCountAtBoot = 0;
   private disabled = false;
+  /** GENIUS P3 — bandit arms (kv-backed, capped, debounced flush). */
+  private banditArms: BanditArms = {};
+  private banditDirty = false;
+  private banditFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Boot: open store, recover, start session. Profile builds async after. */
   init(): Promise<void> {
@@ -91,8 +97,15 @@ class Mindbeat {
    * a plain post-turn timer as the fallback — still off the boot path.
    */
   private warmAssets(): void {
-    const warm = () => {
+    const warm = async () => {
       void loadFeatureTable().catch(() => undefined);
+      // GENIUS P3 — bandit arms hydrate post-paint too (kv read, ≤80KB).
+      try {
+        const arms = await this.kvGet<BanditArms>('banditArms');
+        if (arms && typeof arms === 'object') this.banditArms = arms;
+      } catch {
+        /* arms stay empty → the bandit term is 0 → legacy scoring */
+      }
     };
     try {
       // Lazy require — a top-level named import breaks non-RN environments.
@@ -249,6 +262,30 @@ class Mindbeat {
     if (!this.ledger) return;
     const record = await this.ledger.finalizeTrack(userInitiated, cause);
     if (record && this.brain) this.brain.push(record);
+    // GENIUS P3 — single-owner bandit update: exactly the same finalization
+    // event the session brain consumes. Kill switch = no writes at all.
+    if (record && !this.disabled) {
+      this.banditArms = updateArms(
+        this.banditArms,
+        record.trackId,
+        record.grade,
+        new Set(this.profile.corrections.mutedArtists.map((a) => a.toLowerCase())),
+        record.artist.trim().toLowerCase(),
+      );
+      this.banditDirty = true;
+      this.scheduleBanditFlush();
+    }
+  }
+
+  /** Debounced kv flush — one write per quiet window, never per skip. */
+  private scheduleBanditFlush(): void {
+    if (this.banditFlushTimer) clearTimeout(this.banditFlushTimer);
+    this.banditFlushTimer = setTimeout(() => {
+      this.banditFlushTimer = null;
+      if (!this.banditDirty) return;
+      this.banditDirty = false;
+      void this.kvSet('banditArms', this.banditArms);
+    }, BANDIT.flushDebounceMs);
   }
 
   async appBackground(): Promise<void> {
@@ -256,6 +293,13 @@ class Mindbeat {
     // playing in the background and the service keeps feeding heartbeats;
     // crash recovery covers the killed-mid-track case (§5.5).
     await this.ledger?.onAppBackground();
+    // GENIUS P3 — checkpoint pending bandit state before suspension.
+    if (this.banditDirty) {
+      this.banditDirty = false;
+      if (this.banditFlushTimer) clearTimeout(this.banditFlushTimer);
+      this.banditFlushTimer = null;
+      void this.kvSet('banditArms', this.banditArms);
+    }
   }
 
   async appActive(): Promise<void> {
@@ -468,6 +512,7 @@ class Mindbeat {
       session: this.brain?.state ?? new SessionBrain(Date.now()).state,
       now: Date.now(),
       listens: [] as ListenRecord[],
+      banditArms: this.disabled ? undefined : this.banditArms,
       onExposure: (trackId: string, surface: SourceSurface, rank: number, exploration: boolean) => {
         void this.ledger?.recExposed(trackId, surface, rank, exploration);
       },

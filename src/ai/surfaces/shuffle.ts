@@ -113,7 +113,7 @@ export async function buildShuffleRecs(
       requested: plan.recCount + 2,
     },
     { profile, session, now },
-    { excludeTrackIds: exclude, serveRecency },
+    { excludeTrackIds: exclude, serveRecency, banditArms: ctx.banditArms },
   );
 
   // Vibe-lock: in FLOW, rec energy must sit within ±0.2 of session energy.

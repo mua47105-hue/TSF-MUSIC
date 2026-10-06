@@ -155,7 +155,7 @@ export async function buildWeeklyCrate(
       requested: CADENCE.weeklySize,
     },
     { profile, session: ctx.session, now },
-    { serveRecency },
+    { serveRecency, banditArms: ctx.banditArms },
   );
   if (ranked.length < CADENCE.weeklyMinTracks) return null;
 

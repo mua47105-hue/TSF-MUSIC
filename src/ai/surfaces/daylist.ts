@@ -102,7 +102,7 @@ export async function buildNowSound(ctx: SurfaceCtx, count = 12): Promise<NowSou
       requested: count,
     },
     { profile, session, now },
-    { excludeTrackIds: new Set(), serveRecency },
+    { excludeTrackIds: new Set(), serveRecency, banditArms: ctx.banditArms },
   );
 
   const picks = ranked

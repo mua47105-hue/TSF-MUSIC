@@ -32,6 +32,7 @@ import type {
   SessionState,
   TasteProfile,
 } from './types';
+import { banditTerm, armSeed, type BanditArms } from './bandit';
 import { clamp, hash32, seededRandom } from './time';
 import { topArtists } from './profile';
 import { NORMALIZATION } from './constants';
@@ -53,6 +54,8 @@ export interface DecideOptions {
   serveRecency?: Map<string, number>;
   /** Force exploration on/off (Discovery surface forces on). */
   forceExploration?: boolean;
+  /** GENIUS P3 — bandit arms; absent → the term is 0 (legacy scoring). */
+  banditArms?: BanditArms;
 }
 
 export interface RankedCandidate extends Candidate {
@@ -156,9 +159,19 @@ export function decide(
       SCORE_WEIGHTS.freshness * freshness +
       SCORE_WEIGHTS.sourceTrust * sourceTrust;
 
+    // GENIUS P3 — the bandit's refinement: ±0.25 bounded, derived from the
+    // SEEDED PRNG via a per-candidate deterministic seed (surface|track|
+    // profile stamp) — same inputs, same ordering, always. Absent arms →
+    // 0 (byte-identical legacy score).
+    const bandit = banditTerm(
+      opts.banditArms ?? null,
+      c.trackId,
+      armSeed(ctx.surface, c.trackId, profile.builtAt),
+    );
+
     return {
       ...c,
-      score: base,
+      score: base + bandit,
       reasonCode: 'FRESH_FIND', // provisional — exploration picks override
       explorationSlot: false,
     };

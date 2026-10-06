@@ -124,7 +124,7 @@ export async function buildDailyMixesV2(
         requested: 12,
       },
       { profile, session, now },
-      { excludeTrackIds: new Set(), serveRecency },
+      { excludeTrackIds: new Set(), serveRecency, banditArms: ctx.banditArms },
     );
 
     // Assemble the 60/25/15 split with ≤30% yesterday repeat.
