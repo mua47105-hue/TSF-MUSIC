@@ -35,13 +35,15 @@ import {
   renamePlaylist,
 } from '../storage/store';
 import { verifyDownloads } from '../storage/downloads';
+import { mindbeat } from '../ai/mindbeat';
+import type { SmartFolders } from '../ai/smartFolders';
 import { Artwork } from '../components/Artwork';
 import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { useToast } from '../components/Toast';
 import { colors, fonts } from '../theme';
 import type { RootStackParamList } from './navigation';
 
-type Chip = 'playlists' | 'artists' | 'albums' | 'downloaded';
+type Chip = 'playlists' | 'artists' | 'albums' | 'crates' | 'downloaded';
 
 interface LibItem {
   key: string;
@@ -49,7 +51,7 @@ interface LibItem {
   subtitle: string;
   artwork?: string;
   seed: string;
-  kind: 'liked' | 'stats' | 'playlist' | 'ai' | 'artist' | 'album' | 'track';
+  kind: 'liked' | 'stats' | 'playlist' | 'ai' | 'artist' | 'album' | 'track' | 'crate';
   playlistId?: string;
   tracks?: Track[];
   /** provider album id (from any track of this album) — powers the
@@ -71,6 +73,8 @@ export function LibraryScreen() {
   const [favorites, setFavorites] = useState<Track[]>([]);
   const [downloads, setDownloads] = useState<Track[]>([]);
   const [recents, setRecents] = useState<Track[]>([]);
+  // THE TEN F4 — the smart crates (live query folders over the ledger).
+  const [crates, setCrates] = useState<SmartFolders | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -94,6 +98,22 @@ export function LibraryScreen() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // THE TEN F4 — the crates are LIVE queries: re-resolve on every visit
+  // to the Crates tab (and once at boot for the count badges).
+  const reloadCrates = useCallback(async () => {
+    try {
+      setCrates(await mindbeat.smartFolders());
+    } catch {
+      setCrates(null); // honest empty state below
+    }
+  }, []);
+  useEffect(() => {
+    void reloadCrates();
+  }, [reloadCrates]);
+  useEffect(() => {
+    if (chip === 'crates') void reloadCrates();
+  }, [chip, reloadCrates]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -147,7 +167,42 @@ export function LibraryScreen() {
 
   /* ── build the item list per chip ─────────────────────────────────── */
   const items: LibItem[] = [];
-  if (chip === 'playlists') {
+  if (chip === 'crates') {
+    // THE TEN F4 — live smart crates. Each resolves to REAL playable
+    // tracks (safety-filtered + reconciled inside the folder builders);
+    // an empty crate is an honest empty row, never fake filler.
+    const crateRows: Array<{ key: string; title: string; tracks: Track[] }> = crates
+      ? [
+          { key: 'heavy', title: 'Heavy Rotation', tracks: crates.heavyRotation },
+          { key: 'forgotten', title: 'Forgotten Gems', tracks: crates.forgottenGems },
+          { key: 'graveyard', title: 'The Graveyard', tracks: crates.graveyard },
+          { key: 'rescued', title: 'Recently Rescued', tracks: crates.recentlyRescued },
+        ]
+      : [];
+    if (!crates) {
+      items.push({
+        key: 'crates-unavailable',
+        title: 'Crates unavailable right now',
+        subtitle: 'The ledger did not open \u00b7 select Crates again to retry',
+        seed: 'crates',
+        kind: 'crate',
+        tracks: [],
+      });
+    }
+    for (const c of crateRows) {
+      items.push({
+        key: c.key,
+        title: c.title,
+        subtitle: c.tracks.length
+          ? `Smart crate \u00b7 ${c.tracks.length} songs`
+          : 'Smart crate \u00b7 empty right now',
+        artwork: c.tracks[0]?.artwork,
+        seed: c.key,
+        kind: 'crate',
+        tracks: c.tracks,
+      });
+    }
+  } else if (chip === 'playlists') {
     items.push({
       key: 'liked',
       title: 'Liked Songs',
@@ -246,6 +301,13 @@ export function LibraryScreen() {
 
   const navigateItem = (item: LibItem) => {
     if (item.kind === 'stats') return nav.navigate('Stats');
+    // THE TEN F4 — an empty crate states what it needs, honestly.
+    if (item.kind === 'crate' && !(item.tracks?.length ?? 0)) {
+      return toast.show({
+        message: `${item.title.toUpperCase()} IS EMPTY — KEEP LISTENING AND IT FILLS ITSELF`,
+        icon: 'folder-open-outline',
+      });
+    }
     if (item.playlistId) return nav.navigate('Playlist', { playlistId: item.playlistId });
     if (item.kind === 'artist')
       return nav.navigate('Collection', {
@@ -323,6 +385,14 @@ export function LibraryScreen() {
           <View style={[styles.kindTile, { backgroundColor: colors.acid }]}>
             <Ionicons name="sparkles" size={22} color={colors.ink} />
           </View>
+        ) : item.kind === 'crate' ? (
+          <View style={[styles.kindTile, { backgroundColor: colors.paper2, borderWidth: 2, borderColor: colors.ink }]}>
+            <Ionicons
+              name={item.key === 'heavy' ? 'flame' : item.key === 'forgotten' ? 'diamond-outline' : item.key === 'graveyard' ? 'skull-outline' : 'help-buoy-outline'}
+              size={22}
+              color={colors.ink}
+            />
+          </View>
         ) : (
           <Artwork
             uri={item.artwork}
@@ -385,6 +455,7 @@ export function LibraryScreen() {
     },
     artists: { title: 'No artists yet', sub: 'Songs you play will show artists here' },
     albums: { title: 'No albums yet', sub: 'Music you play will collect here' },
+    crates: { title: 'No crates yet', sub: 'Your smart crates fill themselves as you listen' },
     downloaded: { title: 'No downloads', sub: 'Save from the player for offline listening' },
   };
 
@@ -420,12 +491,18 @@ export function LibraryScreen() {
 
             {/* filter chips */}
             <View style={styles.chips}>
-              {(['playlists', 'artists', 'albums', 'downloaded'] as Chip[]).map((t) => (
+              {(['playlists', 'artists', 'albums', 'crates', 'downloaded'] as Chip[]).map((t) => (
                 <Brutal
                   key={t}
                   haptic={chip !== t}
                   shadow={2}
-                  onPress={() => setChip(t)}
+                  onPress={() => {
+                    setChip(t);
+                    // THE TEN F4 — re-tapping Crates re-resolves (the
+                    // unavailable row's "select Crates again to retry"
+                    // must be TRUE while already on the tab).
+                    if (t === 'crates') void reloadCrates();
+                  }}
                   style={[styles.chip, chip === t && styles.chipActive]}
                 >
                   <MonoText size={10.5} bold color={chip === t ? colors.ink : colors.ink60} style={{ letterSpacing: 0.8 }}>
@@ -435,7 +512,9 @@ export function LibraryScreen() {
                         ? 'Artists'
                         : t === 'albums'
                           ? 'Albums'
-                          : 'Saved'}
+                          : t === 'crates'
+                            ? 'Crates'
+                            : 'Saved'}
                   </MonoText>
                 </Brutal>
               ))}

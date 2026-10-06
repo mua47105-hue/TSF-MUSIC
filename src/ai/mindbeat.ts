@@ -18,16 +18,17 @@ import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { LYRIC_MOOD, SEARCH_VIBE, SIMILARITY } from './core/constants';
+import { LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
-import type { Track, WeeklyCrate } from '../types';
-import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
+import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
+import { getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
 import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
+import { buildSmartFolders, type SmartFolders } from './smartFolders';
 import { reasonLine } from './core/decision';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
 import { filterClean } from '../safety';
@@ -643,6 +644,28 @@ class Mindbeat {
       }
     }
     return out;
+  }
+
+  /**
+   * THE TEN F4 — the smart auto-playlists (live query folders). A factual
+   * view of the listener's OWN data (not a recommendation), so the kill
+   * switch does not gate it — same posture as stats(). Returns NULL when
+   * the ledger is unavailable (an UNAVAILABLE crate — distinct from the
+   * honest empty arrays a healthy ledger can legitimately produce).
+   */
+  async smartFolders(): Promise<SmartFolders | null> {
+    await this.ready();
+    try {
+      const [listens, favorites, playCounts, recents] = await Promise.all([
+        this.ledger ? this.ledger.getListens(SMART_FOLDERS.graveyardWindowDays) : Promise.resolve([]),
+        getFavorites(),
+        getPlayCounts(),
+        getRecents(),
+      ]);
+      return buildSmartFolders({ listens, favorites, playCounts, recents, now: Date.now() });
+    } catch {
+      return null; // the UI renders an honest unavailable row
+    }
   }
 
   /** Session readout for the player chip (nulls = cold session, honest). */

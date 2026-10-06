@@ -102,6 +102,40 @@ run_mutation "W1: rate snapping removed (raw value applied)" \
   src/player/playbackRate.ts 's/let bestDist = Infinity;/let bestDist = -Infinity;/' \
   tests/ai/wave1_playback_locks.test.ts
 
+# ── THE TEN · WAVE 2 (library & data) ───────────────────────────────────
+
+run_mutation "W2: heavy-rotation floor 10 → 1 (any listen qualifies)" \
+  src/ai/core/constants.ts 's/heavyMinPlays: 10/heavyMinPlays: 1/' \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: graveyard ratio 0.6 → 0.05 (nearly anything buries)" \
+  src/ai/core/constants.ts 's/graveyardSkipRatio: 0.6/graveyardSkipRatio: 0.05/' \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: forgotten-gems evidence gate removed (unplayed = forgotten)" \
+  src/ai/smartFolders.ts "s/if (lastPlayed <= 0) continue;/if (false) continue;/" \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: credit merge unguarded (every same-title row folds — Chull pair merges)" \
+  src/ai/smartFolders.ts "s/if (sameCredits(agg.credits, credits, agg.primary, primary)) {/if (true) {/" \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: ledger-row enrichment removed (crates stop being playable)" \
+  src/ai/smartFolders.ts "s/enrichFromLocal(listenToTrack(agg.sample), fullTracks)/listenToTrack(agg.sample)/g" \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: override key degraded to track.id (re-listings unlinked)" \
+  src/storage/metaOverrides.ts 's/return recordingKey(track);/return track.id;/' \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: forgotten-gems matcher unguarded (same-titled song un-forgets)" \
+  src/ai/smartFolders.ts "s/if (agg.key === key && sameCredits(agg.credits, credits, agg.primary, primary)) {/if (agg.key === key) {/" \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W2: by-id rescue rung killed (ledger crates stop playing)" \
+  src/player/saavnRescue.ts 's/const fresh = await fetchById(rawId).catch(() => null);/const fresh = null;/' \
+  tests/ai/wave2_library_locks.test.ts
+
 echo "──"
 echo "mutations caught: $PASS / $((PASS+FAIL))"
 if [ "$FAIL" -gt 0 ]; then

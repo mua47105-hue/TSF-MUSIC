@@ -1,6 +1,11 @@
 /**
  * RECORDING IDENTITY — the dedup key for "same performance, different row".
  *
+ * WEBMOCK PARITY NOTE (house law ⑫): this module is PURE identity math
+ * (normalize → key → reconcile) with zero provider I/O — it has no
+ * webmocks/recording.ts mirror because there is nothing environment-
+ * specific to fake; bun tests import it directly.
+ *
  * Providers re-list the SAME recording under many ids: JioSaavn returns
  * "Zalima" from the movie album, from 4 compilations and from 2 regional
  * presses — 5-6 rows with different ids but ONE song. YouTube Music's
@@ -35,7 +40,7 @@ function normTitle(s: string): string {
     .slice(0, 80);
 }
 
-function normSeg(s: string): string {
+export function normSeg(s: string): string {
   return s
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')

@@ -25,6 +25,11 @@ import { colors, fonts } from '../theme';
 import { Artwork } from './Artwork';
 import { usePlayer } from '../player/PlayerProvider';
 import { isDownloaded } from '../storage/downloads';
+import {
+  applyMetaOverride,
+  getMetaOverridesSync,
+  subscribeMetaOverrides,
+} from '../storage/metaOverrides';
 
 /** Three looping acid bars on an ink block — the playing heartbeat. */
 export function EqualizerBars({ playing, size = 14, color = colors.acid }: { playing: boolean; size?: number; color?: string }) {
@@ -98,6 +103,12 @@ export const TrackRow = React.memo(function TrackRow({
 }) {
   const { active, isPlaying, favorites, toggleLike } = usePlayer();
   const [downloaded, setDownloaded] = React.useState(!!track.localUri);
+  // THE TEN F5 — metadata corrections render here, BEFORE display. The
+  // row's actions (play/like) keep the ORIGINAL track; the correction is
+  // a display lens (playback + ledger identity stay provider-native).
+  const [, forceOverrideTick] = React.useState(0);
+  useEffect(() => subscribeMetaOverrides(() => forceOverrideTick((n) => n + 1)), []);
+  const shown = applyMetaOverride(track, getMetaOverridesSync());
   const isActive = active?.id === track.id;
   const isFav = favorites.has(track.id);
 
@@ -113,7 +124,7 @@ export const TrackRow = React.memo(function TrackRow({
 
   const sub =
     subtitle ??
-    [track.artist, track.album].filter(Boolean).join(' \u00b7 ');
+    [shown.artist, shown.album].filter(Boolean).join(' \u00b7 ');
 
   return (
     <Pressable
@@ -134,7 +145,7 @@ export const TrackRow = React.memo(function TrackRow({
             <EqualizerBars playing={isPlaying} size={18} />
           </View>
         ) : (
-          <Artwork uri={track.artwork} seed={track.id} size={44} />
+          <Artwork uri={shown.artwork} seed={track.id} size={44} />
         )
       ) : null}
 
@@ -142,7 +153,7 @@ export const TrackRow = React.memo(function TrackRow({
         <View style={styles.titleRow}>
           {track.explicit ? <ExplicitBadge /> : null}
           <Text style={[styles.title, isActive && { color: colors.orange }]} numberOfLines={1}>
-            {track.title}
+            {shown.title}
           </Text>
         </View>
         {reasonLabel ? (

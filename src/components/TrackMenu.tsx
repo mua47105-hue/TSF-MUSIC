@@ -14,6 +14,14 @@ import {
   getPlaylists,
 } from '../storage/store';
 import { downloadTrack, isDownloaded } from '../storage/downloads';
+import {
+  applyMetaOverride,
+  getMetaOverridesSync,
+  metaOverrideKeyFor,
+  removeMetaOverride,
+  saveMetaOverride,
+  subscribeMetaOverrides,
+} from '../storage/metaOverrides';
 import { usePlayer } from '../player/PlayerProvider';
 import { mindbeat } from '../ai/mindbeat';
 import { useToast } from '../components/Toast';
@@ -45,16 +53,71 @@ export function TrackMenu({
   const [newName, setNewName] = useState('');
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [downloaded, setDownloaded] = useState(false);
+  // THE TEN F5 — Edit Info: the local metadata correction editor. The
+  // header shows the OVERRIDDEN view; actions operate on the original.
+  const [, forceOverrideTick] = useState(0);
+  useEffect(() => subscribeMetaOverrides(() => forceOverrideTick((n) => n + 1)), []);
+  const shown = track ? applyMetaOverride(track, getMetaOverridesSync()) : null;
+  const [editing, setEditing] = useState(false);
+  const [eTitle, setETitle] = useState('');
+  const [eArtist, setEArtist] = useState('');
+  const [eAlbum, setEAlbum] = useState('');
+  const [eArtwork, setEArtwork] = useState('');
+  const hasOverride = track ? !!getMetaOverridesSync()[metaOverrideKeyFor(track)] : false;
 
   useEffect(() => {
     if (visible && track) {
       setPicking(false);
       setCreating(false);
       setNewName('');
+      setEditing(false);
       getPlaylists().then(setPlaylists);
       isDownloaded(track.id).then(setDownloaded);
     }
   }, [visible, track]);
+
+  const openEditor = useCallback(() => {
+    if (!track) return;
+    const cur = getMetaOverridesSync()[metaOverrideKeyFor(track)];
+    setETitle(cur?.title ?? track.title);
+    setEArtist(cur?.artist ?? track.artist);
+    setEAlbum(cur?.album ?? track.album ?? '');
+    setEArtwork(cur?.artwork ?? track.artwork ?? '');
+    setEditing(true);
+  }, [track]);
+
+  const saveEdits = useCallback(async () => {
+    if (!track) return;
+    const allEmpty = ![eTitle, eArtist, eAlbum, eArtwork].some((v) => v.trim());
+    if (allEmpty) {
+      // Saving an entirely blank form is NOT a success story: with an
+      // existing override it means "back to provider truth"; otherwise
+      // it is an honest no-op (never a lying "INFO UPDATED" toast).
+      if (hasOverride) {
+        await removeMetaOverride(metaOverrideKeyFor(track));
+        toast.show({ message: 'PROVIDER INFO RESTORED', icon: 'refresh-outline' });
+      } else {
+        toast.show({ message: 'NOTHING TO CHANGE', icon: 'information-circle-outline' });
+      }
+      onClose();
+      return;
+    }
+    await saveMetaOverride(metaOverrideKeyFor(track), {
+      title: eTitle,
+      artist: eArtist,
+      album: eAlbum,
+      artwork: eArtwork,
+    });
+    toast.show({ message: 'INFO UPDATED · STORED ON THIS DEVICE ONLY', icon: 'create-outline' });
+    onClose();
+  }, [track, eTitle, eArtist, eAlbum, eArtwork, hasOverride, toast, onClose]);
+
+  const resetEdits = useCallback(async () => {
+    if (!track) return;
+    await removeMetaOverride(metaOverrideKeyFor(track));
+    toast.show({ message: 'PROVIDER INFO RESTORED', icon: 'refresh-outline' });
+    onClose();
+  }, [track, toast, onClose]);
 
   const add = useCallback(
     async (playlist: Playlist) => {
@@ -100,10 +163,10 @@ export function TrackMenu({
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={styles.trackHeader}>
             <Text style={styles.trackTitle} numberOfLines={1}>
-              {track.title}
+              {shown?.title}
             </Text>
             <Text style={styles.trackArtist} numberOfLines={1}>
-              {track.artist}
+              {shown?.artist}
             </Text>
           </View>
 
@@ -120,8 +183,68 @@ export function TrackMenu({
                   }}
                 />
               ))}
+              {/* THE TEN F5 — the local metadata editor (this device only) */}
+              {editing ? (
+                <>
+                  <Text style={styles.pickerTitle}>Edit info · this device only</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Title"
+                    placeholderTextColor={colors.textFaint}
+                    value={eTitle}
+                    onChangeText={setETitle}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Artist"
+                    placeholderTextColor={colors.textFaint}
+                    value={eArtist}
+                    onChangeText={setEArtist}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Album"
+                    placeholderTextColor={colors.textFaint}
+                    value={eAlbum}
+                    onChangeText={setEAlbum}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Artwork URL"
+                    placeholderTextColor={colors.textFaint}
+                    value={eArtwork}
+                    onChangeText={setEArtwork}
+                    autoCapitalize="none"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                    {hasOverride ? (
+                      <PressableScale style={styles.cancelBtn} onPress={() => void resetEdits()} haptic>
+                        <Text style={styles.cancelText}>Reset</Text>
+                      </PressableScale>
+                    ) : (
+                      <PressableScale style={styles.cancelBtn} onPress={() => setEditing(false)} haptic>
+                        <Text style={styles.cancelText}>Back</Text>
+                      </PressableScale>
+                    )}
+                    <PressableScale style={styles.createBtn} onPress={() => void saveEdits()} haptic>
+                      <Text style={styles.createText}>Save</Text>
+                    </PressableScale>
+                  </View>
+                </>
+              ) : (
+                <Action
+                  icon="create-outline"
+                  label="Edit info"
+                  onPress={() => openEditor()}
+                />
+              )}
               {/* MINDBEAT taste corrections (§6.6) — every action changes
-                  the very next recommendation the engine makes. */}
+                  the very next recommendation the engine makes.
+                  DELIBERATE CARVE-OUT (THE TEN F5): Boost/Mute act on the
+                  PROVIDER artist string, while the header above may show
+                  the locally corrected one — the intelligence layer's
+                  keys stay provider-native (the correction is a display
+                  lens; see src/storage/metaOverrides.ts). */}
               <Action
                 icon="close-circle-outline"
                 label="Not for me"

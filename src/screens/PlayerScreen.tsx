@@ -53,6 +53,11 @@ import {
 import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
 import { CROSSFADE } from '../ai/core/constants';
+import {
+  applyMetaOverride,
+  getMetaOverridesSync,
+  subscribeMetaOverrides,
+} from '../storage/metaOverrides';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
 import { Brutal, MonoText } from '../components/Brutal';
@@ -219,6 +224,11 @@ export function PlayerScreen() {
     setXfade(clampCrossfadeSeconds(s));
     void setCrossfadeSeconds(s);
   };
+  // THE TEN F5 — the playing card shows the corrected title/artist/album
+  // (a display lens; playback + ledger identity stay provider-native).
+  const [, forceOverrideTick] = useState(0);
+  useEffect(() => subscribeMetaOverrides(() => forceOverrideTick((n) => n + 1)), []);
+  const shown = active ? applyMetaOverride(active, getMetaOverridesSync()) : null;
   // VIBE readout (Task 28): the session brain's mood state machine, finally
   // visible in the player. Refreshes on track change + every 20s so a
   // SKIP_STORM shows up while the screen is open.
@@ -403,7 +413,7 @@ export function PlayerScreen() {
       <View style={styles.shareCardStage} pointerEvents="none">
         <ShareCard
           ref={shareCardRef}
-          active={active}
+          active={shown ?? active}
           onArtworkSettled={(ok) => {
             artSettledRef.current = ok;
           }}
@@ -417,7 +427,7 @@ export function PlayerScreen() {
       {/* the artwork wash — 14% under a paper gradient (the prototype's
           playerBg), carrying a whisper of the song's palette hue */}
       <Image
-        source={{ uri: active?.artwork }}
+        source={{ uri: shown?.artwork ?? active?.artwork }}
         style={[styles.bgArt, { opacity: 0.14 }]}
         resizeMode="cover"
         blurRadius={0}
@@ -459,7 +469,7 @@ export function PlayerScreen() {
             accessibilityLabel="Now playing artwork. Double-tap to like or unlike this song."
           >
             <Artwork
-              uri={active?.artwork}
+              uri={shown?.artwork ?? active?.artwork}
               seed={trackKey}
               size={artSize}
               bordered={false}
@@ -494,10 +504,10 @@ export function PlayerScreen() {
         <View style={styles.titleSection}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.title} numberOfLines={2} allowFontScaling={false}>
-              {(active?.title ?? 'NOTHING PLAYING').toUpperCase()}
+              {((shown?.title ?? active?.title) ?? 'NOTHING PLAYING').toUpperCase()}
             </Text>
             <MonoText size={11} color={colors.ink60} style={{ marginTop: 8, letterSpacing: 0.8 }} numberOfLines={1}>
-              {active ? `${active.artist.toUpperCase()} · ${(active.album ?? '').toUpperCase()}` : '—'}
+              {active ? `${shown?.artist.toUpperCase() ?? ''} · ${(shown?.album ?? '').toUpperCase()}` : '—'}
             </MonoText>
           </View>
           <Brutal
@@ -721,6 +731,12 @@ export function PlayerScreen() {
                   NOTHING QUEUED — SONGS YOU ADD WILL APPEAR HERE
                 </MonoText>
               ) : (
+                // THE TEN F5 carve-out: queue rows stay PROVIDER-native
+                // (the metadata lens covers the row lists, the player
+                // header/artwork/share card, and the menu header — the
+                // queue sheet keeps provider strings so the lockscreen
+                // and in-app queue always agree with what the engine
+                // grades). Documented, deliberate.
                 upNext.map((t, i) => (
                   <View key={t.id} style={styles.queueRow}>
                     <MonoText size={10} bold color={colors.ink40} style={{ width: 22 }}>

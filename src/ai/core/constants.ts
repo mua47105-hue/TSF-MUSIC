@@ -350,3 +350,32 @@ export const PLAYBACK_RATE = {
  *  (sleep timer outranks focus outranks crossfade; a lower-priority
  *  engine's factor waits its turn instead of fighting). */
 export const VOLUME_FADE_PRECEDENCE = ['sleep', 'focus', 'crossfade'] as const;
+
+// ── THE TEN — WAVE 2: library & data ────────────────────────────────────
+
+/** FEATURE 4 — Smart auto-playlists (live query folders over the ledger
+ *  + favorites + play counts). The Graveyard window is capped at the
+ *  raw-event retention (RETENTION.rawEventDays = 90) — we never query
+ *  beyond what is stored. */
+export const SMART_FOLDERS = {
+  /** Heavy Rotation: ≥10 plays (listen attempts) inside the last 14 days. */
+  heavyWindowDays: 14,
+  heavyMinPlays: 10,
+  /** Forgotten Gems: hearted, last play older than 90 days. Tracks with
+   *  NO play evidence are NOT "forgotten" (they are unexplored — claiming
+   *  staleness without a timestamp would fabricate history). */
+  forgottenDays: 90,
+  /** The Graveyard: skip ratio > 0.6 with ≥3 plays (candidates to remove). */
+  graveyardWindowDays: 90, // = RETENTION.rawEventDays — the honest ceiling
+  graveyardMinPlays: 3,
+  graveyardSkipRatio: 0.6,
+} as const;
+
+/** FEATURE 5 — local metadata overrides: how many corrections the device
+ *  stores (LRU by updatedAt; AsyncStorage lease, same class as the
+ *  playCounts cap). Lives here, not in the storage module, so tuning is
+ *  a one-file edit (house rule ④). */
+export const META_OVERRIDES = {
+  /** Hard cap on stored corrections. */
+  cap: 500,
+} as const;

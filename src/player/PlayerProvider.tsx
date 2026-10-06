@@ -35,7 +35,8 @@ import TrackPlayer, {
   type Track as RNTrack,
 } from 'react-native-track-player';
 import type { Track } from '../types';
-import { resolveStreamUrl } from '../api/saavn';
+import { resolveStreamUrl, getSongById } from '../api/saavn';
+import { resolveSaavnRow, saavnRescueId } from './saavnRescue';
 import { ytStreamUrlForTrack, ytLastDiagnostics } from '../api/youtube';
 import { YtPoTokenBridge } from '../api/ytPoToken';
 import { playbackService } from './service';
@@ -56,6 +57,7 @@ import {
 } from '../storage/store';
 import { perfMark } from '../perf/perf';
 import { initDataSaver } from './audioQuality';
+import { initMetaOverrides } from '../storage/metaOverrides';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
@@ -209,6 +211,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     getSmartShuffleSetting().then(setSmartShuffleState);
     getAutoplay().then(setAutoplayState);
     initDataSaver(); // sync bridge for the stream resolver (Task 28)
+    initMetaOverrides(); // THE TEN F5 — sync cache for render-time corrections
     // THE TEN wave 1 — playback-engine settings load once, fire-and-forget
     // (the audioQuality pattern: nothing here blocks play or first paint).
     initSmartVolume();
@@ -326,6 +329,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         t.source === 'youtube'
           ? t.streamUrl || ytUrls.get(t.id) || null
           : local?.localUri || t.localUri || resolveStreamUrl(t);
+      // THE TEN F4 — the smart crates (and stats' top tracks) reconstruct
+      // rows from the ledger, which stores NO stream URLs. A URL-less
+      // saavn row gets ONE by-id rescue (provider song.getDetails, via
+      // src/player/saavnRescue.ts) before being dropped — the same honest
+      // contract as the YouTube retry ladder. Failures drop the row and
+      // are negative-cached for the session; they never stall the queue.
+      if (!url && t.source === 'saavn') {
+        const fresh = await resolveSaavnRow(t, getSongById);
+        const freshUrl = fresh ? resolveStreamUrl(fresh) : null;
+        if (fresh && freshUrl) {
+          playable.push({
+            id: t.id,
+            url: freshUrl,
+            title: t.title,
+            artist: t.artist,
+            artwork: fresh.artwork || t.artwork,
+            duration: t.duration || 0,
+            source: t.source,
+            saavnId: fresh.saavnId ?? saavnRescueId(t) ?? '',
+            encryptedUrl: fresh.encryptedUrl,
+            has320: fresh.has320,
+            album: fresh.album ?? t.album,
+            artistId: t.artistId,
+            explicit: t.explicit,
+            isRecommended: t.isRecommended,
+            reason: (t as Track).reason,
+            reasonCode: (t as Track).reasonCode,
+            language: (t as Track).language,
+            year: (t as Track).year,
+            // provenance + preview ride through the rescue too — a
+            // rescued row that lost its stream keeps its honest flag
+            rescued: (t as Track).rescued,
+            rescueRung: (t as Track).rescueRung,
+            previewUrl: fresh.previewUrl,
+            exploration: (t as Track).exploration,
+            localUri: local?.localUri || t.localUri,
+          } as unknown as RNTrack);
+          continue;
+        }
+      }
       if (!url) continue;
       playable.push({
         id: t.id,
@@ -351,6 +394,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         exploration: (t as Track).exploration,
         language: (t as Track).language,
         year: (t as Track).year,
+        // THE TEN F4 — the SIG rescue provenance rides through the queue so
+        // the Recently Rescued crate can see the played row's true origin.
+        rescued: (t as Track).rescued,
+        rescueRung: (t as Track).rescueRung,
         localUri: local?.localUri || t.localUri,
       } as unknown as RNTrack);
     }
