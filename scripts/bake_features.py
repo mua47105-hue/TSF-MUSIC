@@ -56,7 +56,7 @@ INDIA_SPINE = [
     "sachet-parampara", "vishal mishra", "tanishk bagchi", "badshah",
     "yo yo honey singh", "neha kakkar", "tony kakkar", "dhvani bhanushali",
     "darshan raval", "armaan malik", "shalmali kholgade", "kanika kapoor",
-    "sunidhi chauhan", "shaan", "kk ", "arijeet", "jasleen royal",
+    "sunidhi chauhan", "shaan", "kk", "jasleen royal",
     "anuv jain", "king", "mitraz", "kaifi khalil", "aditya rikhari",
     "varun jain", "sachin-jigar", "anirudh ravichander", "sid sriram",
     # punjabi / desi hip-hop
@@ -65,7 +65,7 @@ INDIA_SPINE = [
     "jass manak", "gippy grewal", "divine", "seedhe maut", "krsna",
     # south
     "dhanush", "anirudh", "hesham abdul wahab", "gv prakash",
-    "yuvan shankar raja", "harris jayaraj", "sid sriram ", "sunidhi",
+    "yuvan shankar raja", "harris jayaraj", "sunidhi",
     # ghazal / sufi / classical
     "nusrat fateh ali khan", "arijit", "javed ali", "hariharan", "shweta mohan",
     "kavita seth", "swanand kirkire", "rekha bhardwaj", "shilpa rao",
@@ -226,8 +226,8 @@ def load_rows(path: str):
                 continue  # anon / Devanagari-title rows: no stable identity
             genre = (r.get("track_genre") or "").strip().lower()
             # Same recording re-listed across genre queries (and remasters):
-            # keep the highest-popularity row — deterministic tiebreak on
-            # the quantized tuple so equal-popularity rows cannot flip.
+            # keep the highest-popularity row; popularity ties keep the
+            # FIRST CSV occurrence (deterministic — the file is stable).
             cand = {
                 "key": rk,
                 "title": title,

@@ -81,16 +81,18 @@ export function sharedTags(seed: TagVector, cand: TagVector): { count: number; s
 }
 
 /**
- * Rank a bounded candidate pool against a seed. Deterministic: stable
- * sort (score desc, trackId asc), per-artist cap on the output.
+ * Rank a bounded candidate pool against a seed. The pool is ALWAYS
+ * bounded (SIMILARITY.candidatePoolCap — the facade never fetches more),
+ * so the overlap scan is linear over ≤120 rows: an inverted index would
+ * buy nothing at this size and was removed (critic fix 7 — the shipped
+ * mechanism is now exactly what runs). Deterministic: stable sort
+ * (score desc, trackId asc), per-artist cap on the output.
  */
 export function rankSoundAlike(
   seed: TagVector,
   seedTrackId: string,
   candidates: Track[],
 ): Array<{ track: Track; shared: number; score: number }> {
-  // Inverted index over the POOL ONLY (never the whole world).
-  const index = new Map<string, string[]>(); // tag value → trackIds
   const vectors = new Map<string, TagVector>();
   const eligible: Track[] = [];
   for (const t of candidates) {
@@ -99,16 +101,6 @@ export function rankSoundAlike(
     vectors.set(t.id, v);
     if (tagCount(v) < SIMILARITY.minSharedTags) continue; // thin row — honest skip
     eligible.push(t);
-    for (const tag of [v.artist, v.genre, v.language, v.era, v.mood]) {
-      if (!tag) continue;
-      const key = `${tag}`;
-      const bucket = index.get(key);
-      if (bucket) {
-        if (!bucket.includes(t.id)) bucket.push(t.id);
-      } else {
-        index.set(key, [t.id]);
-      }
-    }
   }
 
   const scored = eligible

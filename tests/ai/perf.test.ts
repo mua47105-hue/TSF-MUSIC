@@ -19,6 +19,7 @@ import { SessionBrain } from '../../src/ai/core/session';
 import { EventLedger } from '../../src/ai/core/ledger';
 import { createLedgerStore } from '../../src/ai/core/storeMemory';
 import type { Candidate } from '../../src/ai/core/types';
+import type { BanditArms } from '../../src/ai/core/bandit';
 import { ninetyDayLedger, listenOf } from './corpus';
 
 const NOW = 1750000000000;
@@ -63,6 +64,19 @@ describe('§10.3 performance budgets', () => {
     const brain = new SessionBrain(NOW);
     for (const l of listens.slice(-12)) brain.push(l);
     const deps = { profile, session: brain.state, now: NOW };
+    // GENIUS gauntlet (critic fix 3): the gate must exercise the NEW terms —
+    // a populated bandit-arm table (several hundred learned arms) and real
+    // directional transitions for the seed — or the potato-phone budget is
+    // only ever verified on the legacy scoring path.
+    const arms: BanditArms = {};
+    for (let i = 0; i < 400; i++) {
+      arms[`perf-${(i * 7) % 500}`] = { alpha: 1 + (i % 9), beta: 1 + (i % 5) };
+    }
+    profile.transitions = {
+      x: Object.fromEntries(
+        Array.from({ length: 8 }, (_, i) => [`perf-${i * 3}`, 1 - i * 0.1]),
+      ),
+    };
     const durations: number[] = [];
     for (let q = 0; q < 40; q++) {
       const t0 = performance.now();
@@ -73,7 +87,7 @@ describe('§10.3 performance budgets', () => {
         seedTrackIds: ['x'],
         seedArtists: ['arijit singh'],
         requested: 12,
-      }, deps);
+      }, deps, { banditArms: arms });
       durations.push(performance.now() - t0);
     }
     durations.sort((a, b) => a - b);

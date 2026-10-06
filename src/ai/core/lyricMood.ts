@@ -98,10 +98,21 @@ export function scoreLyrics(text: string): LyricScore | null {
   for (const line of lines) {
     for (const tok of tokenize(line)) {
       const key = foldToken(tok);
-      const hit = vader?.get(key) ?? hindi?.get(key);
-      if (hit == null) continue;
-      sum += clamp(hit / LYRIC_MOOD.vaderScale, -1, 1);
-      hits += 1;
+      // Per-SOURCE scaling (critic fix 1): VADER means span ±3 and are
+      // divided into the ±1 hint scale; the curated Hindi list already
+      // ships on ±1 and is used RAW — dividing both would mute the
+      // Hindi/Punjabi vocabulary to a third of its designed strength.
+      const vaderHit = vader?.get(key);
+      if (vaderHit != null) {
+        sum += clamp(vaderHit / LYRIC_MOOD.vaderScale, -1, 1);
+        hits += 1;
+        continue;
+      }
+      const hindiHit = hindi?.get(key);
+      if (hindiHit != null) {
+        sum += clamp(hindiHit, -1, 1);
+        hits += 1;
+      }
     }
   }
   if (!hits) return null;

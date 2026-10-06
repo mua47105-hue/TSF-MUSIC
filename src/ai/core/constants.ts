@@ -206,6 +206,11 @@ export const SIMILARITY = {
   perArtistCap: 2,
   /** Hard cap on ranked output (the surface asks for ~3-25). */
   poolCap: 25,
+  /** Candidate-pool ceiling — the inverted ranking scans at most this
+   *  many rows (the mission's "≤120 candidates" law). */
+  candidatePoolCap: 120,
+  /** Per-query catalog search limit while filling the pool. */
+  catalogSearchLimit: 60,
   /** Cache TTL — same 7-day freshness the onTheRise card uses. */
   cacheTtlMs: 7 * 86_400_000,
 } as const;

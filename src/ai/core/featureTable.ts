@@ -29,7 +29,7 @@
  */
 
 import { FEATURE_TABLE } from './constants';
-import { clusterKey, normalizeQuery } from '../../search/normalize';
+import { clusterKey } from '../../search/normalize';
 import { recordingKey, titleKeyOf } from '../../api/recording';
 
 export interface BakedFeatures {
@@ -64,7 +64,7 @@ export function loadFeatureTable(): Promise<boolean> {
         const f = raw.k[key];
         if (
           f && typeof f.e === 'number' && typeof f.v === 'number' && typeof f.d === 'number' &&
-          f.e >= 0 && f.e <= 1 && f.v >= 0 && f.v <= 1
+          f.e >= 0 && f.e <= 1 && f.v >= 0 && f.v <= 1 && f.d >= 0 && f.d <= 1
         ) {
           map.set(key, { energy: f.e, valence: f.v, danceability: f.d });
         }
@@ -113,10 +113,12 @@ export function lookupBakedFeatures(
   return hit ?? null;
 }
 
-/** Third chain key: version-folded bare title, alnum-folded to match
- *  titleKey format ("Tum Hi Ho (Lofi Version)" → "tumhiho"). */
+/** Third chain key — EXACTLY the bake script's key-3 pipeline:
+ *  normTitle(clusterKey(title)) via titleKeyOf, so bake and runtime share
+ *  ONE Unicode path (NFKD + attribution-noise strip — critic fix 2; the
+ *  previous NFC-based fold diverged on compatibility glyphs like Ⅱ→ii). */
 function clusterFoldKey(title: string): string {
-  return normalizeQuery(clusterKey(title)).replace(/[^a-z0-9]+/g, '').slice(0, 80);
+  return titleKeyOf({ title: clusterKey(title) });
 }
 
 // ── test seam ───────────────────────────────────────────────────────────

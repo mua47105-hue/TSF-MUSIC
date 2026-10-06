@@ -346,9 +346,9 @@ export function buildProfile(
   const artistEntries = [...artistAdj.entries()].slice(0, 2000);
   p.coplayArtists = Object.fromEntries(artistEntries);
 
-  // ── GENIUS P4 — directional flow memory: top-K next per node, global
-  // edge cap, prune the noise floor (same 0.02 coplay floor). The prune
-  // happens AFTER the global top-edges cut so the cap cannot keep junk.
+  // ── GENIUS P4 — directional flow memory: the noise floor prunes in the
+  // collector (same 0.02 as co-play), then buildTransitions applies the
+  // global top-edges cut and the per-node top-K fan-out.
   p.transitions = buildTransitions(flowEdgeW);
 
   // ── Daypart matrix cells ───────────────────────────────────────────────

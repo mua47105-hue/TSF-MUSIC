@@ -119,16 +119,23 @@ describe('GENIUS P6 — ranking a bounded pool', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
-  test('seed with no tags → empty result (honest cold start)', () => {
-    const ghost = trackOf('ghost'); // no genre/language/year/album
+  test('seed whose tags match nothing → empty result (honest cold start)', () => {
+    // A metadata-ghost seed still carries the default-prior mood tag and an
+    // era bucket (eraOf never returns undefined) — the honest-empty law is
+    // that NOTHING qualifies when no pool row shares ≥2 of its dims. Run it
+    // against a pool that shares neither the ghost's era nor its mood.
+    const ghost = trackOf('ghost'); // no genre/language/year → pre80s era, default mood
+    const modernPool = [
+      trackOf('m1', { artist: 'K-Pop A', genre: 'k-pop', language: 'korean', year: 2023 }),
+      trackOf('m2', { artist: 'K-Pop B', genre: 'k-pop', language: 'korean', year: 2024 }),
+    ];
     const v = tagVectorOf(ghost);
-    // unknown artist + unknown title → only mood (from default priors) — <2 tags
-    if (tagCount(v) < SIMILARITY.minSharedTags) {
-      expect(rankSoundAlike(v, 'ghost', pool())).toEqual([]);
-    } else {
-      // the default prior still yields a mood tag; the gate stays honest
-      // as long as single-tag candidates cannot qualify — asserted above.
-      expect(true).toBe(true);
+    expect(rankSoundAlike(v, 'ghost', modernPool)).toEqual([]);
+    // and EVERY row the ranker does emit genuinely carries ≥2 shared dims
+    const ranked = rankSoundAlike(tagVectorOf(SEED), 'seed', pool());
+    const seedVec = tagVectorOf(SEED);
+    for (const row of ranked) {
+      expect(sharedTags(seedVec, tagVectorOf(row.track))!.count).toBeGreaterThanOrEqual(SIMILARITY.minSharedTags);
     }
   });
 });

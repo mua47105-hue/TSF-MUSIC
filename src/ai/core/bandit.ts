@@ -21,7 +21,7 @@
  */
 
 import { BANDIT, GRADE_WEIGHTS } from './constants';
-import { seededRandom } from './time';
+import { hash32, seededRandom } from './time';
 
 export interface BanditArm {
   alpha: number;
@@ -123,14 +123,9 @@ export function banditTerm(arms: BanditArms | null, trackId: string, seed: numbe
   return BANDIT.weight * (draw - 0.5);
 }
 
-/** Deterministic per-candidate seed derivation (mirrors engine patterns). */
+/** Deterministic per-candidate seed derivation — the engine's own FNV-1a
+ *  hash32 over surface|track|profile stamp (same primitive the engine's
+ *  exploration PRNG uses; no second implementation). */
 export function armSeed(surface: string, trackId: string, builtAt: number): number {
-  // FNV-1a over surface|track|profileStamp — cheap, stable, no deps.
-  let h = 2166136261;
-  const s = `${surface}|${trackId}|${builtAt}`;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+  return hash32(`${surface}|${trackId}|${builtAt}`);
 }

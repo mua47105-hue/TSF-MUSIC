@@ -181,8 +181,9 @@ class Mindbeat {
       // GENIUS P1: a favorite's captured genre is heart-class genre evidence
       // too (the user chose to keep the song) — one bounded bump per genre,
       // recomputed from scratch on every rebuild (deterministic, no drift).
+      // Kill switch: the genre evidence mirror is intelligence work — skip it.
       const favGenres = new Map<string, number>();
-      for (const f of favorites.slice(0, 200)) {
+      for (const f of this.disabled ? [] : favorites.slice(0, 200)) {
         const key = f.artist.trim().toLowerCase();
         if (key && profile.artists[key]?.source !== 'heart') {
           profile.artists[key] = profile.artists[key] ?? {
@@ -513,6 +514,16 @@ class Mindbeat {
   async setDisabled(off: boolean): Promise<void> {
     this.disabled = off;
     await this.kvSet('intelligenceDisabled', off);
+    if (off) {
+      // G7 letter-and-spirit: a pending debounced write must not land
+      // after the switch is thrown — cancel both timers, drop the flags.
+      if (this.banditFlushTimer) clearTimeout(this.banditFlushTimer);
+      this.banditFlushTimer = null;
+      this.banditDirty = false;
+      if (this.lyricFlushTimer) clearTimeout(this.lyricFlushTimer);
+      this.lyricFlushTimer = null;
+      this.lyricDirty = false;
+    }
   }
 
   async isDisabled(): Promise<boolean> {
@@ -681,9 +692,12 @@ class Mindbeat {
   /**
    * SOUND_ALIKE (§ similarity) — "songs like this one" via tag overlap.
    * Candidates come from the EXISTING injected CatalogApi (search by the
-   * seed's artist + genre), bounded ≤120; ranking is the pure inverted-
-   * index overlap in core/similarity. Kill-switched; 7-day cached per
-   * seed; empty when the catalog/seed carries too few tags (honest).
+   * seed's artist + genre), bounded to SIMILARITY.candidatePoolCap; the
+   * ranking scan is linear over that bounded pool (core/similarity).
+   * Kill-switched; 7-day cached per seed (only when the pool actually
+   * yielded candidates — a transient catalog failure is NOT cached as
+   * "no sound-alikes" for a week, critic fix 10); empty when the
+   * catalog/seed carries too few tags (honest).
    */
   async soundAlike(seed: Track, count = 3, excludeIds?: Set<string>): Promise<Track[]> {
     await this.ready();
@@ -703,15 +717,15 @@ class Mindbeat {
       const pool: Track[] = [];
       const seen = new Set<string>();
       for (const q of queries) {
-        if (pool.length >= 120) break;
+        if (pool.length >= SIMILARITY.candidatePoolCap) break;
         let rows: Track[] = [];
         try {
-          rows = await CATALOG.search(q, 60);
+          rows = await CATALOG.search(q, SIMILARITY.catalogSearchLimit);
         } catch {
           rows = [];
         }
         for (const t of rows) {
-          if (pool.length >= 120) break;
+          if (pool.length >= SIMILARITY.candidatePoolCap) break;
           if (seen.has(t.id) || excludeIds?.has(t.id)) continue;
           seen.add(t.id);
           pool.push(t);
@@ -719,6 +733,7 @@ class Mindbeat {
       }
       const seedVec = tagVectorOf(seed);
       const ranked = rankSoundAlike(seedVec, seed.id, pool);
+      if (!pool.length) return []; // catalog unreachable — try again next call
       this.alikeCache = {
         at: now,
         seedKey,

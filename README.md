@@ -180,7 +180,7 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v4.1.0 — THE GODMODE EDITION** (sing-along lyrics, instant tap, share card, weekly crate, baked knowledge table) |
+| Latest release | **v4.1.0 — THE GODMODE EDITION** (sing-along lyrics, instant tap, share card, weekly crate) |
 | Audio | 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers + baked knowledge table, p95 ~4 ms decisions |

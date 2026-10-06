@@ -23,6 +23,7 @@ import {
   RETENTION,
   SCORE_WEIGHTS,
   SESSION,
+  SIMILARITY,
 } from './constants';
 import type {
   Candidate,
@@ -370,7 +371,7 @@ export function truthCondition(
   // tag dimensions against a seed and stamped them on the candidate. The
   // truth condition IS the computed count (≥2) — nothing here can fire
   // without that evidence.
-  if ((c.sharedTagsWithSeed ?? 0) >= 2) return 'SOUND_ALIKE';
+  if ((c.sharedTagsWithSeed ?? 0) >= SIMILARITY.minSharedTags) return 'SOUND_ALIKE';
 
   // BECAUSE_HEARTED: a hearted track by the same artist exists.
   const artistEntry = profile.artists[artistKey];

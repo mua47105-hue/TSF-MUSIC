@@ -80,7 +80,9 @@ describe('GENIUS P1 — captured genre affinity', () => {
     const listens = [listenOf({}), listenOf({ trackId: 't2', artist: 'Shreya Ghoshal', grade: 'EARLY_SKIP', completionRatio: 0.1, listenedMs: 10_000, durationMs: 200_000 })];
     const p: TasteProfile = buildProfile(listens, [], [], { now: NOW });
     expect(Object.keys(p.genres).sort()).toEqual(['__melancholy']); // valence ≤0.35 pseudo-genre only
-    expect(JSON.stringify(p.genres['__melancholy']!.w)).toBe(JSON.stringify(p.genres['__melancholy']!.w));
+    // the pseudo-genre weight is the mood-split math, unchanged from pre-P1:
+    // COMPLETED (2.0·0.1·0.5·0.6 = +0.06) + EARLY_SKIP (−1.5·0.25·0.5·0.6 = −0.1125)
+    expect(p.genres['__melancholy']!.w).toBeCloseTo(2.0 * 0.1 * 0.5 * 0.6 + (-1.5 * 0.25 * 0.5 * 0.6), 5);
     // twice → identical (determinism)
     const p2 = buildProfile(listens, [], [], { now: NOW });
     expect(JSON.stringify(p)).toBe(JSON.stringify(p2));
