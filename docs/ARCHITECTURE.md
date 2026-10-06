@@ -277,7 +277,8 @@ for the lab workflow.
 | `HomeScreen` | Deep feed: shortcuts, Made for {name}, Now Sound, Jump back in, Popular artists, Trending, On the Rise, Because you listened, New releases, Featured playlists, charts |
 | `SearchScreen` | Search field, recents, Top-result hero + Songs list, 18-category Browse grid, TSF AI card, Keyword⇄Vibe toggle |
 | `LibraryScreen` | Playlists/Artists/Albums/Downloaded filters, sort, list⇄grid toggle, Liked Songs hero, Your Sound row, version badge |
-| `PremiumScreen` | Spotify-style Premium landing (4th tab); CTA honestly confirms the app is free |
+| `MindbeatWireScreen` | **Wire** (4th tab) — the intelligence surface: Daily Mixes, Weekly Crate, Now Sound, On the Rise, the session VIBE chip |
+| `PremiumScreen` | Spotify-style Premium landing (modal from Library); CTA honestly confirms the app is free |
 | `PlayerScreen` | Now-playing modal: palette gradient, artwork, progress, controls, queue sheet (Now playing / Next up), Smart Shuffle + Autoplay chips, share |
 | `CollectionScreen` | Album/playlist/chart detail with palette-tinted hero; lazy-resolves tracks by `kind` |
 | `PlaylistScreen` | User playlist detail with per-track remove + long-press menu |
@@ -289,6 +290,33 @@ Shared components: `Onboarding` (3-step first run), `WhatsNewDialog`,
 `MiniPlayer`, `TrackRow`/`TrackMenu` (corrections: Not for me / Boost /
 Mute), `Shelf`/`ShelfSkeleton`, `Artwork` (with initials fallback),
 `PressableScale`, `Toast`.
+
+## The GENIUS intelligence upgrade (6 phases)
+
+The "Lightweight Genius" upgrade (see [docs/GENIUS-NOTE.md](GENIUS-NOTE.md)
+for re-baking + licenses + honest limitations) sits ON TOP of the layers
+above — every phase is additive, kill-switched, and lazy:
+
+- **P1 captured genres** — provider genre strings (iTunes
+  `primaryGenreName`, JioSaavn genre) flow into genre affinities; the
+  lazy backfill heals old favorites from fresh search results.
+- **P2 baked knowledge table** — `assets/baked_features.json`
+  (≤ 2.5 MB gzip) carries REAL Spotify (energy, valence, danceability)
+  for ~83k recordings, keyed by the app's own recording identity;
+  loaded post-paint into one Map; `source: 'dataset'`, confidence 0.8.
+- **P3 Thompson sampling bandit** — per-track Beta arms from the
+  existing grade weights, seeded Joehnk sampler (determinism law),
+  ±0.25 bounded additive term, 2000-arm kv cap with least-learned
+  eviction.
+- **P4 flow memory** — directional track→track transitions (top-8 per
+  node, ≤3000 edges, coplayEdge half-life) with the truthful
+  `FLOW_NEXT` reason ("Keeps your flow going").
+- **P5 lyric mood** — VADER (MIT) + curated Hindi/Punjabi lexicon score
+  lyrics into a bounded valence delta (±0.25 pre-blend, ±0.15 net,
+  VALENCE ONLY); 1000-row LRU kv.
+- **P6 tag-overlap similarity** — "close to this song" via ≥2 shared
+  tag dimensions (genre/mood/language/era/artist, artist weakest) over
+  the bounded pool only; `SOUND_ALIKE` + the Vibe Shift fallback rung.
 
 ## CI / release topology
 
