@@ -402,6 +402,99 @@ describe('wave3 · F7 computeBlend (deterministic + truth-conditioned)', () => {
     expect(blend.energy).toBeCloseTo((a.energy + b.energy) / 2, 10);
     expect(blend.valence).toBeCloseTo((a.valence + b.valence) / 2, 10);
   });
+
+  // ── v4.3.1 (auditor BAR 3): determinism is pinned against ORDER and
+  // against TIES — calling computeBlend twice proves nothing (a
+  // Math.random() comparator survived the old lock because stable inputs
+  // + stable iteration usually reproduce). These fixtures attack both.
+
+  test('KEY-ORDER invariance: shuffling the DNA arrays cannot move the blend', () => {
+    const mine = {
+      v: 1,
+      artists: [
+        { n: 'arijit singh', w: 5 },
+        { n: 'shubh', w: 3 },
+        { n: 'billie eilish', w: 2 },
+      ],
+      genres: [
+        { n: 'bollywood', w: 4 },
+        { n: 'pop', w: 1 },
+      ],
+      energy: 0.4,
+      valence: 0.6,
+      at: NOW_TS,
+    };
+    const theirs = {
+      v: 1,
+      artists: [
+        { n: 'billie eilish', w: 4 },
+        { n: 'arctic monkeys', w: 2 },
+      ],
+      genres: [{ n: 'pop', w: 2 }],
+      energy: 0.5,
+      valence: 0.5,
+      at: NOW_TS,
+    };
+    const shuffledMine = { ...mine, artists: [...mine.artists].reverse(), genres: [...mine.genres].reverse() };
+    const shuffledTheirs = { ...theirs, artists: [...theirs.artists].reverse(), genres: [...theirs.genres].reverse() };
+    const expected = computeBlend(mine, theirs);
+    // the EXACT same output — shared and bridge arrays, same order, same
+    // ties broken the same way — regardless of the input key order
+    expect(computeBlend(shuffledMine, theirs)).toEqual(expected);
+    expect(computeBlend(mine, shuffledTheirs)).toEqual(expected);
+    expect(computeBlend(shuffledMine, shuffledTheirs)).toEqual(expected);
+  });
+
+  test('TIED weights: alphabetical tie-break strictly enforced + 40-run stability (a Math.random comparator cannot survive)', () => {
+    const tie = (names: string[], w: number) => ({
+      v: 1,
+      artists: names.map((n) => ({ n, w })),
+      genres: [] as Array<{ n: string; w: number }>,
+      energy: 0.5,
+      valence: 0.5,
+      at: NOW_TS,
+    });
+    const mine = tie(['zed one', 'alpha two', 'mike three'], 5);
+    const theirs = tie(['zed one', 'alpha two', 'mike three'], 5);
+    const first = computeBlend(mine, theirs);
+    // every weight ties ⇒ ONLY the name break sorts: a < m < z
+    expect(first.shared.map((s) => s.n)).toEqual(['alpha two', 'mike three', 'zed one']);
+    // 40 runs must be byte-identical — under an injected Math.random
+    // comparator, 3 tied elements land in one of 6 orders per run, so a
+    // 40-run all-equal match happens with probability ≈ 6^-39: never.
+    for (let i = 0; i < 40; i++) expect(computeBlend(mine, theirs)).toEqual(first);
+  });
+
+  test('BRIDGE ties: equal weights interleave alphabetically, and a cross-side tie gives MINE the first seat (fairness pin)', () => {
+    const mine = {
+      v: 1,
+      artists: [
+        { n: 'aaa solo', w: 5 },
+        { n: 'tie band', w: 5 },
+      ],
+      genres: [],
+      energy: 0.5,
+      valence: 0.5,
+      at: NOW_TS,
+    };
+    const theirs = {
+      v: 1,
+      artists: [
+        { n: 'zzz solo', w: 5 },
+        { n: 'tie band', w: 5 },
+      ],
+      genres: [],
+      energy: 0.5,
+      valence: 0.5,
+      at: NOW_TS,
+    };
+    const blend = computeBlend(mine, theirs);
+    // shared: both sides know 'tie band' (meaned 5)
+    expect(blend.shared.map((s) => s.n)).toEqual(['tie band']);
+    // bridge: 'aaa solo' (mine) and 'zzz solo' (theirs) tie at 5 ⇒ name asc
+    // puts aaa first; the from-tiebreak is never even needed here — pin it
+    expect(blend.bridge.map((b) => `${b.n}:${b.from}`)).toEqual(['aaa solo:mine', 'zzz solo:theirs']);
+  });
 });
 
 // ── source locks (the wiring exists) ────────────────────────────────────
@@ -424,8 +517,14 @@ describe('wave3 · source locks', () => {
     expect(src).toContain('buildBlendPlaylist');
   });
 
-  test('the blend resolver is hygiene-gated (filterClean + reconcileRecordings)', async () => {
-    const src = await Bun.file(new URL('../../src/ai/mindbeat.ts', import.meta.url)).text();
-    expect(src).toContain('filterClean(reconcileRecordings(rows))');
+  test('the blend resolver is hygiene-gated — BEHAVIORALLY (auditor BAR 1)', async () => {
+    // v4.3.1: the old lock grepped mindbeat.ts for the string
+    // `filterClean(reconcileRecordings(rows))`, which appears at MULTIPLE
+    // call sites — deleting the BLEND's own gate kept the suite green.
+    // The replacement drives the real facade and asserts the explicit and
+    // profane fixture rows never land in the saved playlist:
+    // see tests/ai/hygiene_behavioral_locks.test.ts.
+    const src = await Bun.file(new URL('../../tests/ai/hygiene_behavioral_locks.test.ts', import.meta.url)).text();
+    expect(src).toContain('buildBlendPlaylist');
   });
 });

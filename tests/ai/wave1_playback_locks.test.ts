@@ -180,6 +180,38 @@ describe('wave1 · F1 volume bus composition (the race the mission forbids)', ()
     expect(volumeWrites[volumeWrites.length - 1]).toBe(0.85);
   });
 
+  // ── v4.3.1 (auditor BAR 2): the volume bus LIE — the old clamp
+  // Math.min(1, multiplier) silently ate the Smart Volume quiet-track
+  // lift (curve said 1.05; the speaker got 1.0). These locks watch the
+  // ACTUAL write, so restoring the fake ceiling is a RED mutation.
+
+  test('the lift is REAL: a quiet track (energy 0) writes 1.05 — ABOVE the old fake ceiling', () => {
+    resetVolumeBusForTests();
+    volumeWrites.length = 0;
+    // the energy→multiplier curve runs, then the bus must ship it intact
+    setSmartVolumeMultiplier(smartVolumeMultiplier(0.0));
+    const written = volumeWrites[volumeWrites.length - 1];
+    expect(written).toBeCloseTo(1.05, 10); // exactly the lift target
+    expect(written).toBeGreaterThan(1.0); // the whole point — louder, not fake-flat
+    // a mid-lift quiet track (energy 0.15 ⇒ 1.025) also survives the bus
+    setSmartVolumeMultiplier(smartVolumeMultiplier(0.15));
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(1.025, 10);
+  });
+
+  test('the ceiling is SMART_VOLUME.max, not 1.0 — a rogue multiplier cannot run away', () => {
+    // composition-level: a misbehaving multiplier is clamped to the lift
+    // ceiling (1.05), NEVER silently flattened to 1.0, NEVER unclamped
+    expect(composeVolume(9, 1)).toBe(1.05);
+    expect(composeVolume(9, 0.5)).toBeCloseTo(0.525, 10); // 1.05 × 0.5
+    expect(composeVolume(-3, 1)).toBe(0);
+    // gate-level: setSmartVolumeMultiplier clamps to the same ceiling
+    resetVolumeBusForTests();
+    volumeWrites.length = 0;
+    setSmartVolumeMultiplier(9);
+    expect(volumeWrites[volumeWrites.length - 1]).toBe(1.05);
+    resetVolumeBusForTests();
+  });
+
   test('single-owner precedence: sleep > focus > crossfade', () => {
     resetVolumeBusForTests();
     volumeWrites.length = 0;

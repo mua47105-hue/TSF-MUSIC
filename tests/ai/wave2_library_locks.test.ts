@@ -201,6 +201,54 @@ describe('wave2 · F4 heavy rotation (literal threshold locks)', () => {
   });
 });
 
+// ── v4.3.1 (auditor BAR 1): hygiene is BEHAVIORAL or it is theatre ──────
+// The old lock grepped mindbeat.ts for the string
+// `filterClean(reconcileRecordings(rows))` — a string that appears at
+// MULTIPLE call sites, so deleting the smartFolders gate kept the suite
+// green (the auditor's surviving mutation). These locks inject rows that
+// filterClean MUST drop and watch the crates' real output instead.
+
+describe('wave2 · F4 hygiene is BEHAVIORAL (auditor BAR 1 — output, not greps)', () => {
+  test('heavyRotation: an explicit-flagged recording can NEVER enter the crate', () => {
+    const listens: ListenRecord[] = [];
+    for (let i = 0; i < 10; i++) listens.push(listen('hyg-exp', 'Happy Clean Song', 'Clean Artist', (i % 10) + 0.5));
+    // the device's own full-track copy carries the provider explicit flag —
+    // enrichFromLocal copies it onto the crate row, where filterClean MUST
+    // drop it (10 clean plays cannot launder an explicit recording).
+    const fullTracks: Track[] = [
+      { id: 'hyg-exp', title: 'Happy Clean Song', artist: 'Clean Artist', artwork: '', duration: 180, source: 'saavn', previewOnly: false, explicit: true },
+    ];
+    const out = heavyRotation(listens, fullTracks, NOW);
+    expect(out.map((t) => t.id)).not.toContain('hyg-exp');
+    expect(out).toEqual([]);
+  });
+
+  test('heavyRotation: a blocklisted TITLE can never enter (word-boundary net)', () => {
+    const listens: ListenRecord[] = [];
+    for (let i = 0; i < 10; i++) listens.push(listen('hyg-title', 'Fuck The System (Live)', 'Clean Artist', (i % 10) + 0.5));
+    const out = heavyRotation(listens, [], NOW);
+    expect(out).toEqual([]);
+  });
+
+  test('theGraveyard: explicit and profane rows stay out of the skip-ratio crate', () => {
+    const listens: ListenRecord[] = [
+      listen('hyg-grv1', 'Skip Bait', 'Clean Artist', 1, 'MID_SKIP'),
+      listen('hyg-grv1', 'Skip Bait', 'Clean Artist', 2, 'EARLY_SKIP'),
+      listen('hyg-grv1', 'Skip Bait', 'Clean Artist', 3, 'COMPLETED'), // 2/3 = 0.667 > 0.6
+      listen('hyg-grv2', 'Bitch Please (Skit)', 'Other Artist', 1, 'MID_SKIP'),
+      listen('hyg-grv2', 'Bitch Please (Skit)', 'Other Artist', 2, 'EARLY_SKIP'),
+      listen('hyg-grv2', 'Bitch Please (Skit)', 'Other Artist', 3, 'COMPLETED'),
+    ];
+    const fullTracks: Track[] = [
+      { id: 'hyg-grv1', title: 'Skip Bait', artist: 'Clean Artist', artwork: '', duration: 180, source: 'saavn', previewOnly: false, explicit: true },
+    ];
+    const out = theGraveyard(listens, fullTracks, NOW);
+    expect(out.map((t) => t.id)).not.toContain('hyg-grv1'); // provider flag
+    expect(out.map((t) => t.title)).not.toContain('Bitch Please (Skit)'); // blocklist
+    expect(out).toEqual([]);
+  });
+});
+
 describe('wave2 · F4 the graveyard (literal ratio + evidence locks)', () => {
   test('3 plays / 2 skips (0.667) IN · 3 plays / 1 skip OUT · 2 plays / 2 skips OUT', () => {
     const listens: ListenRecord[] = [

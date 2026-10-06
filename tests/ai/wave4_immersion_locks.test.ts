@@ -326,7 +326,14 @@ describe('wave4 · source locks', () => {
     const src = await Bun.file(new URL('../../src/ai/mindbeat.ts', import.meta.url)).text();
     expect(src).toContain('focusPicks');
     expect(src).toContain('FOCUS.maxEnergy');
-    expect(src).toContain('filterClean(reconcileRecordings(rows))');
+    // v4.3.1 (auditor BAR 1): the old grep for
+    // `filterClean(reconcileRecordings(rows))` was THEATRE — the same
+    // string exists at the blend + soundAlike call sites, so deleting the
+    // focus gate kept the suite green. The behavioral replacement drives
+    // the real facade with an explicit fixture row and asserts it never
+    // queues: see tests/ai/hygiene_behavioral_locks.test.ts.
+    const hyg = await Bun.file(new URL('./hygiene_behavioral_locks.test.ts', import.meta.url)).text();
+    expect(hyg).toContain('focusPicks');
     expect(src).toContain('isMutedRow(t.artist, muted)'); // the mute gate is wired
   });
 

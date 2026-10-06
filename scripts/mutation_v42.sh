@@ -188,6 +188,32 @@ run_mutation "W2: by-id rescue rung killed (ledger crates stop playing)" \
   src/player/saavnRescue.ts 's/const fresh = await fetchById(rawId).catch(() => null);/const fresh = null;/' \
   tests/ai/wave2_library_locks.test.ts
 
+# ── v4.3.1 — the auditor's gauntlet (BAR 5: the surviving mutations) ────
+# An adversarial auditor's 12 mutations against v4.3.0 produced 6
+# survivors. These rows are the fixes' own mutation proof: each breaks
+# the code the way the auditor did; the replacement behavioral locks
+# MUST go red.
+
+run_mutation "W5: smartFolders filterClean deleted (explicit rows enter the crates)" \
+  src/ai/smartFolders.ts 's/reconcileRecordings(filterClean(out))/reconcileRecordings(out)/' \
+  tests/ai/wave2_library_locks.test.ts
+
+run_mutation "W5: blend + focus filterClean deleted (the multi-site grep lie)" \
+  src/ai/mindbeat.ts 's/for (const t of filterClean(reconcileRecordings(rows))) {/for (const t of reconcileRecordings(rows)) {/' \
+  tests/ai/hygiene_behavioral_locks.test.ts
+
+run_mutation "W5: the volume bus lie restored (Math.min(1, multiplier) eats the 1.05 lift)" \
+  src/player/volumeBus.ts 's/Math.min(SMART_VOLUME.max, multiplier)/Math.min(1, multiplier)/' \
+  tests/ai/wave1_playback_locks.test.ts
+
+run_mutation "W5: the volume bus clamp deleted entirely (rogue multipliers run away)" \
+  src/player/volumeBus.ts 's/const m = Math.max(0, Math.min(SMART_VOLUME.max, multiplier));/const m = multiplier;/' \
+  tests/ai/wave1_playback_locks.test.ts
+
+run_mutation "W5: Math.random injected into the blend sort comparator (ties wobble)" \
+  src/ai/tasteDna.ts 's/shared.sort((x, y) => y.w - x.w || cmpStr(x.n, y.n));/shared.sort((x, y) => y.w - x.w || Math.random() - 0.5);/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
 echo "──"
 echo "mutations caught: $PASS / $((PASS+FAIL))"
 if [ "$FAIL" -gt 0 ]; then

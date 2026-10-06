@@ -31,20 +31,24 @@
  */
 
 import TrackPlayer from 'react-native-track-player';
-import { VOLUME_FADE_PRECEDENCE } from '../ai/core/constants';
+import { SMART_VOLUME, VOLUME_FADE_PRECEDENCE } from '../ai/core/constants';
 
 export type FadeOwner = (typeof VOLUME_FADE_PRECEDENCE)[number];
 
 /**
- * Pure composition — the lock pins 0.5 × 0.85 = 0.425 here. Both inputs
- * are clamped to [0,1] first so a misbehaving owner can never push the
- * stream volume out of range.
+ * Pure composition — the lock pins 0.5 × 0.85 = 0.425 here. The
+ * multiplier is clamped to [0, SMART_VOLUME.max] — v4.3.1: the old
+ * Math.min(1, …) ceiling was a LIE that silently ate the Smart Volume
+ * quiet-track lift (the curve advertised 1.05; the bus shipped 1.0 —
+ * the auditor's BAR 2 mutation proved no test watched the write). The
+ * lift is now REAL up to the curve's own documented ceiling. The fade
+ * factor stays [0,1]: a fade can only attenuate, never boost.
  */
 export function composeVolume(multiplier: number, fadeFactor: number): number {
-  const m = Math.max(0, Math.min(1, multiplier));
+  const m = Math.max(0, Math.min(SMART_VOLUME.max, multiplier));
   const f = Math.max(0, Math.min(1, fadeFactor));
   const v = m * f;
-  return Math.max(0, Math.min(1, v));
+  return Math.max(0, Math.min(SMART_VOLUME.max, v));
 }
 
 const factors = new Map<FadeOwner, number>();
@@ -71,9 +75,11 @@ function recompute(): void {
   void TrackPlayer.setVolume(v).catch(() => undefined);
 }
 
-/** Smart Volume reports the new track's multiplier (1.0 when off). */
+/** Smart Volume reports the new track's multiplier (1.0 when off). The
+ *  legal range is [0, SMART_VOLUME.max] — the quiet-track lift (>1.0)
+ *  is real and must survive this gate (see composeVolume, v4.3.1). */
 export function setSmartVolumeMultiplier(m: number): void {
-  multiplier = clamp01(m);
+  multiplier = Math.max(0, Math.min(SMART_VOLUME.max, m));
   recompute();
 }
 
