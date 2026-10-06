@@ -110,12 +110,12 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 360,
-    // v4.3.1: a DEFINITE height (not maxHeight) — RN Android cannot clamp
-    // a ScrollView through flexShrink under a maxHeight parent (the E2E
-    // lab probe: the list clipped mid-line and the CTA left the a11y
-    // tree). A definite height makes the flex: 1 list bounded and the
-    // CTA always visible.
-    height: '88%',
+    // v4.3.1: NO percentage height and NO flex math — twice the E2E lab
+    // probe showed Yoga failing to bound the list inside the RN Modal
+    // (maxHeight + flexShrink → clipped CTA; height 88% + flex:1 → CTA
+    // pushed behind the nav bar, pruned from the a11y tree). A fixed DP
+    // viewport on the ScrollView is screens-independent: the sheet hugs
+    // header + ≤380dp of scrolling bulletin + the always-visible CTA.
     backgroundColor: colors.paper,
     borderWidth: 2,
     borderColor: colors.ink,
@@ -123,9 +123,9 @@ const styles = StyleSheet.create({
     gap: 6,
     ...({ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 8, height: 8 }, elevation: 8 } as object),
   },
-  /** The list scrolls inside the sheet; header + CTA stay pinned. */
-  scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
+  /** Fixed-height scrolling bulletin (≈4.5 bullets); CTA below stays on-screen. */
+  scroll: { maxHeight: 380 },
+  scrollContent: { flexGrow: 0 },
   kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   edDot: { width: 7, height: 7, backgroundColor: colors.orange },
   title: {
