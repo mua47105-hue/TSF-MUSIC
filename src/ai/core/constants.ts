@@ -379,3 +379,44 @@ export const META_OVERRIDES = {
   /** Hard cap on stored corrections. */
   cap: 500,
 } as const;
+
+// ── THE TEN — WAVE 3: intelligence & social (serverless, privacy-first) ──
+
+/** FEATURE 6 — Local Wrapped / Monthly Rewind (computed on-device from
+ *  the Event Ledger; shares as a card or honest text). */
+export const WRAPPED = {
+  /** Below this many streams (30-second rule) the rewind refuses to
+   *  pretend: the UI shows "not enough listening yet". */
+  minStreams: 10,
+  /** Midnight Obsession window (local hours; end exclusive). */
+  midnightFromHour: 0,
+  midnightToHour: 4,
+  /** The energy/valence split separating the aura quadrants. */
+  auraSplit: 0.5,
+  /** Card list sizes. */
+  topArtistCount: 5,
+  topTrackCount: 5,
+} as const;
+
+/** FEATURE 7 — Taste DNA Blend (peer-to-peer, serverless). The payload
+ *  carries ONLY taste aggregates — never raw ledger events (privacy). */
+export const TASTE_DNA = {
+  /** Payload version — decode refuses anything else (honest failure). */
+  version: 1,
+  /** Top artists carried in the code (bounded payload, base64url-safe). */
+  artistCount: 20,
+  /** Top genres carried in the code. */
+  genreCount: 8,
+  /** Bridge artists each side contributes (the meeting-ground seeds). */
+  bridgePerSide: 5,
+  /** Blend playlist size target. */
+  blendTracks: 25,
+  /** A DNA younger than this many known artists is honestly "too young
+   *  to share" — sharing a 0-artist DNA would fabricate a one-sided
+   *  blend and call it a meeting of tastes. */
+  minArtistsForShare: 3,
+  /** Wall-clock budget for the blend's artist resolution (offline-ish
+   *  users must not stare at BLENDING… forever); an honest partial
+   *  blend ships with whatever resolved in time. */
+  resolveBudgetMs: 8000,
+} as const;

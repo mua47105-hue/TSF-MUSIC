@@ -18,10 +18,10 @@ import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
+import { TASTE_DNA, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
-import { getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
+import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
@@ -29,10 +29,12 @@ import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
 import { buildSmartFolders, type SmartFolders } from './smartFolders';
+import { buildTasteDna, computeBlend, decodeTasteDna, encodeTasteDna, type TasteBlend } from './tasteDna';
+import { buildWrapped, type WrappedSummary } from './wrapped';
 import { reasonLine } from './core/decision';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
 import { filterClean } from '../safety';
-import { reconcileRecordings } from '../api/recording';
+import { reconcileRecordings, recordingKey } from '../api/recording';
 
 const CATALOG = {
   search: (q: string, limit = 20) => searchSaavnClean(q, limit),
@@ -665,6 +667,93 @@ class Mindbeat {
       return buildSmartFolders({ listens, favorites, playCounts, recents, now: Date.now() });
     } catch {
       return null; // the UI renders an honest unavailable row
+    }
+  }
+
+  /**
+   * THE TEN F6 — the Local Rewind (Wrapped-grade, on-device). NULL when
+   * the listener honestly hasn't streamed enough — the UI says so,
+   * never zeros dressed up as stats.
+   */
+  async wrapped(rangeDays = 30): Promise<WrappedSummary | null> {
+    await this.ready();
+    // NULL = honest "not enough listening yet". Ledger failures THROW so
+    // the UI can say "unavailable" — the two are never conflated.
+    if (!this.ledger) throw new Error('ledger unavailable');
+    const listens = await this.ledger.getListens(Math.max(rangeDays, 0) + 1);
+    return buildWrapped(listens, rangeDays, Date.now());
+  }
+
+  /**
+   * THE TEN F7 — the shareable Taste DNA code (aggregates only, never
+   * raw ledger events). NULL when the DNA is too young to share
+   * (TASTE_DNA.minArtistsForShare): sharing a 0-artist code would make
+   * every "blend" a one-sided playlist pretending to be a meeting of
+   * tastes — the UI says so instead.
+   */
+  async tasteDnaCode(): Promise<string | null> {
+    await this.ready();
+    const dna = buildTasteDna(this.profile);
+    if (dna.artists.length < TASTE_DNA.minArtistsForShare) return null;
+    return encodeTasteDna(dna);
+  }
+
+  /**
+   * THE TEN F7 — build the Blend playlist from a friend's code. Returns
+   * NULL when the code is corrupt/wrong-version (the UI shows an honest
+   * toast — never a crash, never a fabricated blend). The playlist is
+   * resolved from the SHARED + BRIDGE artists, safety-filtered and
+   * reconciled (law ⑨), and saved as a normal local playlist.
+   */
+  async buildBlendPlaylist(
+    friendCode: string,
+  ): Promise<
+    | { status: 'ok'; name: string; added: number; shared: number; bridge: number; partial: boolean }
+    | { status: 'bad_code' }
+    | { status: 'nothing_resolved' }
+    | { status: 'failed' }
+  > {
+    const theirs = decodeTasteDna(friendCode);
+    if (!theirs) return { status: 'bad_code' };
+    const mine = buildTasteDna(this.profile);
+    const blend: TasteBlend = computeBlend(mine, theirs);
+    const artists = [...blend.shared.map((s) => s.n), ...blend.bridge.map((b) => b.n)];
+    const out: Track[] = [];
+    const seen = new Set<string>();
+    const deadline = Date.now() + TASTE_DNA.resolveBudgetMs;
+    let partial = false;
+    for (const artist of artists) {
+      if (out.length >= TASTE_DNA.blendTracks) break;
+      if (out.length > 0 && Date.now() > deadline) {
+        partial = true; // an honest partial blend ships; the clock never lies
+        break;
+      }
+      const name = artist.split(/,|&/)[0].trim();
+      if (!name) continue;
+      let rows: Track[] = [];
+      try {
+        rows = await CATALOG.artistTracks(name, 6);
+      } catch {
+        rows = [];
+      }
+      for (const t of filterClean(reconcileRecordings(rows))) {
+        const key = recordingKey(t);
+        if (seen.has(key) || out.some((x) => x.id === t.id)) continue;
+        seen.add(key);
+        out.push(t);
+        if (out.length >= TASTE_DNA.blendTracks) break;
+      }
+    }
+    if (!out.length) return { status: 'nothing_resolved' }; // offline or catalog dry — honest
+    try {
+      // Each import is a distinct DATED edition — two friends' codes are
+      // different blends, and re-importing the same friend on another day
+      // re-resolves the catalog. Deliberate, documented stance.
+      const edition = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const pl = await createPlaylist(`Taste DNA Blend · ${edition}`, out);
+      return { status: 'ok', name: pl.name, added: out.length, shared: blend.shared.length, bridge: blend.bridge.length, partial };
+    } catch {
+      return { status: 'failed' }; // storage refused — never a silent nothing
     }
   }
 

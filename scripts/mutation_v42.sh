@@ -132,6 +132,32 @@ run_mutation "W2: forgotten-gems matcher unguarded (same-titled song un-forgets)
   src/ai/smartFolders.ts "s/if (agg.key === key && sameCredits(agg.credits, credits, agg.primary, primary)) {/if (agg.key === key) {/" \
   tests/ai/wave2_library_locks.test.ts
 
+# ── THE TEN · WAVE 3 (intelligence & social) ────────────────────────────
+
+run_mutation "W3: midnight window widened to 0-6 (4am listens smuggled in)" \
+  src/ai/core/constants.ts 's/midnightToHour: 4/midnightToHour: 6/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
+run_mutation "W3: midnight window start shifted (00:xx listens silently dropped)" \
+  src/ai/core/constants.ts 's/midnightFromHour: 0/midnightFromHour: 2/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
+run_mutation "W3: stream floor removed (2 streams dressed up as a rewind)" \
+  src/ai/core/constants.ts 's/minStreams: 10/minStreams: 0/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
+run_mutation "W3: aura split 0.5 → 0.99 (everything becomes DEEP_FOG)" \
+  src/ai/core/constants.ts 's/auraSplit: 0.5/auraSplit: 0.99/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
+run_mutation "W3: base64url alphabet corrupted ('-' dropped from the table)" \
+  src/ai/tasteDna.ts "s/0123456789-_'/0123456789_'/" \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
+run_mutation "W3: blend intersection broken (shared misses the overlap)" \
+  src/ai/tasteDna.ts 's/if (b) shared.push/if (false) shared.push/' \
+  tests/ai/wave3_wrapped_dna_locks.test.ts
+
 run_mutation "W2: by-id rescue rung killed (ledger crates stop playing)" \
   src/player/saavnRescue.ts 's/const fresh = await fetchById(rawId).catch(() => null);/const fresh = null;/' \
   tests/ai/wave2_library_locks.test.ts

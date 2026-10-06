@@ -76,3 +76,58 @@ export async function shareNowPlaying(
     return 'cancel';
   }
 }
+
+/**
+ * THE TEN F6 — the Rewind's share: the SAME capture + handoff contract
+ * as shareNowPlaying (card PNG on native, honest text share everywhere
+ * else, cancel never stacks a second sheet), with the rewind's own
+ * text fallback.
+ */
+export async function shareWrappedNow(
+  cardRef: React.RefObject<View>,
+  fallbackText: string,
+  waitSettle?: () => Promise<boolean>,
+): Promise<ShareOutcome> {
+  const textFallback = async (): Promise<ShareOutcome> => {
+    try {
+      await Share.share({ message: fallbackText });
+      return 'text';
+    } catch {
+      return 'cancel';
+    }
+  };
+
+  if (shareMode(Platform.OS === 'web' ? 'web' : 'native') === 'text') {
+    return textFallback();
+  }
+  if (!cardRef.current) return textFallback();
+  if (waitSettle) {
+    const ok = await waitSettle();
+    if (!ok) return textFallback();
+  }
+
+  let uri: string;
+  try {
+    uri = await captureRef(cardRef, {
+      format: 'png',
+      quality: 1,
+      width: 1080,
+      height: 1080,
+      fileName: 'tsf-rewind-card',
+    });
+  } catch {
+    return textFallback();
+  }
+
+  try {
+    const available = await Sharing.isAvailableAsync();
+    if (!available) return textFallback();
+    await Sharing.shareAsync(uri, {
+      mimeType: 'image/png',
+      dialogTitle: 'TSF REWIND',
+    });
+    return 'card';
+  } catch {
+    return 'cancel';
+  }
+}

@@ -49,3 +49,68 @@ export function sanitizeLyricLine(line?: string | null): string | null {
 export function shareText(title: string, artist: string): string {
   return `${title} — ${artist}\nPlaying on TSF Music`;
 }
+
+/* ── THE TEN · F6 — the Local Rewind cards (pure spec, lockable) ────── */
+
+import type { WrappedSummary } from '../ai/wrapped';
+
+export interface WrappedCardSpec {
+  kicker: string;
+  title: string;
+  sub: string;
+}
+
+/**
+ * The card sequence — a CLOSED set with truth-conditioned copy: a card
+ * with no data says so honestly ("nothing filed") instead of vanishing
+ * or faking numbers. The rewind itself is null below the stream floor,
+ * so these cards only render when something TRUE can be said.
+ */
+export function wrappedCardLines(s: WrappedSummary): WrappedCardSpec[] {
+  const n = (x: number): string => x.toLocaleString('en-US');
+  return [
+    {
+      kicker: 'THE HEADLINER',
+      title: s.topArtist?.artist ?? '—',
+      sub: s.topArtist ? `${n(s.topArtist.plays)} streams this month` : 'nothing filed yet',
+    },
+    {
+      kicker: 'ON REPEAT',
+      title: s.topTrack?.title ?? '—',
+      sub: s.topTrack ? `${s.topTrack.artist} · ${n(s.topTrack.plays)} streams` : 'nothing filed yet',
+    },
+    {
+      kicker: 'MIDNIGHT OBSESSION',
+      title: s.midnight?.title ?? 'SLEEP IS SACRED',
+      sub: s.midnight ? `${s.midnight.artist} · played after midnight` : 'no 12–4am listening on file',
+    },
+    {
+      kicker: 'YOUR AURA',
+      title: s.aura?.label.replace('_', ' ') ?? '—',
+      sub: `energy ${Math.round((s.aura?.energy ?? 0) * 100)}% · warmth ${Math.round((s.aura?.valence ?? 0) * 100)}%`,
+    },
+    {
+      kicker: 'THE LEDGER',
+      title: `${n(s.streams)} STREAMS`,
+      // the streak is anchored at its last ACTIVE day — when it ended
+      // before today the card says so (no unqualified streak claims)
+      sub:
+        s.streakDays > 0 && s.streakEndTs != null
+          ? `${n(s.minutes)} minutes · ${s.streakDays}-day streak thru ${new Date(s.streakEndTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+          : `${n(s.minutes)} minutes · no active-day streak`,
+    },
+  ];
+}
+
+/** The rewind's text-share fallback (deterministic, honest numbers). */
+export function wrappedShareText(s: WrappedSummary): string {
+  const bits: string[] = ['MY MONTH IN MUSIC · TSF REWIND'];
+  if (s.topArtist) bits.push(`Top artist: ${s.topArtist.artist} (${s.topArtist.plays} streams)`);
+  if (s.topTrack) bits.push(`On repeat: ${s.topTrack.title}`);
+  if (s.aura) bits.push(`Aura: ${s.aura.label.replace('_', ' ')}`);
+  const streak = s.streakDays > 0 && s.streakEndTs != null
+    ? `${s.streakDays}-day streak thru ${new Date(s.streakEndTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    : 'no active-day streak';
+  bits.push(`${s.streams} streams · ${s.minutes} min · ${streak}`);
+  return bits.join('\n');
+}

@@ -18,6 +18,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
@@ -32,6 +33,7 @@ import type { TasteProfile } from '../ai/core/types';
 import { useToast } from '../components/Toast';
 import { PressableScale } from '../components/PressableScale';
 import { dataSaverActive, setDataSaverActive, subscribeDataSaver } from '../player/audioQuality';
+import { Share } from 'react-native';
 import { colors, fonts, radius, spacing } from '../theme';
 import type { RootStackParamList } from './navigation';
 
@@ -55,6 +57,9 @@ export function TasteScreen() {
   const [recsOff, setRecsOff] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dataSaver, setDataSaver] = useState(dataSaverActive());
+  // THE TEN F7 — Taste DNA Blend (peer-to-peer, serverless)
+  const [blendCode, setBlendCode] = useState('');
+  const [blending, setBlending] = useState(false);
 
   useEffect(() => subscribeDataSaver(setDataSaver), []);
 
@@ -79,6 +84,68 @@ export function TasteScreen() {
       setProfile({ ...mindbeat.profile });
     } finally {
       setBusy(false);
+    }
+  };
+
+  // THE TEN F7 — share MY DNA as a pasteable base64url code. The payload
+  // carries taste aggregates only (top artists/genres + the preference
+  // center) — never raw ledger events, never timestamps of listening.
+  const shareDnaCode = async () => {
+    let code: string | null = null;
+    try {
+      code = await mindbeat.tasteDnaCode();
+    } catch {
+      toast.show({ message: 'COULD NOT READ YOUR DNA — TRY AGAIN', icon: 'alert-circle-outline' });
+      return;
+    }
+    if (!code) {
+      toast.show({
+        message: 'YOUR DNA IS TOO YOUNG TO SHARE — LISTEN A LITTLE FIRST',
+        icon: 'leaf-outline',
+      });
+      return;
+    }
+    try {
+      await Share.share({ message: code, title: 'My Taste DNA · TSF Music' });
+    } catch {
+      // user dismissed the share sheet — a cancel, not an error
+    }
+  };
+
+  // THE TEN F7 — import a friend's code and build the Blend playlist.
+  // Corrupt codes fail with an honest toast; never a crash, never a
+  // fabricated blend.
+  const createBlend = async () => {
+    if (!blendCode.trim() || blending) return;
+    setBlending(true);
+    try {
+      // SYMMETRIC FLOOR (critic F5): a one-sided blend of their artists
+      // labeled "blend" is a lie of the same shape as a 0-artist share.
+      const myCode = await mindbeat.tasteDnaCode();
+      if (!myCode) {
+        toast.show({ message: 'YOUR DNA IS TOO YOUNG TO BLEND — LISTEN A LITTLE FIRST', icon: 'leaf-outline' });
+        return;
+      }
+      const res = await mindbeat.buildBlendPlaylist(blendCode);
+      // EVERY failure mode gets its own honest line — an offline user
+      // with a perfectly valid code is never told the code is broken.
+      if (res.status === 'bad_code') {
+        toast.show({ message: "COULDN'T READ THAT CODE — ASK FOR A FRESH ONE", icon: 'alert-circle-outline' });
+      } else if (res.status === 'nothing_resolved') {
+        toast.show({ message: 'NOTHING RESOLVED — CHECK YOUR CONNECTION AND RETRY', icon: 'cloud-offline-outline' });
+      } else if (res.status === 'failed') {
+        toast.show({ message: 'COULD NOT SAVE THE BLEND — TRY AGAIN', icon: 'alert-circle-outline' });
+      } else {
+        toast.show({
+          message: `BLEND CREATED · ${res.added} SONGS · ${res.shared} SHARED${res.partial ? ' · PARTIAL (TIME)' : ''}`,
+          icon: 'people-circle-outline',
+        });
+        setBlendCode('');
+      }
+    } catch {
+      toast.show({ message: 'BLEND FAILED — TRY AGAIN', icon: 'alert-circle-outline' });
+    } finally {
+      setBlending(false);
     }
   };
 
@@ -142,6 +209,32 @@ export function TasteScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
+          {/* THE TEN F7 — the Taste DNA Blend: serverless friend blending */}
+          <View style={styles.glanceCard}>
+            <Text style={styles.glanceTitle}>Taste DNA Blend</Text>
+            <Text style={styles.glanceSub}>
+              Share your DNA code with a friend — the blend is computed on both phones, never on a server
+            </Text>
+            <PressableScale haptic style={styles.blendBtn} onPress={() => void shareDnaCode()}>
+              <Ionicons name="qr-code-outline" size={18} color={colors.ink} />
+              <Text style={styles.blendBtnText}>SHARE MY DNA CODE</Text>
+            </PressableScale>
+            <TextInput
+              style={styles.blendInput}
+              placeholder="Paste a friend's DNA code"
+              placeholderTextColor={colors.textFaint}
+              value={blendCode}
+              onChangeText={setBlendCode}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+            />
+            <PressableScale haptic style={[styles.blendBtn, styles.blendBtnPrimary]} onPress={() => void createBlend()}>
+              <Ionicons name="people-circle-outline" size={18} color={colors.ink} />
+              <Text style={styles.blendBtnText}>{blending ? 'BLENDING…' : 'CREATE BLEND PLAYLIST'}</Text>
+            </PressableScale>
+          </View>
+
           {/* The model at a glance */}
           <View style={styles.glanceCard}>
             <Text style={styles.glanceTitle}>What TSF AI believes about you</Text>
@@ -356,6 +449,40 @@ export function TasteScreen() {
 }
 
 const styles = StyleSheet.create({
+  blendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingVertical: 12,
+    marginTop: 10,
+    backgroundColor: colors.accentDim ?? colors.acid,
+  },
+  blendBtnPrimary: {
+    backgroundColor: colors.accentBright ?? colors.acid,
+  },
+  blendBtnText: {
+    color: colors.ink,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    letterSpacing: 1,
+  },
+  blendInput: {
+    borderWidth: 1.5,
+    borderColor: colors.ink16,
+    backgroundColor: colors.bg,
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: fonts.mono,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    minHeight: 64,
+    textAlignVertical: 'top',
+  },
   root: { flex: 1, backgroundColor: colors.paper },
   topBar: {
     flexDirection: 'row',

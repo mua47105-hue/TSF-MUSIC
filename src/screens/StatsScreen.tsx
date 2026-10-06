@@ -21,6 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ListeningStats } from '../types';
 import { getStats } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
+import { RewindCards, RewindEmpty, RewindUnavailable } from '../components/RewindCards';
+import type { WrappedSummary } from '../ai/wrapped';
 import { usePlayer } from '../player/PlayerProvider';
 import { Artwork } from '../components/Artwork';
 import { lookupArtistPhoto } from '../api/artists';
@@ -79,6 +81,15 @@ export function StatsScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
   const [stats, setStats] = useState<Merged | null>(null);
+  // THE TEN F6 — the Local Rewind, tri-state: a broken ledger says
+  // "unavailable", a young one says "not enough yet", and neither is
+  // ever shown as a loading flash for an established listener.
+  const [rewind, setRewind] = useState<
+    | { state: 'loading' }
+    | { state: 'empty' }
+    | { state: 'unavailable' }
+    | { state: 'summary'; summary: WrappedSummary }
+  >({ state: 'loading' });
 
   useEffect(() => {
     (async () => {
@@ -119,6 +130,12 @@ export function StatsScreen() {
         sessions: ledgerUsable ? ledger?.sessions : undefined,
       };
       setStats(merged);
+      // THE TEN F6 — the Local Rewind loads alongside (null = honest
+      // cold start; a THROW = the ledger is unavailable — never conflated)
+      mindbeat
+        .wrapped(30)
+        .then((w) => setRewind(w ? { state: 'summary', summary: w } : { state: 'empty' }))
+        .catch(() => setRewind({ state: 'unavailable' }));
       // resolve REAL artist photos for the top rows (seed cache → live
       // lookup, cached); photo-less artists keep the initials stamp.
       merged.topArtists.slice(0, 8).forEach((a) => {
@@ -175,6 +192,15 @@ export function StatsScreen() {
               The Audit
             </OutlineText>
           </View>
+
+          {/* THE TEN F6 — the Monthly Rewind: swipeable local cards */}
+          {rewind.state === 'summary' ? (
+            <RewindCards summary={rewind.summary} />
+          ) : rewind.state === 'empty' ? (
+            <RewindEmpty />
+          ) : rewind.state === 'unavailable' ? (
+            <RewindUnavailable />
+          ) : null}
 
           {/* the Your Sound audit box (the prototype's .your-sound) */}
           <View style={styles.auditBox}>
