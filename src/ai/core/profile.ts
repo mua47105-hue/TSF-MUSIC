@@ -21,6 +21,7 @@ import {
   BLAME_SPLIT,
   BOUNDARY_CALIBRATION_MIN,
   EXPLORATION,
+  FLOW,
   GRADE_WEIGHTS,
   HALF_LIFE,
   ONBOARDING,
@@ -73,6 +74,7 @@ export function emptyProfile(now: number): TasteProfile {
     skipProfiles: {},
     coplayTracks: {},
     coplayArtists: {},
+    transitions: {},
     clusters: { artistClusters: [], moodCells: [] },
     exploration: {
       epsilon: EXPLORATION.coldStartEpsilon,
@@ -284,6 +286,10 @@ export function buildProfile(
   // ── Pass 2: co-play adjacency (§7.3) — consecutive listens in a session ──
   const trackEdgeW = new Map<string, number>(); // "a|b" (a<b) → weight
   const artistAdj = new Map<string, Record<string, number>>();
+  // GENIUS P4 — DIRECTIONAL transitions: A→b is distinct from b→A. Same
+  // session-consecutive evidence, same coplayEdge half-life, separate
+  // signal (co-play = undirected affinity; transitions = next-track flow).
+  const flowEdgeW = new Map<string, Map<string, number>>();
   const bySession = new Map<string, ListenRecord[]>();
   for (const l of listens) {
     const arr = bySession.get(l.sessionId);
@@ -302,6 +308,16 @@ export function buildProfile(
       const key = a.trackId < b.trackId ? `${a.trackId}|${b.trackId}` : `${b.trackId}|${a.trackId}`;
       const damp = 1 + Math.log2((playsByTrack.get(a.trackId) ?? 1) + (playsByTrack.get(b.trackId) ?? 1));
       trackEdgeW.set(key, (trackEdgeW.get(key) ?? 0) + wDecayed / damp);
+      // GENIUS P4 — directional flow edge (NOT popularity-damped: the
+      // direction IS the signal; damping would blur strong personal flows).
+      if (a.trackId !== b.trackId) {
+        let nexts = flowEdgeW.get(a.trackId);
+        if (!nexts) {
+          nexts = new Map();
+          flowEdgeW.set(a.trackId, nexts);
+        }
+        nexts.set(b.trackId, (nexts.get(b.trackId) ?? 0) + wDecayed);
+      }
       // Artist edge (both directions).
       const aKey = normalizeArtist(a.artist);
       const bKey = normalizeArtist(b.artist);
@@ -329,6 +345,11 @@ export function buildProfile(
   // Artist graph bounded to its top-2000 nodes (Appendix B contract).
   const artistEntries = [...artistAdj.entries()].slice(0, 2000);
   p.coplayArtists = Object.fromEntries(artistEntries);
+
+  // ── GENIUS P4 — directional flow memory: top-K next per node, global
+  // edge cap, prune the noise floor (same 0.02 coplay floor). The prune
+  // happens AFTER the global top-edges cut so the cap cannot keep junk.
+  p.transitions = buildTransitions(flowEdgeW);
 
   // ── Daypart matrix cells ───────────────────────────────────────────────
   // Cell weights decay with the 30d half-life: a 120-day-old habit must
@@ -409,6 +430,35 @@ function addEdge(adj: Map<string, Record<string, number>>, from: string, to: str
   const cur = adj.get(from) ?? {};
   cur[to] = (cur[to] ?? 0) + w;
   adj.set(from, cur);
+}
+
+/**
+ * Directional transition table (GENIUS P4): global top-FLOW.maxEdges edges
+ * (deterministic weight desc, id tiebreak), then per-node top-FLOW.topNext
+ * above the noise floor. Cold users contribute nothing → empty object →
+ * zero bonus, zero reason codes (honest cold start).
+ */
+function buildTransitions(flowEdgeW: Map<string, Map<string, number>>): TasteProfile['transitions'] {
+  const flat: Array<{ from: string; to: string; w: number }> = [];
+  for (const [from, nexts] of flowEdgeW) {
+    for (const [to, w] of nexts) {
+      if (w >= FLOW.minEdgeWeight) flat.push({ from, to, w });
+    }
+  }
+  flat.sort((a, b) => b.w - a.w || (a.from < b.from ? -1 : 1) || (a.to < b.to ? -1 : 1));
+  const kept = flat.slice(0, FLOW.maxEdges);
+  const perNode = new Map<string, Array<{ to: string; w: number }>>();
+  for (const e of kept) {
+    const arr = perNode.get(e.from) ?? [];
+    arr.push({ to: e.to, w: e.w });
+    perNode.set(e.from, arr);
+  }
+  const out: TasteProfile['transitions'] = {};
+  for (const [from, arr] of perNode) {
+    arr.sort((a, b) => b.w - a.w || (a.to < b.to ? -1 : 1));
+    out[from] = Object.fromEntries(arr.slice(0, FLOW.topNext).map((e) => [e.to, e.w]));
+  }
+  return out;
 }
 
 function mean(xs: number[]): number | null {

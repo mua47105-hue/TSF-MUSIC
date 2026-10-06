@@ -18,6 +18,7 @@
 import {
   ENERGY_TOLERANCE,
   EXPLORATION,
+  FLOW,
   HALF_LIFE,
   RETENTION,
   SCORE_WEIGHTS,
@@ -169,9 +170,27 @@ export function decide(
       armSeed(ctx.surface, c.trackId, profile.builtAt),
     );
 
+    // GENIUS P4 — the flow bonus: a candidate that is one of the last-
+    // played track's learned NEXT-tracks gets a bounded nudge. Seed = the
+    // engine's seed track, falling back to the session's most recent
+    // listen. Cold users (no transitions) get exactly 0 — byte-identical
+    // legacy scoring. Loop safety: the hygiene prefilter already blocks
+    // anything served within the 7-day window, so A→B→A cannot re-serve A.
+    const flowSeedId = ctx.seedTrackIds[0] ?? deps.session.window[deps.session.window.length - 1]?.trackId ?? '';
+    const flowNexts = flowSeedId ? profile.transitions?.[flowSeedId] : undefined;
+    let flowBonus = 0;
+    if (flowNexts) {
+      const w = flowNexts[c.trackId];
+      if (w != null && w > 0) {
+        let maxW = 0;
+        for (const v of Object.values(flowNexts)) if (v > maxW) maxW = v;
+        if (maxW > 0) flowBonus = FLOW.decisionWeight * (w / maxW);
+      }
+    }
+
     return {
       ...c,
-      score: base + bandit,
+      score: base + bandit + flowBonus,
       reasonCode: 'FRESH_FIND', // provisional — exploration picks override
       explorationSlot: false,
     };
@@ -334,6 +353,19 @@ export function truthCondition(
     if (edge > median && edge > 0) return 'NEIGHBOR';
   }
 
+  // FLOW_NEXT (GENIUS P4): the candidate is a learned directional next of
+  // the last-played track, ABOVE THE MEDIAN of that seed's outgoing edges
+  // (the NEIGHBOR pattern — directional edition; the seed here is the
+  // last-played track, not the surface's seeds).
+  const flowSeed = ctx.seedTrackIds[0] ?? deps.session.window[deps.session.window.length - 1]?.trackId;
+  const flowNexts = flowSeed ? profile.transitions?.[flowSeed] : undefined;
+  if (flowNexts) {
+    const edge = flowNexts[c.trackId] ?? 0;
+    const weights = Object.values(flowNexts).sort((a, b) => a - b);
+    const median = weights.length ? weights[Math.floor(weights.length / 2)] : 0;
+    if (edge > median && edge > 0) return 'FLOW_NEXT';
+  }
+
   // BECAUSE_HEARTED: a hearted track by the same artist exists.
   const artistEntry = profile.artists[artistKey];
   if (artistEntry?.source === 'heart' && artistEntry.evidenceCount >= 1) return 'BECAUSE_HEARTED';
@@ -373,6 +405,7 @@ export function reasonLine(code: ReasonCode, detail?: string): string {
     case 'BECAUSE_PLAYED': return `Because you play ${detail ?? 'this artist'} a lot`;
     case 'BECAUSE_HEARTED': return `You loved ${detail ?? "this artist's"} songs`;
     case 'NEIGHBOR': return `You keep playing this next to ${detail ?? 'similar songs'}`;
+    case 'FLOW_NEXT': return 'Keeps your flow going';
     case 'FITS_BLOCK': return `Fits your ${detail ?? 'right-now'} sound`;
     case 'SESSION_CONTINUITY': return "Keeps tonight's mood going";
     case 'FRESH_FIND': return 'A fresh find — see if it sticks';

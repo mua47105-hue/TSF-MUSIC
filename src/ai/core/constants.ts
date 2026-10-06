@@ -188,6 +188,26 @@ export const GENRE_CAPTURE = {
   maxAffinityEntries: 40,
 } as const;
 
+// ── Directional flow memory (GENIUS P4 — knows what you play NEXT) ─────
+export const FLOW = {
+  /** Per-node fan-out cap: the top-8 next-tracks a seed may remember.
+   *  Mirrors the "top-8 related" pattern — bounded memory, personal flow. */
+  topNext: 8,
+  /** Global edge budget across ALL seeds — 3000 edges ≈ 150 KB in the
+   *  profile snapshot (potato-phone rule 8). Kept edges are the strongest. */
+  maxEdges: 3000,
+  /** Noise floor for a kept edge — same 0.02 the co-play pass uses after
+   *  coplayEdge half-life decay (one number, one meaning). */
+  minEdgeWeight: 0.02,
+  /**
+   * Weight of the decision-engine context bonus. The bonus itself is
+   * bounded [0, 0.4] (normalized by the seed's strongest outgoing edge),
+   * so a strong personal flow nudges ordering like daypartFit (0.8) at
+   * most — never over profileAffinity (1.0).
+   */
+  decisionWeight: 0.4,
+} as const;
+
 // ── Thompson sampling bandit (GENIUS P3 — learns from every tap) ───────
 export const BANDIT = {
   /**

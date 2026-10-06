@@ -191,6 +191,10 @@ export interface TasteProfile {
   skipProfiles: Record<string, SkipProfileEntry>;
   coplayTracks: Record<string, Record<string, number>>; // top-5000 edges
   coplayArtists: Record<string, Record<string, number>>; // top-2000 edges
+  /** GENIUS P4 — DIRECTIONAL track→track flow edges (A→b ≠ b→A):
+   *  top-8 next per node, ≤3000 global edges, coplayEdge half-life.
+   *  Optional on read: profile snapshots predating P4 lack it (guard ?? {}). */
+  transitions?: Record<string, Record<string, number>>;
   clusters: { artistClusters: ArtistCluster[]; moodCells: MoodCell[] };
   exploration: ExplorationState;
   corrections: Corrections;
@@ -224,6 +228,7 @@ export type ReasonCode =
   | 'BECAUSE_PLAYED'
   | 'BECAUSE_HEARTED'
   | 'NEIGHBOR'
+  | 'FLOW_NEXT'
   | 'FITS_BLOCK'
   | 'SESSION_CONTINUITY'
   | 'FRESH_FIND'
