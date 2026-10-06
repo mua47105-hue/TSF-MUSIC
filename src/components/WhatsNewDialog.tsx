@@ -11,16 +11,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_1_0';
+const SEEN_KEY = 'tsf.whatsNew.v4_3_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  'SING ALONG — synced karaoke lyrics that ink line-by-line as the song plays, auto-scroll with the music, and jump anywhere when you tap a line. Plain lyrics stay as a graceful fallback.',
-  'INSTANT TAP — the app answers the moment your press lands: the mini player plants itself instantly (TUNING IN) while the stream resolves, so no more dead air between tap and music. Double-tap any artwork to like the song with a heart burst.',
-  'THE SHARE CARD — share what you’re playing as a beautiful image card: artwork, song, and the exact lyric line playing right now, straight to any app via the native share sheet.',
-  'THE WEEKLY CRATE — a fresh made-for-you edition every week: discovery-weighted, capped at 30, honest reasons on every row, and a cold start that never pretends.',
-  'Plus: a sleep timer with fade-out, data saver (96/320 kbps), the VIBE strip to shift your mood mid-session, lyrics that never dead-end, and richer honest shelves everywhere.',
+  'SMART VOLUME — ReplayGain-style loudness levelling built from the baked energy feature: bangers calm down, quiet songs lift, and it composes with every fade. Toggle it off and the volume is byte-identical the instant you tap.',
+  'CROSSFADE + PLAYBACK SPEED — a 0–12s transition fade (0 = the native cut) and playback speeds from 0.75× to 2×, both persisted and re-applied on every queue. Honest fade, never claimed gapless.',
+  'SMART CRATES — Heavy Rotation, Forgotten Gems, The Graveyard, and Recently Rescued: live folders queried from your own listening evidence, with honest empty states when the proof isn’t there yet.',
+  'EDIT INFO — fix a song’s title, artist, album, or artwork right on this device; the correction keys onto the recording, so every re-listing of the same song is fixed at once.',
+  'LOCAL REWIND — your monthly Wrapped, computed entirely on your phone: top songs, the Midnight Obsession window, your listening streak, and a truth-conditioned Aura — as swipeable share cards.',
+  'TASTE DNA BLEND — share your taste code, paste a friend’s, and get a deterministic blend playlist of your shared artists bridged by each side’s strongest picks. Peer-to-peer, no server in the middle.',
+  'KINETIC LYRICS — the active line prints LARGE in the song’s palette glow and springs between lines; upcoming lines dim cheaply. Auto-scroll rides a uniform-height grid that cannot drift.',
+  'AURA VISUALIZER — three gradient layers breathing behind the artwork on the native driver. No video, no canvas, no per-frame JS; frozen under reduce-motion, half-speed under data saver.',
+  'FOCUS MODE — a study timer that owns the player: 15/25/45 minutes of energy-gated focus picks, art + clock + play/pause, then a haptics pulse. Cancel restores your volume and music exactly. Sleep timer keeps precedence.',
+  'As always: every one of the ten runs 100% on-device — zero servers, zero accounts, zero telemetry — and works fully offline once your data is local.',
 ];
 
 export function WhatsNewDialog() {
@@ -63,7 +68,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.1.0 — THE GODMODE EDITION
+            TSF MUSIC 4.3.0 — THE TEN
           </MonoText>
           <View style={styles.list}>
             {CHANGES.map((c) => (
