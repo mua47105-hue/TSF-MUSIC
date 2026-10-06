@@ -482,6 +482,10 @@ class Mindbeat {
   async setDisabled(off: boolean): Promise<void> {
     this.disabled = off;
     await this.kvSet('intelligenceDisabled', off);
+    // A dead intelligence layer never writes after death: pending bandit
+    // arm updates + debounce timers die with the switch (ported from the
+    // parallel gauntlet line's round-1 critic fix).
+    if (off) this.bandit.cancelPendingWrites();
   }
 
   async isDisabled(): Promise<boolean> {

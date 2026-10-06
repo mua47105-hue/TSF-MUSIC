@@ -277,6 +277,19 @@ export class Bandit {
     for (let i = 0; i < excess; i++) this.arms.delete(entries[i][0]);
   }
 
+  /** Kill switch support: drop pending pre-hydration work + the debounce
+   *  timer so a disabled intelligence layer never writes arms after death
+   *  (ported from the parallel gauntlet line — writes must respect death). */
+  cancelPendingWrites(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.pending = [];
+    this.seedQueue = [];
+    this.dirty = false;
+  }
+
   /** Test/lab hook — drop all state. */
   resetForTests(): void {
     this.arms.clear();

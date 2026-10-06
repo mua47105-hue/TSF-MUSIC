@@ -62,7 +62,14 @@ describe('§10.3 performance budgets', () => {
     const profile = buildProfile(listens, [], sessions, { now: NOW });
     const brain = new SessionBrain(NOW);
     for (const l of listens.slice(-12)) brain.push(l);
-    const deps = { profile, session: brain.state, now: NOW };
+    // v4.2.0 — the gate runs with the bandit arms + the full flow graph
+    // attached (the new additive terms must ride INSIDE the same budget,
+    // not outside it — ported idea from the parallel gauntlet line).
+    const arms = new Map();
+    const artistNames = ['arijit singh', 'shreya ghoshal', 'diljit dosanjh', 'eminem', 'new artist'];
+    for (const a of artistNames) arms.set(`a:${a}`, { alpha: 3, beta: 2 });
+    const flowProfile = { ...profile, flowTracks: { 'perf-0': Object.fromEntries(candidates(8).map((c) => [c.trackId, 0.5])) } };
+    const deps = { profile: flowProfile, session: brain.state, now: NOW, banditArms: arms };
     const durations: number[] = [];
     for (let q = 0; q < 40; q++) {
       const t0 = performance.now();
