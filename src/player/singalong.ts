@@ -20,6 +20,8 @@
  *  - result is sorted by time; equal timestamps keep first-seen order.
  */
 
+import { KINETIC } from '../ai/core/constants';
+
 export interface LrcLine {
   /** milliseconds from song start */
   tMs: number;
@@ -79,4 +81,40 @@ export function activeLrcIndex(lines: LrcLine[], positionMs: number): number {
     }
   }
   return ans;
+}
+
+/* ── THE TEN · F8 — the kinetic typography spec (pure, lockable) ────── */
+
+export interface KineticSpec {
+  fontSize: number;
+  lineHeight: number;
+  /** 1 = fully present; upcoming/past lines dim to KINETIC.inactiveOpacity */
+  opacity: number;
+  /** the tint for the ACTIVE line (the palette's glow), null = keep ink */
+  activeTint: string | null;
+}
+
+/**
+ * The style of ONE line given whether it is the active one. Pure and
+ * uniform-height on purpose: the auto-scroll contract (target =
+ * activeIdx × lineHeight) must never drift when a line changes size.
+ * No blur anywhere — the dim is a cheap opacity (potato rule).
+ */
+export function kineticLineSpec(active: boolean, tint: string | null | undefined): KineticSpec {
+  return {
+    fontSize: active ? KINETIC.activeFontSize : KINETIC.inactiveFontSize,
+    lineHeight: KINETIC.lineHeight,
+    opacity: active ? 1 : KINETIC.inactiveOpacity,
+    activeTint: active ? (tint ?? null) : null,
+  };
+}
+
+/**
+ * The auto-scroll target for the active line — PURE, so the uniform-
+ * height contract is testable without a ScrollView: the active line
+ * centers at activeIdx × lineHeight + lineHeight/2 (the row heights
+ * and this math read the SAME KINETIC constant, so they cannot drift).
+ */
+export function kineticScrollTarget(activeIdx: number, viewH: number): number {
+  return Math.max(0, activeIdx * KINETIC.lineHeight + KINETIC.lineHeight / 2 - viewH / 2);
 }

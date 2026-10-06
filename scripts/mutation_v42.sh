@@ -158,6 +158,32 @@ run_mutation "W3: blend intersection broken (shared misses the overlap)" \
   src/ai/tasteDna.ts 's/if (b) shared.push/if (false) shared.push/' \
   tests/ai/wave3_wrapped_dna_locks.test.ts
 
+# ── THE TEN · WAVE 4 (immersion) ────────────────────────────────────────
+
+run_mutation "W4: kinetic line height drifts (the scroll contract breaks)" \
+  src/player/singalong.ts "s/lineHeight: KINETIC.lineHeight,/lineHeight: active ? KINETIC.lineHeight : 30,/" \
+  tests/ai/wave4_immersion_locks.test.ts
+
+run_mutation "W4: aura mapping inverted (calm songs pulse fastest)" \
+  src/theme/aura.ts "s/pulseMs: Math.round(AURA.slowPulseMs - e \* span),/pulseMs: Math.round(AURA.fastPulseMs + e * span),/" \
+  tests/ai/wave4_immersion_locks.test.ts
+
+run_mutation "W4: focus fade ramp removed (volume cuts, never fades)" \
+  src/player/focus.ts 's/return Math.max(0, Math.min(1, remainingMs \/ FOCUS.fadeMs));/return 0;/' \
+  tests/ai/wave4_immersion_locks.test.ts
+
+run_mutation "W4: focus fade stops updating the bus (factor stuck at arm)" \
+  src/player/focus.ts 's/setFadeFactor(.focus., focusFadeFactor(remaining));/setFadeFactor(\x27focus\x27, 1);/' \
+  tests/ai/wave4_immersion_locks.test.ts
+
+run_mutation "W4: SingAlong scroll height drifts from KINETIC (component side)" \
+  src/player/singalong.ts 's/activeIdx \* KINETIC.lineHeight/activeIdx * 31/' \
+  tests/ai/wave4_immersion_locks.test.ts
+
+run_mutation "W4: reduce-motion freeze deleted (the aura never freezes)" \
+  src/components/AuraVisualizer.tsx "s/if (mode === 'frozen') {/if (false) {/" \
+  tests/ai/wave4_immersion_locks.test.ts
+
 run_mutation "W2: by-id rescue rung killed (ledger crates stop playing)" \
   src/player/saavnRescue.ts 's/const fresh = await fetchById(rawId).catch(() => null);/const fresh = null;/' \
   tests/ai/wave2_library_locks.test.ts

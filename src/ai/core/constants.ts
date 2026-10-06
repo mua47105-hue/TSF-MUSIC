@@ -420,3 +420,53 @@ export const TASTE_DNA = {
    *  blend ships with whatever resolved in time. */
   resolveBudgetMs: 8000,
 } as const;
+
+// ── THE TEN — WAVE 4: immersion (the emotional layer) ───────────────────
+
+/** FEATURE 8 — Kinetic typography lyrics (the SingAlong upgrade).
+ *  Row height is UNIFORM on purpose: the scroll math (activeIdx ×
+ *  lineHeight) must never drift when the active line changes size. */
+export const KINETIC = {
+  /** The active line's display size (the "singing" line). */
+  activeFontSize: 24,
+  /** Upcoming/past lines — present, but clearly not the moment. */
+  inactiveFontSize: 14,
+  /** Uniform row height (the auto-scroll contract depends on it). */
+  lineHeight: 40,
+  /** Upcoming lines dim to this opacity (a cheap dim — never a real
+   *  blur, which costs fill-rate a potato phone does not have). */
+  inactiveOpacity: 0.38,
+} as const;
+
+/** FEATURE 9 — Aura Visualizer (battery-safe, GPU-cheap: three gradient
+ *  layers animating ONLY opacity, native driver, no per-frame JS math;
+ *  the layer count is JSX structure, not a runtime tuning number). */
+export const AURA = {
+  /** Pulse period mapped from baked energy: calm songs breathe slowly. */
+  slowPulseMs: 5200,
+  fastPulseMs: 2100,
+  /** Glow opacity range across the pulse. */
+  minGlow: 0.14,
+  maxGlow: 0.34,
+  /** Data saver CALMS the aura to half speed (battery first); the OS
+   *  reduce-motion intent freezes it entirely (auraMode). */
+  dataSaverCalms: true,
+} as const;
+
+/** FEATURE 10 — Pomodoro / Focus Mode (the study timer that owns the
+ *  player). Fade precedence: sleep > focus (VOLUME_FADE_PRECEDENCE) —
+ *  an armed sleep timer always outranks the focus fade. */
+export const FOCUS = {
+  /** Offered durations (PULSE chips). */
+  choicesMinutes: [15, 25, 45] as const,
+  /** One tap arms the default; cancel restores everything. */
+  defaultMinutes: 25,
+  /** The final fade window (linear ramp to 0 through the volume bus). */
+  fadeMs: 8000,
+  /** The short break offered after a completed session. */
+  breakMinutes: 5,
+  /** Focus playlist: baked energy at/below this is "focus-friendly". */
+  maxEnergy: 0.45,
+  /** Focus playlist size. */
+  picksCount: 12,
+} as const;

@@ -52,12 +52,22 @@ import {
 } from '../player/smartVolume';
 import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
-import { CROSSFADE } from '../ai/core/constants';
+import { CROSSFADE, FOCUS } from '../ai/core/constants';
 import {
   applyMetaOverride,
   getMetaOverridesSync,
   subscribeMetaOverrides,
 } from '../storage/metaOverrides';
+import { AuraVisualizer } from '../components/AuraVisualizer';
+import {
+  armFocus,
+  cancelFocus,
+  focusOwnsFade,
+  getFocusState,
+  skipFocusPhase,
+  subscribeFocus,
+  type FocusState,
+} from '../player/focus';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
 import { Brutal, MonoText } from '../components/Brutal';
@@ -229,6 +239,40 @@ export function PlayerScreen() {
   const [, forceOverrideTick] = useState(0);
   useEffect(() => subscribeMetaOverrides(() => forceOverrideTick((n) => n + 1)), []);
   const shown = active ? applyMetaOverride(active, getMetaOverridesSync()) : null;
+  // THE TEN F10 — FOCUS MODE: the study timer that owns the player.
+  const [focus, setFocus] = useState<FocusState>(getFocusState());
+  const [, forceFocusTick] = useState(0);
+  useEffect(() => subscribeFocus(setFocus), []);
+  const focusArmed = focus.phase != null && focus.endAt != null;
+  useEffect(() => {
+    if (!focusArmed) return undefined;
+    const t = setInterval(() => forceFocusTick((n) => n + 1), 1000); // second-granular clock
+    return () => clearInterval(t);
+  }, [focusArmed]);
+  const focusRemainingSec = focusArmed ? Math.max(0, Math.ceil((focus.endAt! - Date.now()) / 1000)) : 0;
+  const focusClock = `${String(Math.floor(focusRemainingSec / 60)).padStart(2, '0')}:${String(focusRemainingSec % 60).padStart(2, '0')}`;
+  const armingFocus = useRef(false);
+  const armFocusSession = async (mins: number) => {
+    if (armingFocus.current) return; // a second tap must never double-queue
+    armingFocus.current = true;
+    setShowFocus(false); // close optimistically — the sheet is not a progress bar
+    try {
+      // queue the focus playlist FIRST (one tap: UI strips + music swaps)
+      const picks = await mindbeat.focusPicks(active);
+      if (picks.length) await playQueue(picks, 0, 'ai_playlist');
+    } catch {
+      /* the timer arms even if the playlist fails — honest, not blocking */
+    } finally {
+      armingFocus.current = false; // a hanging catalog can never wedge the sheet
+    }
+    armFocus(mins, isPlaying);
+    toast.show({
+      message: `FOCUS · ${mins} MIN — FIND YOUR RHYTHM`,
+      icon: 'timer-outline',
+    });
+  };
+  const [showFocus, setShowFocus] = useState(false);
+
   // VIBE readout (Task 28): the session brain's mood state machine, finally
   // visible in the player. Refreshes on track change + every 20s so a
   // SKIP_STORM shows up while the screen is open.
@@ -318,6 +362,13 @@ export function PlayerScreen() {
 
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
+  // THE TEN F9 — the aura's energy: the track's BAKED energy (null ⇒ calm
+  // wash; the facade read is an in-memory lookup, never a blocker)
+  const auraEnergy = useMemo(
+    () => (active ? mindbeat.bakedEnergyFor({ title: active.title, artist: active.artist }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trackKey],
+  );
 
   // DOUBLE-TAP ARTWORK → LIKE (Task 29): the big square is a gesture
   // surface — two taps inside 320ms like the song with a heart burst
@@ -437,7 +488,62 @@ export function PlayerScreen() {
         locations={[0, 0.45, 1]}
         style={StyleSheet.absoluteFill}
       />
+      {/* THE TEN F9 — the Aura: a breathing palette wash, battery-safe
+          (3 layers, opacity-only, frozen under OS reduce-motion) */}
+      <AuraVisualizer palette={palette} energy={auraEnergy} dataSaver={saver} />
 
+      {focusArmed ? (
+        /* ── THE TEN F10 — FOCUS MODE: the center stage is art + clock +
+              play/pause + cancel. The foot keeps CAST/SHARE/SAVE/FOCUS
+              (secondary controls stay reachable; nothing NEW competes). */
+        <View style={[styles.focusWrap, { paddingTop: insets.top + 24 }]}>
+          <MonoText size={9.5} bold color={colors.orange} style={{ letterSpacing: 3, textAlign: 'center' }}>
+            {focus.phase === 'break' ? 'BREAK — BREATHE' : 'FOCUS — FIND YOUR RHYTHM'}
+          </MonoText>
+          <Text style={styles.focusClock} allowFontScaling={false}>
+            {focusClock}
+          </Text>
+          <View style={[styles.artWrap, { width: artSize * 0.72, height: artSize * 0.72 }]}>
+            <Artwork
+              uri={shown?.artwork ?? active?.artwork}
+              seed={trackKey}
+              size={artSize * 0.72}
+              bordered={false}
+              style={styles.artCard}
+            />
+          </View>
+          <MonoText size={10} color={colors.ink60} style={{ marginTop: 16, letterSpacing: 1.2 }} numberOfLines={1}>
+            {active ? `${(shown?.title ?? active.title).toUpperCase()} · ${active.artist.toUpperCase()}` : '—'}
+          </MonoText>
+          <View style={styles.focusControls}>
+            <Brutal haptic onInk shadow={4} onPress={togglePlay} style={styles.playBtn} testID="focus-toggle">
+              <Ionicons name={isPlaying ? 'pause' : 'play'} size={26} color={colors.acid} style={{ marginLeft: isPlaying ? 0 : 3 }} />
+            </Brutal>
+            {focus.phase === 'break' ? (
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => void skipFocusPhase()} style={styles.focusCancelBtn}>
+                <MonoText size={10} bold color={colors.ink}>SKIP BREAK</MonoText>
+              </Brutal>
+            ) : null}
+            <Brutal
+              haptic
+              shadow={0}
+              pressOffset={1}
+              onPress={() => {
+                void cancelFocus(isPlaying); // resume only what is CURRENTLY playing
+                toast.show({ message: 'FOCUS CANCELLED — VOLUME AND UI RESTORED', icon: 'refresh-outline' });
+              }}
+              style={styles.focusCancelBtn}
+            >
+              <MonoText size={10} bold color={colors.ink}>CANCEL</MonoText>
+            </Brutal>
+          </View>
+          {focus.phase === 'focus' && focus.fading ? (
+            <MonoText size={8.5} bold color={colors.ink40} style={{ letterSpacing: 2, marginTop: 12 }}>
+              WINDING THE VOLUME DOWN…
+            </MonoText>
+          ) : null}
+        </View>
+      ) : (
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[
@@ -605,7 +711,12 @@ export function PlayerScreen() {
             {syncedLines ? 'SING ALONG' : 'LYRICS · VIA LRCLIB'}
           </MonoText>
           {syncedLines ? (
-            <SingAlong lines={syncedLines} positionMs={position * 1000} onSeek={(sec) => void seek(sec)} />
+            <SingAlong
+              lines={syncedLines}
+              positionMs={position * 1000}
+              onSeek={(sec) => void seek(sec)}
+              tint={palette.glow}
+            />
           ) : lyricExcerpt ? (
             <Text style={styles.lyricsLine} numberOfLines={3}>
               {lyricExcerpt}
@@ -630,12 +741,18 @@ export function PlayerScreen() {
           </MonoText>
         </View>
       </ScrollView>
+      )}
 
       {/* ── CAST / SHARE / SAVE foot ────────────────────────────────── */}
       <View style={[styles.foot, { paddingBottom: insets.bottom + 14 }]}>
         <FootBtn icon="desktop-outline" label="CAST" onPress={() => toast.show({ message: 'NO CAST DEVICES NEARBY', icon: 'desktop-outline' })} />
         <FootBtn icon="share-outline" label="SHARE" onPress={() => void onShare()} />
         <FootBtn icon="download-outline" label="SAVE" onPress={() => setShowMore(true)} />
+        <FootBtn
+          icon="timer-outline"
+          label={focusArmed ? `${focusClock}` : 'FOCUS'}
+          onPress={() => (focusArmed ? undefined : setShowFocus(true))}
+        />
       </View>
 
       {/* ── queue sheet (the prototype's #queueSheet) ───────────────── */}
@@ -811,6 +928,41 @@ export function PlayerScreen() {
         </Pressable>
       </Modal>
 
+      {/* ── focus sheet (THE TEN · F10) ─────────────────────────────── */}
+      <Modal visible={showFocus} transparent animationType="fade" onRequestClose={() => setShowFocus(false)}>
+        <Pressable style={styles.queueBackdrop} onPress={() => setShowFocus(false)}>
+          <Pressable style={styles.sleepSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.queueHeaderRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.queueHeader}>Focus</Text>
+                <MonoText size={9.5} color={colors.ink60} style={{ marginTop: 3, letterSpacing: 0.8 }}>
+                  QUEUES CALM MUSIC (WHEN THE CATALOG HAS SOME) AND STRIPS THE SCREEN — AT ZERO THE VOLUME FADES TO SILENCE
+                </MonoText>
+              </View>
+              <Brutal haptic shadow={0} pressOffset={1} onPress={() => setShowFocus(false)} style={styles.chevBtn}>
+                <Ionicons name="close" size={16} color={colors.ink} />
+              </Brutal>
+            </View>
+            <View style={styles.sleepOpts}>
+              {FOCUS.choicesMinutes.map((m) => (
+                <Brutal
+                  key={m}
+                  haptic
+                  shadow={0}
+                  pressOffset={1}
+                  onPress={() => void armFocusSession(m)}
+                  style={[styles.sleepOpt, m === FOCUS.defaultMinutes && styles.sleepOptOn]}
+                >
+                  <MonoText size={11} bold color={colors.ink}>
+                    {`${m} MIN`}
+                  </MonoText>
+                </Brutal>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* more menu (download / radio / share) */}
       <TrackMenu
         track={active}
@@ -877,6 +1029,33 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 }
 
 const styles = StyleSheet.create({
+  // THE TEN F10 — the focus-mode layout
+  focusWrap: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  focusClock: {
+    color: colors.ink,
+    fontFamily: fonts.display,
+    fontSize: 64,
+    lineHeight: 72,
+    marginTop: 8,
+    letterSpacing: 1,
+  },
+  focusControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 24,
+  },
+  focusCancelBtn: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    backgroundColor: colors.paper,
+  },
   root: { flex: 1, backgroundColor: colors.paper },
   // the off-screen stage for the share card — mounted (real to the
   // capture layer), parked beyond the left edge, zero hittability

@@ -18,7 +18,7 @@ import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { TASTE_DNA, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
+import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -29,6 +29,7 @@ import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
 import { buildSmartFolders, type SmartFolders } from './smartFolders';
+import { buildFocusArtistPool, isMutedRow } from './focusPicks';
 import { buildTasteDna, computeBlend, decodeTasteDna, encodeTasteDna, type TasteBlend } from './tasteDna';
 import { buildWrapped, type WrappedSummary } from './wrapped';
 import { reasonLine } from './core/decision';
@@ -668,6 +669,63 @@ class Mindbeat {
     } catch {
       return null; // the UI renders an honest unavailable row
     }
+  }
+
+  /**
+   * THE TEN F10 — the FOCUS playlist: low-energy picks for study
+   * sessions, sourced ONLY from the listener's own affinity pool (the
+   * seed's artist + profile top artists) and gated by the BAKED energy
+   * ceiling (FOCUS.maxEnergy). A track with NO baked row is NOT
+   * smuggled in — we cannot honestly claim it is calm. When the pool
+   * is dry the vibe-search ladder runs. filterClean + reconcile
+   * (law ⑨); kill switch honored (this IS a recommendation surface).
+   */
+  async focusPicks(seed: Track | null): Promise<Track[]> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return [];
+    // THE PURE POOL (src/ai/focusPicks.ts): seed first, profile second,
+    // MUTED ARTISTS REMOVED — the mute list is honored end to end.
+    const artists = buildFocusArtistPool({
+      seedArtist: seed?.artist,
+      topArtists: topArtists(this.profile, Date.now(), 6).map((a) => a.artist),
+      mutedArtists: this.profile.corrections.mutedArtists,
+    });
+    const muted = this.profile.corrections.mutedArtists;
+    const out: Track[] = [];
+    const seen = new Set<string>();
+    const pushCalm = (rows: Track[], requireBaked: boolean) => {
+      for (const t of filterClean(reconcileRecordings(rows))) {
+        if (out.length >= FOCUS.picksCount) break;
+        if (isMutedRow(t.artist, muted)) continue; // a muted artist's rows never queue
+        const key = recordingKey(t);
+        if (seen.has(key) || out.some((x) => x.id === t.id)) continue;
+        const f = lookupBakedFeatures({ title: t.title, artist: t.artist });
+        if (f) {
+          if (f.e > FOCUS.maxEnergy) continue; // a banger is never focus music
+        } else if (requireBaked) {
+          continue; // no baked evidence — never smuggled into the pool pass
+        }
+        seen.add(key);
+        out.push(t);
+      }
+    };
+    for (const a of artists) {
+      if (out.length >= FOCUS.picksCount) break;
+      try {
+        pushCalm(await CATALOG.artistTracks(a, 10), true);
+      } catch {
+        /* keep filling below */
+      }
+    }
+    // Vibe-search ladder: the affinity pool was too narrow for a session.
+    if (!out.length) {
+      try {
+        pushCalm(await CATALOG.search('lofi focus study instrumental', FOCUS.picksCount), false);
+      } catch {
+        /* honest empty */
+      }
+    }
+    return out.slice(0, FOCUS.picksCount);
   }
 
   /**
