@@ -366,6 +366,12 @@ export function truthCondition(
     if (edge > median && edge > 0) return 'FLOW_NEXT';
   }
 
+  // SOUND_ALIKE (GENIUS P6): the similarity surface computed REAL shared
+  // tag dimensions against a seed and stamped them on the candidate. The
+  // truth condition IS the computed count (≥2) — nothing here can fire
+  // without that evidence.
+  if ((c.sharedTagsWithSeed ?? 0) >= 2) return 'SOUND_ALIKE';
+
   // BECAUSE_HEARTED: a hearted track by the same artist exists.
   const artistEntry = profile.artists[artistKey];
   if (artistEntry?.source === 'heart' && artistEntry.evidenceCount >= 1) return 'BECAUSE_HEARTED';
@@ -406,6 +412,7 @@ export function reasonLine(code: ReasonCode, detail?: string): string {
     case 'BECAUSE_HEARTED': return `You loved ${detail ?? "this artist's"} songs`;
     case 'NEIGHBOR': return `You keep playing this next to ${detail ?? 'similar songs'}`;
     case 'FLOW_NEXT': return 'Keeps your flow going';
+    case 'SOUND_ALIKE': return 'Close to the song you\u2019re playing';
     case 'FITS_BLOCK': return `Fits your ${detail ?? 'right-now'} sound`;
     case 'SESSION_CONTINUITY': return "Keeps tonight's mood going";
     case 'FRESH_FIND': return 'A fresh find — see if it sticks';

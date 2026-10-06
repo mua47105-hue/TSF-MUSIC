@@ -188,6 +188,28 @@ export const GENRE_CAPTURE = {
   maxAffinityEntries: 40,
 } as const;
 
+// ── Tag-overlap similarity (GENIUS P6 — "close to this song") ──────────
+export const SIMILARITY = {
+  /**
+   * Tag dimension weights. The ARTIST dimension is deliberately the
+   * WEAKEST — same-artist results are "more by them" (the artist page
+   * already does that), not "close to this song". Genre/mood carry the
+   * sonic signal; language/era the context.
+   */
+  tagWeights: { genre: 1.0, mood: 0.9, language: 0.8, era: 0.6, artist: 0.4 },
+  /**
+   * Minimum SHARED dimensions for a SOUND_ALIKE claim — the truth
+   * condition. One shared tag is coincidence; two is kinship.
+   */
+  minSharedTags: 2,
+  /** Per-artist cap in the output (cousins, not clones). */
+  perArtistCap: 2,
+  /** Hard cap on ranked output (the surface asks for ~3-25). */
+  poolCap: 25,
+  /** Cache TTL — same 7-day freshness the onTheRise card uses. */
+  cacheTtlMs: 7 * 86_400_000,
+} as const;
+
 // ── Lyric mood reading (GENIUS P5 — valence from words) ────────────────
 export const LYRIC_MOOD = {
   /**

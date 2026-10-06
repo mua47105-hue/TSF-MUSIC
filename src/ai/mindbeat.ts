@@ -24,7 +24,8 @@ import {
   lexiconsReady,
   type LyricScore,
 } from './core/lyricMood';
-import { BANDIT, LYRIC_MOOD } from './core/constants';
+import { rankSoundAlike, tagVectorOf } from './core/similarity';
+import { BANDIT, LYRIC_MOOD, SIMILARITY } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
 import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -639,7 +640,15 @@ class Mindbeat {
         out.push({ ...t, isRecommended: true });
       }
     }
-    // Fallback ladder: affinity pool too narrow → seed-artist deep cuts only,
+    // Fallback ladder rung 1 — GENIUS P6 SOUND_ALIKE: tag-cousins of the
+    // seed (genre/language/era/mood/artist overlap ≥2 dims), pulled from
+    // the catalog. A real "close to this song" rung BEFORE the plain
+    // deep-cuts rung; every returned row carries the truthful reason.
+    if (!out.length && seed) {
+      const alike = await this.soundAlike(seed, 3, excludeIds);
+      if (alike.length) return alike;
+    }
+    // Fallback ladder rung 2 (legacy): seed-artist deep cuts only,
     // still flagged + explained (never silent-empty when the catalog has rows).
     if (!out.length && seed?.artist) {
       try {
@@ -664,6 +673,65 @@ class Mindbeat {
       energy: this.brain?.sessionEnergy ?? 0,
       listens: state?.window.length ?? 0,
     };
+  }
+
+  /** GENIUS P6 — per-seed 7-day cache (same freshness law as onTheRise). */
+  private alikeCache: { at: number; seedKey: string; tracks: Track[] } | null = null;
+
+  /**
+   * SOUND_ALIKE (§ similarity) — "songs like this one" via tag overlap.
+   * Candidates come from the EXISTING injected CatalogApi (search by the
+   * seed's artist + genre), bounded ≤120; ranking is the pure inverted-
+   * index overlap in core/similarity. Kill-switched; 7-day cached per
+   * seed; empty when the catalog/seed carries too few tags (honest).
+   */
+  async soundAlike(seed: Track, count = 3, excludeIds?: Set<string>): Promise<Track[]> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return [];
+    const seedKey = `${seed.id}:${seed.title}:${seed.artist}`;
+    const now = Date.now();
+    if (
+      !this.alikeCache ||
+      this.alikeCache.seedKey !== seedKey ||
+      now - this.alikeCache.at > SIMILARITY.cacheTtlMs
+    ) {
+      this.alikeCache = null; // stale/foreign seed — rebuild below
+      const queries: string[] = [];
+      const primary = seed.artist.split(/,|&/)[0].trim();
+      if (primary) queries.push(primary);
+      if (seed.genre) queries.push(seed.genre);
+      const pool: Track[] = [];
+      const seen = new Set<string>();
+      for (const q of queries) {
+        if (pool.length >= 120) break;
+        let rows: Track[] = [];
+        try {
+          rows = await CATALOG.search(q, 60);
+        } catch {
+          rows = [];
+        }
+        for (const t of rows) {
+          if (pool.length >= 120) break;
+          if (seen.has(t.id) || excludeIds?.has(t.id)) continue;
+          seen.add(t.id);
+          pool.push(t);
+        }
+      }
+      const seedVec = tagVectorOf(seed);
+      const ranked = rankSoundAlike(seedVec, seed.id, pool);
+      this.alikeCache = {
+        at: now,
+        seedKey,
+        tracks: ranked.map(({ track, shared }) => ({
+          ...track,
+          isRecommended: true,
+          reasonCode: 'SOUND_ALIKE',
+          reason: `Close to ${seed.title}`, // truthful: the shared-tag evidence was computed
+          sharedTagsWithSeed: shared,
+        })),
+      };
+    }
+    return this.alikeCache.tracks.slice(0, count);
   }
 
 

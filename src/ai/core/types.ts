@@ -229,6 +229,7 @@ export type ReasonCode =
   | 'BECAUSE_HEARTED'
   | 'NEIGHBOR'
   | 'FLOW_NEXT'
+  | 'SOUND_ALIKE'
   | 'FITS_BLOCK'
   | 'SESSION_CONTINUITY'
   | 'FRESH_FIND'
@@ -248,6 +249,9 @@ export interface Candidate {
   score?: number;
   reasonCode?: ReasonCode;
   explorationSlot?: boolean;
+  /** GENIUS P6 — shared tag dimensions with the similarity seed (≥2 = the
+   *  SOUND_ALIKE truth condition). Set by the similarity surface. */
+  sharedTagsWithSeed?: number;
 }
 
 export interface DecisionContext {
