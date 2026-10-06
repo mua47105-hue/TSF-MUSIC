@@ -20,7 +20,9 @@
 import {
   BLAME_SPLIT,
   BOUNDARY_CALIBRATION_MIN,
+  CAPTURED_GENRE_WEIGHT,
   EXPLORATION,
+  FLOW,
   GRADE_WEIGHTS,
   HALF_LIFE,
   ONBOARDING,
@@ -73,6 +75,7 @@ export function emptyProfile(now: number): TasteProfile {
     skipProfiles: {},
     coplayTracks: {},
     coplayArtists: {},
+    flowTracks: {},
     clusters: { artistClusters: [], moodCells: [] },
     exploration: {
       epsilon: EXPLORATION.coldStartEpsilon,
@@ -239,7 +242,14 @@ export function buildProfile(
         if (l.valence >= 0.65) bump(p.genres, '__positive', moodW * 0.6, l.startedTs);
         else if (l.valence <= 0.35) bump(p.genres, '__melancholy', moodW * 0.6, l.startedTs);
       }
-      if (l.genre) bump(p.genres, l.genre.toLowerCase(), w * 0.3, l.startedTs);
+      if (l.genre) {
+        bump(p.genres, l.genre.toLowerCase(), w * 0.3, l.startedTs);
+        // Phase 1 — captured (free) genre evidence: a provider genre the
+        // listener never typed feeds affinity at half an onboarding pick.
+        // Positive grades only — a skipped song is not genre evidence.
+        // No genre on the row ⇒ zero change (locked by replay test).
+        if (w > 0) bump(p.genres, l.genre.toLowerCase(), CAPTURED_GENRE_WEIGHT, l.startedTs);
+      }
       // Session-account evidence: session fit handled by Session Brain,
       // but the daypart cell absorbs "this block worked" weight.
     }
@@ -283,6 +293,10 @@ export function buildProfile(
 
   // ── Pass 2: co-play adjacency (§7.3) — consecutive listens in a session ──
   const trackEdgeW = new Map<string, number>(); // "a|b" (a<b) → weight
+  // Phase 4 — DIRECTED flow memory: "a>b" (a→b, order matters) → weight.
+  const flowEdgeW = new Map<string, number>();
+  // edgeKey → daypart cell → observation count (the second-order bonus).
+  const flowCells = new Map<string, Map<string, number>>();
   const artistAdj = new Map<string, Record<string, number>>();
   const bySession = new Map<string, ListenRecord[]>();
   for (const l of listens) {
@@ -302,6 +316,20 @@ export function buildProfile(
       const key = a.trackId < b.trackId ? `${a.trackId}|${b.trackId}` : `${b.trackId}|${a.trackId}`;
       const damp = 1 + Math.log2((playsByTrack.get(a.trackId) ?? 1) + (playsByTrack.get(b.trackId) ?? 1));
       trackEdgeW.set(key, (trackEdgeW.get(key) ?? 0) + wDecayed / damp);
+      // Phase 4 — the DIRECTED transition (A→B ≠ B→A): the same evidence,
+      // kept in playback order, same half-life + damping. Self-transitions
+      // (replay of the same track) carry no flow information.
+      if (a.trackId !== b.trackId) {
+        const dirKey = `${a.trackId}>${b.trackId}`;
+        flowEdgeW.set(dirKey, (flowEdgeW.get(dirKey) ?? 0) + wDecayed / damp);
+        const cellKey2 = `${blockOf(b.startedTs)}|${dayKindOf(b.startedTs)}`;
+        let cells = flowCells.get(dirKey);
+        if (!cells) {
+          cells = new Map();
+          flowCells.set(dirKey, cells);
+        }
+        cells.set(cellKey2, (cells.get(cellKey2) ?? 0) + 1);
+      }
       // Artist edge (both directions).
       const aKey = normalizeArtist(a.artist);
       const bKey = normalizeArtist(b.artist);
@@ -329,6 +357,36 @@ export function buildProfile(
   // Artist graph bounded to its top-2000 nodes (Appendix B contract).
   const artistEntries = [...artistAdj.entries()].slice(0, 2000);
   p.coplayArtists = Object.fromEntries(artistEntries);
+
+  // ── Phase 4 — prune the directed flow graph (potato rule ⑧) ──────────
+  // Floor-prune → global cap → per-node top-K, in that order, then the
+  // daypart second-order bonus bakes into the surviving weights.
+  const flatFlow: Array<{ from: string; to: string; w: number; key: string }> = [...flowEdgeW.entries()]
+    .map(([key, w]) => {
+      const gt = key.indexOf('>');
+      return { from: key.slice(0, gt), to: key.slice(gt + 1), w, key };
+    })
+    .filter((e) => e.from && e.to && e.w >= FLOW.edgeWeightFloor)
+    .sort((x, y) => y.w - x.w || (x.key < y.key ? -1 : 1))
+    .slice(0, FLOW.globalEdgeCap);
+  const flowAdj = new Map<string, Record<string, number>>();
+  const perNodeOut = new Map<string, number>();
+  for (const e of flatFlow) {
+    if ((perNodeOut.get(e.from) ?? 0) >= FLOW.outEdgeCap) continue;
+    let w = e.w;
+    const cells = flowCells.get(e.key);
+    if (cells) {
+      for (const count of cells.values()) {
+        if (count >= FLOW.daypartBonusMinCount) {
+          w *= FLOW.daypartBonusMultiplier;
+          break;
+        }
+      }
+    }
+    addEdge(flowAdj, e.from, e.to, w);
+    perNodeOut.set(e.from, (perNodeOut.get(e.from) ?? 0) + 1);
+  }
+  p.flowTracks = Object.fromEntries(flowAdj);
 
   // ── Daypart matrix cells ───────────────────────────────────────────────
   // Cell weights decay with the 30d half-life: a 120-day-old habit must

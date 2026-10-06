@@ -123,7 +123,7 @@ export async function buildDailyMixesV2(
         seedArtists: axis.clusterArtists.slice(0, 3),
         requested: 12,
       },
-      { profile, session, now },
+      { profile, session, now, banditArms: ctx.banditArms },
       { excludeTrackIds: new Set(), serveRecency },
     );
 

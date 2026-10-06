@@ -50,6 +50,14 @@ export interface RankContext {
   /** lowercased muted artist names — demoted hard */
   mutedArtists?: Set<string>;
   now?: number;
+  /** BAR 3.8 — session-vibe alignment: target energy + bonus ceiling.
+   *  A tie-breaker/vibe-aligner for ORGANIC results — it must NEVER
+   *  override the SIG (explicit title/artist matches) nor act on lyric
+   *  fragments. The disambiguation override caps still bind after it. */
+  sessionVibe?: { targetEnergy: number; maxBonus: number };
+  /** Injected baked-energy lookup (baked table → estimator fallback).
+   *  Kept injectable so rank stays pure + Law-④ clean. */
+  energyOf?: (row: Candidate) => number | undefined;
 }
 
 export interface RankedRow extends Candidate {
@@ -236,6 +244,22 @@ export function rankRows(
     const v1 = plan.kind === 'lyric_fragment' ? snippetEchoProxy(plan, row) : 0;
     const v2 = lyricVerdicts?.get(row.id)?.matched ? 1 : 0;
     const lyricBonus = plan.kind === 'lyric_fragment' ? v2 * 2.0 + v1 * 1.0 : 0;
+    // BAR 3.8 — session-vibe alignment bonus (organic rows only):
+    //   PEAK boosts high baked energy; WIND_DOWN boosts low energy.
+    //   Explicit-intent rows (artist named) qualify only when they ALSO
+    //   match the title (am≥1 && qm≥0.5) — artist-zero rows can never
+    //   ride the bonus past a real match. Lyric mode is untouched.
+    let vibeBonus = 0;
+    if (ctx.sessionVibe && plan.kind !== 'lyric_fragment' && ctx.energyOf) {
+      const organic = plan.artistTokens.length === 0 || (am >= 1 && qm >= 0.5);
+      if (organic) {
+        const e = ctx.energyOf(row);
+        if (typeof e === 'number') {
+          const alignment = 1 - Math.abs(e - ctx.sessionVibe.targetEnergy);
+          if (alignment > 0) vibeBonus = ctx.sessionVibe.maxBonus * alignment;
+        }
+      }
+    }
     const score =
       3.0 * pr +
       2.5 * qm * (0.55 + 0.45 * precision) +
@@ -243,7 +267,8 @@ export function rankRows(
       1.0 * pers +
       1.2 * eng + // S8 bar amendment: 2 clicks MUST beat provider-rank deltas
       0.5 * qual +
-      lyricBonus;
+      lyricBonus +
+      vibeBonus;
     return {
       ...row,
       score,

@@ -22,6 +22,7 @@ import {
   RETENTION,
   SCORE_WEIGHTS,
   SESSION,
+  SIMILARITY,
 } from './constants';
 import type {
   Candidate,
@@ -35,6 +36,7 @@ import type {
 import { clamp, hash32, seededRandom } from './time';
 import { topArtists } from './profile';
 import { NORMALIZATION } from './constants';
+import { isArmVetoed, sampleBetaTheta, type Arm } from './bandit';
 
 const DAY_MS = 86400_000;
 
@@ -42,6 +44,10 @@ export interface EngineDeps {
   profile: TasteProfile;
   session: SessionState;
   now: number;
+  /** Phase 3 — the bandit's arm map (artist/track arms). Optional:
+   *  absent (pre-hydration, tests) ⇒ every candidate scores as if the
+   *  bandit did not exist. */
+  banditArms?: ReadonlyMap<string, Arm>;
 }
 
 export interface DecideOptions {
@@ -59,6 +65,9 @@ export interface RankedCandidate extends Candidate {
   score: number;
   reasonCode: ReasonCode;
   explorationSlot: boolean;
+  /** BAR 2.1 — hard-veto flag: the bandit says >75% reject rate with
+   *  ≥3 net evidence. Excluded from every serving pool. */
+  vetoed: boolean;
 }
 
 /** Normalized (0..1) artist affinity from the profile (sqrt-damped, §6.2). */
@@ -79,7 +88,7 @@ export function decide(
   deps: EngineDeps,
   opts: DecideOptions = {},
 ): RankedCandidate[] {
-  const { profile, session, now } = deps;
+  const { profile, session, now, banditArms } = deps;
   const exclude = opts.excludeTrackIds ?? new Set<string>();
   const mutedArtists = new Set(profile.corrections.mutedArtists.map((a) => a.toLowerCase()));
   const mutedTracks = new Set(profile.corrections.mutedTracks);
@@ -118,6 +127,19 @@ export function decide(
   const cell = profile.daypart[cellKey];
   const sessionEnergy = sessionEnergyOf(session);
   const seeded = seededRandom(hash32(`${ctx.surface}:${ctx.seedTrackIds.join(',')}:${profile.builtAt}`));
+  // Phase 3 — a SECOND deterministic stream for the bandit draws (never
+  // shared with the exploration stream: one must not perturb the other).
+  const banditRng = seededRandom(
+    hash32(`${ctx.surface}:bandit:${ctx.seedTrackIds.join(',')}:${profile.builtAt}`),
+  );
+
+  // Phase 4 — the seed's DIRECTED out-edges ("what follows this"),
+  // hoisted once: normalized flow bonus = edgeWeight / maxOutWeight.
+  const flowSeed = profile.flowTracks[ctx.seedTrackIds[0]];
+  let flowMax = 0;
+  if (flowSeed) {
+    for (const w of Object.values(flowSeed)) if (w > flowMax) flowMax = w;
+  }
 
   const scored: RankedCandidate[] = pool.map((c) => {
     const profileAffinity = artistAffinity(profile, c.artist, now) +
@@ -149,18 +171,33 @@ export function decide(
     const trustRec = opts.sourceTrust?.[ctx.surface] ?? { completed: 1, exposed: 2 };
     const sourceTrust = trustRec.exposed > 0 ? trustRec.completed / trustRec.exposed : 0.5;
 
+    // Phase 4 — Markov flow bonus (what the user actually plays NEXT).
+    const flowNorm = flowSeed && flowMax > 0 ? (flowSeed[c.trackId] ?? 0) / flowMax : 0;
+
+    // Phase 3 — Thompson draw: artist arm first, track arm fallback.
+    // No arm at all ⇒ the constant 0.5 — identical across unarmed
+    // candidates, so ranking is byte-stable without bandit evidence.
+    let theta = 0.5;
+    const aArm = banditArms?.get(`a:${c.artist.trim().toLowerCase()}`);
+    const tArm = banditArms?.get(`t:${c.trackId}`);
+    if (aArm || tArm) theta = sampleBetaTheta(banditRng, aArm ?? tArm!);
+
     const base =
       SCORE_WEIGHTS.profileAffinity * clamp(profileAffinity, 0, 2.5) +
       SCORE_WEIGHTS.sessionFit * sessionFit +
       SCORE_WEIGHTS.daypartFit * daypartFit +
       SCORE_WEIGHTS.freshness * freshness +
-      SCORE_WEIGHTS.sourceTrust * sourceTrust;
+      SCORE_WEIGHTS.sourceTrust * sourceTrust +
+      SCORE_WEIGHTS.flowNext * flowNorm +
+      SCORE_WEIGHTS.bandit * theta;
 
     return {
       ...c,
       score: base,
       reasonCode: 'FRESH_FIND', // provisional — exploration picks override
       explorationSlot: false,
+      // BAR 2.1 — the hard-veto flag (excluded from every serving pool).
+      vetoed: !!tArm && isArmVetoed(tArm),
     };
   });
 
@@ -190,8 +227,9 @@ export function decide(
   const maxCrossLang = Math.floor(exploreSlots / Math.round(1 / EXPLORATION.crossLanguageMax));
 
   // Exploration picks: from the mid-tier (rank ~40-70th percentile) —
-  // genuinely novel but not random noise.
-  const explorePool = scored.filter((c) => !stormArtists.has(c.artist.trim().toLowerCase()));
+  // genuinely novel but not random noise. Hard-vetoed tracks are NOT a
+  // "calculated risk" — the bandit already knows them (BAR 2.1).
+  const explorePool = scored.filter((c) => !stormArtists.has(c.artist.trim().toLowerCase()) && !c.vetoed);
   const exploreFrom = explorePool.slice(Math.floor(explorePool.length * 0.35), Math.floor(explorePool.length * 0.8));
   for (let i = 0; i < exploreSlots && exploreFrom.length; i++) {
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -210,9 +248,13 @@ export function decide(
   }
 
   // Exploitation picks fill the rest, same-artist cap (≤2 per 6-slot horizon).
+  // BAR 2.1 — the HARD VETO: a track the bandit has learned to reject
+  // (>75% reject rate, ≥3 net evidence) never enters the exploitation
+  // pool — no flowBonus or profile affinity can push it through.
   const artistWindow: string[] = [];
   for (const c of scored) {
     if (picks.length >= requested) break;
+    if (c.vetoed) continue;
     if (used.has(c.trackId)) continue;
     const recentCount = artistWindow.filter((a) => a === c.artist).length;
     if (recentCount >= SESSION.maxSameArtistPer6) continue;
@@ -310,6 +352,19 @@ export function truthCondition(
   const { profile, now } = deps;
   const artistKey = c.artist.trim().toLowerCase();
 
+  // FLOW_NEXT (Phase 4): a DIRECTED transition from the seed whose weight
+  // sits ABOVE THE MEDIAN of the seed's out-edges (mirrors the NEIGHBOR
+  // discipline — no hard-coded floor can let a weak edge claim flow).
+  const flowEdges = profile.flowTracks[ctx.seedTrackIds[0]];
+  if (flowEdges) {
+    const w = flowEdges[c.trackId] ?? 0;
+    if (w > 0) {
+      const weights = Object.values(flowEdges).sort((a, b) => a - b);
+      const median = weights.length ? weights[Math.floor(weights.length / 2)] : 0;
+      if (w > median) return 'FLOW_NEXT';
+    }
+  }
+
   // NEIGHBOR: co-play edge ABOVE THE MEDIAN of the seed's edges exists
   // (§8.5: "weight above median" — a hard-coded floor would let weak
   // edges claim kinship).
@@ -341,6 +396,11 @@ export function truthCondition(
     if (top10.includes(artistKey)) return 'BECAUSE_PLAYED';
   }
 
+  // SOUND_ALIKE (Phase 6): only the similarity pass sets sharedTagDims,
+  // and it enforces ≥2 dims at rank time — this case re-verifies it, so
+  // the closed-set contract holds for any future caller too.
+  if ((c.sharedTagDims ?? 0) >= SIMILARITY.minSharedTags) return 'SOUND_ALIKE';
+
   // FITS_BLOCK: current daypart cell matches the track's energy.
   const cell = profile.daypart[`${ctx.block}|${ctx.dayKind}`];
   if (cell && Math.abs(c.features.energy - cell.energyMean) <= Math.max(0.15, cell.energyStd)) {
@@ -360,6 +420,8 @@ export function reasonLine(code: ReasonCode, detail?: string): string {
     case 'BECAUSE_PLAYED': return `Because you play ${detail ?? 'this artist'} a lot`;
     case 'BECAUSE_HEARTED': return `You loved ${detail ?? "this artist's"} songs`;
     case 'NEIGHBOR': return `You keep playing this next to ${detail ?? 'similar songs'}`;
+    case 'FLOW_NEXT': return 'Keeps your flow going';
+    case 'SOUND_ALIKE': return `Sounds like ${detail ?? 'what you picked'}`;
     case 'FITS_BLOCK': return `Fits your ${detail ?? 'right-now'} sound`;
     case 'SESSION_CONTINUITY': return "Keeps tonight's mood going";
     case 'FRESH_FIND': return 'A fresh find — see if it sticks';

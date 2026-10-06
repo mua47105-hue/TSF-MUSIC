@@ -10,7 +10,7 @@ No server · No account · No tracking · Install and it works
 
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=1ED760&label=release)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
-[![Tests](https://img.shields.io/badge/replay_tests-261_passing-1ED760?labelColor=121212)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/replay_tests-439_passing-1ED760?labelColor=121212)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-3E3E3E?labelColor=121212)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-1ED760?labelColor=121212)](#privacy)
 
@@ -179,7 +179,7 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 | Audio | 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 261 replay tests · 1,640+ assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 439 replay tests · 2,200+ assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~79 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -226,7 +226,7 @@ Full module map, data flow and contracts: **[docs/ARCHITECTURE.md](docs/ARCHITEC
 ```bash
 bun install
 bun run typecheck        # tsc --noEmit (strict) — must be clean
-bun test                 # 261 replay tests incl. latency budgets
+bun test                 # 439 replay tests incl. latency budgets
 bunx expo start          # Metro dev server
 bunx expo run:android    # native debug build
 ```
@@ -248,7 +248,7 @@ template, 19/19 checks on v3.4.5).
 
 ## Quality assurance
 
-1. **261 replay tests** — engine behavior, latency budgets, gauntlet
+1. **439 replay tests** — engine behavior, latency budgets, gauntlet
    regression locks (every shipped bug class is locked red-on-old-code)
 2. **The device lab** — the real app on react-native-web with fixture
    data layers, driven by Playwright at hardware-faithful viewports:
@@ -277,6 +277,8 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v4.2.0** | **GODMODE INTELLIGENCE** — the 6-phase "Lightweight Genius" lift: baked Spotify feature table (122k rows, offline), Thompson bandit + hard reject veto, directed Markov flow memory (FLOW_NEXT), lyric mood reading (VADER + romanized Hindi/Punjabi, ±0.25 bounded), tag-overlap sound-alike, dynamic mind-reading home feed, session-aligned search, cold-start artist seeding |
+| **v4.1.0** | **THE GODMODE EDITION** — synced karaoke lyrics, instant tap, share card, weekly crate, sleep timer, data saver |
 | **v4.0.0** | **PULSE** — the complete UI redesign: editorial brutalism, the Wire tab, broadsheet player, real LRCLIB lyrics, micro-interactions everywhere |
 | **v3.4.5** | Field-fix round: real songs over lo-fi covers, 40-deep search results, zero Top Songs repeats, 60 fps home feed |
 | **v3.4.4** | The half-screen window bug, closed at the root (invisible WebView wrapper) with 9 regression locks |

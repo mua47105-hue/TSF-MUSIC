@@ -293,10 +293,16 @@ export function HomeScreen() {
 
   const ensurePager = useCallback((): EndlessFeedPager => {
     if (!pagerRef.current) {
-      pagerRef.current = new EndlessFeedPager({
-        searchSongs: (q, page, signal) => searchSaavn(q, 30, signal, page),
-        searchAlbums: (q, page, signal) => searchAlbumCollections(q, page, 20, signal),
-      });
+      pagerRef.current = new EndlessFeedPager(
+        {
+          searchSongs: (q, page, signal) => searchSaavn(q, 30, signal, page),
+          searchAlbums: (q, page, signal) => searchAlbumCollections(q, page, 20, signal),
+        },
+        // BAR 3.7 — the feed reads the room: MINDBEAT yields dynamic
+        // queries from profile genres/moods + session vibe; an empty
+        // yield (cold start / kill switch) keeps the legacy ladder.
+        { songQueryGenerator: () => mindbeat.feedSongQueries() },
+      );
       pagerRef.current.prime({
         songs: trending ?? undefined,
         albums: [...newAlbums, ...featured, ...charts],

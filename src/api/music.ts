@@ -53,6 +53,10 @@ export interface SearchV2Result extends SearchResult {
 export interface EngineDeps extends LearnDeps {
   artistAffinity?: (artist: string) => number;
   mutedArtists?: () => Set<string>;
+  /** BAR 3.8 — session vibe context (null when the room is quiet). */
+  sessionVibe?: () => { targetEnergy: number; maxBonus: number } | null;
+  /** BAR 3.8 — baked-energy lookup for the vibe alignment bonus. */
+  trackEnergy?: (title: string, artist: string) => number | undefined;
 }
 
 let lexiconInitPromise: Promise<void> | null = null;
@@ -235,6 +239,10 @@ export async function searchMusicV2(
     engagement,
     artistAffinity: affinity,
     mutedArtists: muted,
+    sessionVibe: deps?.sessionVibe?.() ?? undefined,
+    energyOf: deps?.trackEnergy
+      ? (row) => deps.trackEnergy!(row.title, row.artist)
+      : undefined,
   });
 
   // PROGRESSIVE PAINT (P0-2 fix): the ranked set paints the moment it is
@@ -272,7 +280,13 @@ export async function searchMusicV2(
       if (rescue.tracks.length > 0) {
         rescueTracks = rescue.tracks;
         const merged = verifySet(plan, [{ pool: 'rescue', tracks: rescue.tracks }, { pool: 'organic', tracks: toTrackList(earlyRanked) }]);
-        ranked = rankRows(plan, merged.rows, { engagement, artistAffinity: affinity, mutedArtists: muted });
+        ranked = rankRows(plan, merged.rows, {
+          engagement,
+          artistAffinity: affinity,
+          mutedArtists: muted,
+          sessionVibe: deps?.sessionVibe?.() ?? undefined,
+          energyOf: deps?.trackEnergy ? (row) => deps.trackEnergy!(row.title, row.artist) : undefined,
+        });
         sigState = 'rescued';
       } else {
         sigState = earlyRanked.some((r) => r.queryMatch >= 0.5) ? 'partial' : 'zero';
@@ -312,7 +326,13 @@ export async function searchMusicV2(
       if (rescue.tracks.length > 0) {
         rescueTracks = rescue.tracks;
         const merged = verifySet(plan, [{ pool: 'rescue', tracks: rescue.tracks }, { pool: 'organic', tracks: toTrackList(earlyRanked) }]);
-        ranked = rankRows(plan, merged.rows, { engagement, artistAffinity: affinity, mutedArtists: muted });
+        ranked = rankRows(plan, merged.rows, {
+          engagement,
+          artistAffinity: affinity,
+          mutedArtists: muted,
+          sessionVibe: deps?.sessionVibe?.() ?? undefined,
+          energyOf: deps?.trackEnergy ? (row) => deps.trackEnergy!(row.title, row.artist) : undefined,
+        });
         sigState = 'rescued';
       }
     } else {
@@ -459,7 +479,13 @@ export async function searchMusicV2(
         const r2 = await retrieve(next, { signal: opts.signal, limit: 20 });
         if (opts.signal?.aborted) break;
         const v2 = verifySet(next, r2.pools);
-        const rk2 = rankRows(next, v2.rows, { engagement, artistAffinity: affinity, mutedArtists: muted });
+        const rk2 = rankRows(next, v2.rows, {
+          engagement,
+          artistAffinity: affinity,
+          mutedArtists: muted,
+          sessionVibe: deps?.sessionVibe?.() ?? undefined,
+          energyOf: deps?.trackEnergy ? (row) => deps.trackEnergy!(row.title, row.artist) : undefined,
+        });
         if (rk2.length > tracks.length) {
           tracks = toTrackList(rk2);
           relaxedFrom = plan.raw.trim();

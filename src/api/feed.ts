@@ -102,6 +102,11 @@ export class EndlessFeedPager {
   private albumCursor: LadderCursor = { queryIdx: 0, page: 1, queriesUsed: 0 };
   private songLadder: string[];
   private albumLadder: string[];
+  /** BAR 3.7 — MINDBEAT's dynamic query generator. Called when the song
+   *  cursor advances to a NEW query; an empty/absent yield keeps the
+   *  legacy hardcoded ladder (byte-identical cold start). */
+  private songQueryGenerator?: () => string[];
+  private dynSongLadder: { forQueryIdx: number; ladder: string[] } | null = null;
   private seenSongIds = new Set<string>();
   private seenSongKeys = new Set<string>();
   /** R8-P4b: title bucket → credit sets already shown — catches the
@@ -119,10 +124,28 @@ export class EndlessFeedPager {
 
   constructor(
     private fetchers: FeedFetchers,
-    opts?: { songQueries?: string[]; albumQueries?: string[] },
+    opts?: { songQueries?: string[]; albumQueries?: string[]; songQueryGenerator?: () => string[] },
   ) {
     this.songLadder = opts?.songQueries ?? SONG_QUERIES;
     this.albumLadder = opts?.albumQueries ?? ALBUM_QUERIES;
+    this.songQueryGenerator = opts?.songQueryGenerator;
+  }
+
+  /** The active song ladder: MINDBEAT's generated one when it yields,
+   *  cached per cursor position so one ladder stays stable while the
+   *  cursor walks its pages (deterministic within a query). */
+  private activeSongLadder(): string[] {
+    if (this.songQueryGenerator) {
+      if (!this.dynSongLadder || this.dynSongLadder.forQueryIdx !== this.songCursor.queryIdx) {
+        const dyn = this.songQueryGenerator();
+        this.dynSongLadder = {
+          forQueryIdx: this.songCursor.queryIdx,
+          ladder: dyn && dyn.length ? dyn : this.songLadder,
+        };
+      }
+      return this.dynSongLadder.ladder;
+    }
+    return this.songLadder;
   }
 
   get isExhausted(): boolean {
@@ -130,7 +153,7 @@ export class EndlessFeedPager {
   }
 
   private songLadderDone(): boolean {
-    return this.songCursor.queriesUsed >= this.songLadder.length * MAX_LADDER_PASSES;
+    return this.songCursor.queriesUsed >= this.activeSongLadder().length * MAX_LADDER_PASSES;
   }
 
   private albumLadderDone(): boolean {
@@ -193,7 +216,8 @@ export class EndlessFeedPager {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (isDone.call(this)) return null;
-      const q = ladder[cursor.queryIdx % ladder.length];
+      const activeLadder = kind === 'songs' ? this.activeSongLadder() : ladder;
+      const q = activeLadder[cursor.queryIdx % activeLadder.length];
       let rows: T[];
       try {
         const page = await fetchPage(q, cursor.page);

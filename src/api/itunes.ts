@@ -17,6 +17,8 @@ interface ITunesResult {
   previewUrl?: string;
   artworkUrl100?: string;
   trackTimeMillis?: number;
+  /** Free cultural signal (Phase 1): Apple's normalized genre tag. */
+  primaryGenreName?: string;
 }
 
 export async function searchItunes(
@@ -45,5 +47,6 @@ export async function searchItunes(
       source: 'itunes' as const,
       previewUrl: r.previewUrl,
       previewOnly: true,
+      genre: r.primaryGenreName?.trim() || undefined,
     }));
 }

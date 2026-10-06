@@ -154,7 +154,7 @@ export async function buildWeeklyCrate(
       seedArtists: anchors,
       requested: CADENCE.weeklySize,
     },
-    { profile, session: ctx.session, now },
+    { profile, session: ctx.session, now, banditArms: ctx.banditArms },
     { serveRecency },
   );
   if (ranked.length < CADENCE.weeklyMinTracks) return null;

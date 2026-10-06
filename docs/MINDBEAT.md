@@ -196,3 +196,64 @@ one-file edit with the rationale stated inline.
   (`scripts/ab2-blind.txt`)
 - Device-lab walkthrough exercises the AI screens end-to-end on both
   device profiles (see docs/DEVELOPMENT.md)
+
+---
+
+## The Lightweight Genius lift (v4.2.0) — baked data, honest notes
+
+Six additions extended the stack without a single new dependency, model
+or server (the standalone contract held):
+
+- **Phase 1 — captured genres.** `Track.genre` (iTunes `primaryGenreName`)
+  feeds genre affinity at half an onboarding pick's weight. JioSaavn's
+  public API exposes NO genre field — its cultural tag is `language`,
+  which keeps flowing through its own channel. Old favorite rows are
+  backfilled lazily the first time the track plays with a tag.
+- **Phase 2 — the baked feature table.** `assets/baked_features.json`
+  (~122k keys, ≤2.5MB gzipped) carries real Spotify audio features
+  (energy/valence/danceability) for the world's most-played tracks,
+  baked from the HuggingFace dataset `maharshipandya/spotify-tracks-dataset`
+  (CC-ish research dataset; Kaggle was NOT used). Priority:
+  dataset(0.8) → behavioral calibration (±0.05 cap) → cultural priors.
+- **Phase 3 — the Thompson bandit.** Beta arms over artist/track; the
+  hard veto excludes >75%-rejected tracks from every serving pool.
+- **Phase 4 — the Markov flow.** DIRECTED session transitions; the
+  FLOW_NEXT reason keeps a follow-up honest ("Keeps your flow going").
+- **Phase 5 — lyric mood.** VADER (MIT license — see
+  https://github.com/cjhutto/vaderSentiment) + a generated romanized
+  Hindi/Punjabi table (`src/ai/core/romanizedMood.ts`; regenerate with
+  `python3 scripts/gen_romanized_mood.py`). Bounded ±0.25 valence-only.
+- **Phase 6 — sound-alike.** Tag-overlap similarity on a bounded pool;
+  the `SOUND_ALIKE` reason and the vibe-shift/AI-playlist surfaces.
+
+**Re-baking the feature table** (data refresh — a manual, offline step):
+
+```bash
+curl -L -o scripts/bake_data/dataset.csv \
+  'https://huggingface.co/datasets/maharshipandya/spotify-tracks-dataset/resolve/main/dataset.csv'
+python3 scripts/bake_features.py      # writes assets/baked_features.json
+python3 scripts/gen_vader_json.py     # refresh the VADER JSON (rare)
+bun test tests/ai/baked_features_locks.test.ts   # key parity + parse budget
+```
+
+The bake script ports `src/search/normalize.ts` VERBATIM into Python and
+fails loudly if the gzipped asset ever exceeds 2.5 MB.
+
+**Honest limitations** (what this lift can NOT do):
+
+- The baked table is a popularity snapshot: niche/regional and brand-new
+  tracks are absent and fall through to the prior chain (byte-identical
+  to the pre-Phase-2 behavior). Spotify's audio features were computed
+  from their audio analysis pipeline, not ours — they are ground-truth-ish
+  priors, not measured from the stream.
+- The bandit is contextless (no daypart/session features per arm); the
+  session brain and daypart matrix still own context. Arms reset by
+  eviction (≤2000), not by forgetting curves — very old arms decay only
+  when evidence arrives.
+- The Markov flow needs repeats: a transition observed once is a whisper,
+  not a rule (the median truth condition filters whispers out).
+- Lyric mood reads LEXICONS, not semantics: sarcasm, negation and code-
+  switching can fool it — which is why the delta is bounded at ±0.25 and
+  only valence ever moves.
+- Sound-alike tags are as good as the metadata: no genre tag ⇒ fewer
+  shared dimensions ⇒ honest silence over invented similarity.

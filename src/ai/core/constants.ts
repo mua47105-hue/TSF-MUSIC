@@ -52,6 +52,11 @@ export const SCORE_WEIGHTS = {
   daypartFit: 0.8,
   freshness: 0.6,
   sourceTrust: 0.4,
+  /** Phase 3 — the Thompson-sampling refinement (additive). Below
+   *  profileAffinity: the bandit refines ranking, it never owns it. */
+  bandit: 0.5,
+  /** Phase 4 — the directed Markov flow bonus (additive). */
+  flowNext: 0.4,
 } as const;
 
 /** Energy tolerance before the quadratic penalty kicks in. */
@@ -175,3 +180,116 @@ export const NORMALIZATION = {
   topArtistRead: 10,
   minEvidenceForExplain: 3,
 } as const;
+
+// ── THE LIGHTWEIGHT GENIUS LIFT (v4.2.0 mission) ───────────────────────
+// Every number below is a starting value with a stated tuning protocol
+// (Appendix C discipline). Nothing outside this file may hard-code them.
+
+/** Phase 2 — baked Spotify audio features (the offline knowledge table). */
+export const DATASET = {
+  /** Baked rows beat cultural priors (0.7) but lose to observed behavior. */
+  confidence: 0.8,
+  /** BAR 1.3: the real loadFeatureTable() parse must finish under this. */
+  loadBudgetMs: 2000,
+  /** Hard size ceiling for the gzipped asset — the bake script fails
+   *  loudly above it (potato-phone rule ⑧). */
+  maxGzipBytes: 2_621_440,
+  /** Maximum rows baked from the dataset (popularity-sorted). */
+  maxRows: 200_000,
+} as const;
+
+/** Phase 3 — the Thompson-sampling bandit over artist/track arms. */
+export const BANDIT = {
+  /** kv hard cap; arms with the lowest alpha+beta are evicted first. */
+  armCap: 2000,
+  /** Uniform Beta prior: every arm starts {1, 1}. */
+  priorStrength: 1.0,
+  /** BAR 3.9 — onboarding artist seeds start trusted (Day-1 visibility). */
+  seedAlpha: 3.0,
+  seedBeta: 1.0,
+  /** BAR 2.1 — a track arm above this reject rate is vetoed from the
+   *  serving pools. 0.75 ⇒ the ratio rule is the law.
+   *  Weight math (GRADE_WEIGHTS.INSTANT_REJECT = 3.0): a single
+   *  instant-reject on a fresh arm is {α1, β4} = 0.80 — but evidence
+   *  must ALSO clear the floor below, so one accidental tap NEVER bans
+   *  a track (critic finding); 2 straight rejects {1,7} = 0.875 do. */
+  vetoRejectRate: 0.75,
+  /** Net evidence (alpha+beta−2) required before a veto may fire — keeps
+   *  the prior itself from vetoing fresh arms. 6 ⇒ "two strikes": one
+   *  accidental tap (evidence 3) is forgiven; two (evidence 6) is a
+   *  pattern. 3 skips + 2 completions (rate 0.667) stay un-vetoed. */
+  vetoMinEvidence: 6.0,
+  /** Bounded pre-hydration update queue (rule ⑦ — hydration is lazy). */
+  pendingCap: 100,
+  /** Bounded pre-hydration seed queue (BAR 3.3). */
+  seedQueueCap: 50,
+  /** Debounced kv flush for arm updates (amortized write rule ⑦). */
+  flushDebounceMs: 4000,
+} as const;
+
+/** Phase 4 — the directed Markov flow memory ("what follows what"). */
+export const FLOW = {
+  /** Per-node top-K outgoing transitions kept (heavy pruning). */
+  outEdgeCap: 8,
+  /** Edge weight floor — weaker edges are pruned (co-play floor parity). */
+  edgeWeightFloor: 0.02,
+  /** Global directed-edge budget (potato rule ⑧). */
+  globalEdgeCap: 3000,
+  /** Edges observed ≥ this many times inside ONE daypart cell get the
+   *  second-order daypart bonus baked into their weight. */
+  daypartBonusMinCount: 2,
+  daypartBonusMultiplier: 1.25,
+} as const;
+
+/** Phase 5 — lyric mood reading (VADER + romanized Hindi/Punjabi). */
+export const LYRIC_MOOD = {
+  /** Blend confidence — below dataset (0.8): a vibe nudge, not truth. */
+  confidence: 0.6,
+  /** |Δvalence| hard bound. LOCKED by the literal 0.25 in
+   *  tests/ai/lyric_mood_locks.test.ts (BAR 1.2 — do not unliteral). */
+  maxDelta: 0.25,
+  /** kv LRU cap for per-recordingKey lyric mood entries. */
+  cacheCap: 1000,
+  /** Fewer lexicon hits than this is noise — no shift applied. */
+  minHits: 3,
+} as const;
+
+/** Phase 6 — tag-overlap similarity (the sound-alike engine). */
+export const SIMILARITY = {
+  /** Truth condition: a sound-alike must share ≥2 tag dimensions. */
+  minSharedTags: 2,
+  /** Same-artist dimension is down-weighted (clones must not win on
+   *  artist alone — the whole point is sound-ALIKE, not same-artist). */
+  artistTagWeight: 0.3,
+  /** Max tracks per artist inside one sound-alike list. */
+  perArtistCap: 2,
+  /** Candidate pool bounds (mirrors aiPoolMin/Max — never index the world). */
+  poolMin: 60,
+  poolMax: 120,
+  /** Cache lifetime (same stability class as On The Rise). */
+  cacheDays: 7,
+} as const;
+
+/** BAR 2.2 — behavioral calibration against ground-truth-ish sources. */
+export const CALIBRATION = {
+  /** When the base estimate came from the baked dataset or the lyric
+   *  mood read, observed behavior may only drift the estimate ±0.05
+   *  per channel. Breaks the "sad song reclassified happy by 2am
+   *  listens" feedback loop. */
+  groundTruthCap: 0.05,
+} as const;
+
+/** BAR 3.8 — session-aware search ranking (tie-breaker, never SIG). */
+export const SEARCH_VIBE = {
+  /** Max score bonus for baked-energy alignment with the session vibe.
+   *  0.5 is ~1.6 provider-rank steps (3.0 × 0.91-decay ≈ 0.27/step) —
+   *  big enough to reorder TIES, small enough that the SIG override
+   *  caps (which bind AFTER the bonus) keep explicit intent on top. */
+  maxBonus: 0.5,
+  /** Energy targets per vibe (the direction the room is heading). */
+  targetEnergy: { PEAK: 0.85, FLOW: 0.7, WIND_DOWN: 0.2 } as Record<string, number | undefined>,
+} as const;
+
+/** Phase 1 — captured (free) genre evidence weight = explicit seed × 0.5.
+ *  The listener never typed it, so it carries half an onboarding pick. */
+export const CAPTURED_GENRE_WEIGHT = ONBOARDING.genreSeedWeight * 0.5;

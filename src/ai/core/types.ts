@@ -117,7 +117,10 @@ export interface TrackFeatures {
   tempoClass: TempoClass;
   /** 0..1 — how much of this estimate is prior vs observed behavior. */
   confidence: number;
-  source: 'prior' | 'metadata' | 'calibrated';
+  /** 'dataset' = baked Spotify features (Phase 2); 'lyric' = lyric-mood
+   *  blended (Phase 5). Both are ground-truth-ish: calibration caps at
+   *  ±0.05 (BAR 2.2). */
+  source: 'prior' | 'metadata' | 'calibrated' | 'dataset' | 'lyric';
 }
 
 // ── Taste Profile (Appendix B) ──────────────────────────────────────────
@@ -190,6 +193,9 @@ export interface TasteProfile {
   skipProfiles: Record<string, SkipProfileEntry>;
   coplayTracks: Record<string, Record<string, number>>; // top-5000 edges
   coplayArtists: Record<string, Record<string, number>>; // top-2000 edges
+  /** Phase 4 — DIRECTED Markov flow memory: trackId → (nextTrackId →
+   *  weight). A→B ≠ B→A; per-node top-8, global ≤3000 edges. */
+  flowTracks: Record<string, Record<string, number>>;
   clusters: { artistClusters: ArtistCluster[]; moodCells: MoodCell[] };
   exploration: ExplorationState;
   corrections: Corrections;
@@ -223,6 +229,8 @@ export type ReasonCode =
   | 'BECAUSE_PLAYED'
   | 'BECAUSE_HEARTED'
   | 'NEIGHBOR'
+  | 'FLOW_NEXT'
+  | 'SOUND_ALIKE'
   | 'FITS_BLOCK'
   | 'SESSION_CONTINUITY'
   | 'FRESH_FIND'
@@ -238,6 +246,9 @@ export interface Candidate {
   era?: string;
   features: TrackFeatures;
   pool: 'affinity' | 'neighborhood' | 'daypart' | 'cultural' | 'discovery';
+  /** Set by the similarity pass (Phase 6): shared tag dimensions with the
+   *  seed. The SOUND_ALIKE truth condition requires ≥2. */
+  sharedTagDims?: number;
   /** Set by the engine: */
   score?: number;
   reasonCode?: ReasonCode;

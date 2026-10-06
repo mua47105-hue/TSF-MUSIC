@@ -24,6 +24,8 @@ export interface SurfaceCtx {
   now: number;
   /** Recent graded listens (7–180d) for dedup + trust stats. */
   listens: ListenRecord[];
+  /** Phase 3 — the bandit arm map (optional; absent = pre-hydration). */
+  banditArms?: ReadonlyMap<string, import('../core/bandit').Arm>;
   /** Emit REC_EXPOSURE for every served recommendation (survivorship-safe §5.1). */
   onExposure?: (trackId: string, surface: SourceSurface, rankInPool: number, exploration: boolean) => void;
 }
@@ -35,7 +37,7 @@ export function toCandidate(track: Track, pool: Candidate['pool']): Candidate {
     artist: track.artist,
     artistId: track.artistId,
     language: track.language,
-    genre: undefined,
+    genre: track.genre,
     features: estimateFeatures({ artist: track.artist, title: track.title, album: track.album }),
     pool,
   };

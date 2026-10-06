@@ -65,7 +65,7 @@ const PHASE_TO_STAGE: Record<string, Stage> = {
 export function MindbeatWireScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { playQueue } = usePlayer();
+  const { playQueue, active } = usePlayer();
   const toast = useToast();
 
   // Uncontrolled field (v4.0.1): the AI run re-renders this whole screen
@@ -117,6 +117,8 @@ export function MindbeatWireScreen() {
           p,
           (s) => setStage(PHASE_TO_STAGE[s.phase] ?? 0),
           v,
+          // Phase 6 — the now-playing track quietly seeds the hunt pool.
+          { soundAlikeSeed: active },
         );
         let final = generated;
         if (final.tracks.length < 8) {

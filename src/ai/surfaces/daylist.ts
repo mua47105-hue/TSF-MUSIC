@@ -101,7 +101,7 @@ export async function buildNowSound(ctx: SurfaceCtx, count = 12): Promise<NowSou
       seedArtists: artists,
       requested: count,
     },
-    { profile, session, now },
+    { profile, session, now, banditArms: ctx.banditArms },
     { excludeTrackIds: new Set(), serveRecency },
   );
 

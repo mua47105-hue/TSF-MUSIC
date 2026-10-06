@@ -266,6 +266,9 @@ export function PlayerScreen() {
           .filter((l) => l && !l.startsWith('['));
         if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
         else setLyricMiss(true); // stamp-only file = instrumental — honest miss
+        // Phase 5 — the lyric MOOD read (async, off the critical path):
+        // the words feed the bounded ±0.25 valence nudge per recording.
+        if (lyrics) void mindbeat.noteLyricsFetched(active, lyrics);
       })
       .catch(() => undefined);
     fetchSyncedLyrics(active.title, active.artist, ctrl.signal)
@@ -274,6 +277,8 @@ export function PlayerScreen() {
         const parsed = parseLrc(raw);
         // a real timeline, not a fragment: <4 timed lines is not singable
         setSyncedLines(parsed.length >= 4 ? parsed : null);
+        // Phase 5 — synced text feeds the same mood cache (stamps stripped).
+        void mindbeat.noteLyricsFetched(active, raw);
       })
       .catch(() => undefined);
     return () => {

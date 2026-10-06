@@ -24,3 +24,6 @@ screenshots/
 download/*.apk
 download/_apk_audit/
 .evolve/
+
+# bake-time datasets (re-downloadable; never commit 20MB CSVs)
+scripts/bake_data/

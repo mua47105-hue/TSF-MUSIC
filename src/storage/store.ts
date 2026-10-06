@@ -83,6 +83,25 @@ export async function isFavorite(track: Track): Promise<boolean> {
   return list.some((t) => t.id === track.id);
 }
 
+/**
+ * Phase 1 — lazy genre backfill: old favorite rows were saved before the
+ * app captured provider genre. When such a row PLAYS and the freshly
+ * mapped track carries a genre, the stored row gets it (one write, only
+ * when the row actually lacked the tag). Fire-and-forget by callers.
+ */
+export async function backfillFavoriteGenre(trackId: string, genre: string): Promise<boolean> {
+  if (!trackId || !genre) return false;
+  return serialized(async () => {
+    const list = await getFavorites();
+    const idx = list.findIndex((t) => t.id === trackId);
+    if (idx < 0) return false;
+    if (list[idx].genre) return false; // already tagged — never overwrite
+    list[idx] = { ...list[idx], genre };
+    await writeJSON(KEYS.favorites, list.slice(0, 500));
+    return true;
+  });
+}
+
 // ── Play history ───────────────────────────────────────────────────────
 
 export async function getRecents(): Promise<Track[]> {

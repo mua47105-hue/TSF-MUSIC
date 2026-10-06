@@ -51,6 +51,7 @@ import { planSearch } from '../search/plan';
 import { verifyLyrics, type Candidate } from '../search/verify';
 import { rememberResolve } from '../search/learn';
 import { artistAffinity } from '../ai/core/decision';
+import { estimateFeatures } from '../ai/core/features';
 import { usePlayer } from '../player/PlayerProvider';
 import {
   clearRecentSearches,
@@ -130,6 +131,11 @@ function engineDeps(): EngineDeps {
           a.toLowerCase(),
         ),
       ),
+    // BAR 3.8 — the search results lean with the room: baked energy
+    // alignment as a tie-breaker (SIG stays untouchable inside rank.ts).
+    sessionVibe: () => mindbeat.searchVibeContext(),
+    trackEnergy: (title, artist) =>
+      estimateFeatures({ title, artist }).energy,
   };
 }
 

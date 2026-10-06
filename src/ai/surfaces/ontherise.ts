@@ -82,7 +82,7 @@ export async function buildOnTheRise(ctx: SurfaceCtx, count = 25): Promise<OnThe
       seedArtists: topArtists,
       requested: count,
     },
-    { profile, session, now },
+    { profile, session, now, banditArms: ctx.banditArms },
     { serveRecency, forceExploration: true },
   );
 

@@ -199,6 +199,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // MINDBEAT boots behind the UI (cold-start budget §10.3): store opens,
     // partial listens recover, profile builds async, sessions start.
     void mindbeat.init();
+    // v4.2.0 — heavy tables (baked features, bandit, lyric cache) load
+    // AFTER first paint, never on the cold-start path (law ⑦).
+    void mindbeat.warmHeavyTables();
     getFavorites().then((list) => setFavorites(new Set(list.map((t) => t.id))));
     getSmartShuffleSetting().then(setSmartShuffleState);
     getAutoplay().then(setAutoplayState);

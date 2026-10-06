@@ -556,6 +556,10 @@ export async function generatePlaylistV2(
   prompt: string,
   onStage?: (s: GenerationStageV2) => void,
   variant = 0,
+  /** Phase 6 — the sound-alike hunt source: the player's active track
+   *  seeds two extra hunts (its artist + its genre), so "make me a
+   *  playlist" quietly reads what's playing right now. */
+  opts?: { soundAlikeSeed?: Track | null },
 ): Promise<GeneratedPlaylistV2> {
   const t0 = Date.now();
   onStage?.({ phase: 'understanding', detail: 'Reading your vibe…' });
@@ -563,6 +567,19 @@ export async function generatePlaylistV2(
 
   onStage?.({ phase: 'hunting', detail: intent.artists.length ? `Digging through ${intent.artists.slice(0, 2).join(', ')}…` : 'Searching the catalog…' });
   const hunts = planHunts(intent);
+  // Phase 6 — the sound-alike hunts (bounded, deduped, honest).
+  const seed = opts?.soundAlikeSeed ?? null;
+  if (seed) {
+    const seedArtist = seed.artist.split(/,|&/)[0].trim();
+    if (seedArtist && !intent.artists.some((a) => a.toLowerCase() === seedArtist.toLowerCase())) {
+      hunts.push(seedArtist);
+    }
+    if (seed.genre && !hunts.includes(`${seed.genre} songs`)) {
+      hunts.push(`${seed.genre} songs`);
+    } else if (seed.language && !hunts.includes(`${seed.language} songs`)) {
+      hunts.push(`${seed.language} songs`);
+    }
+  }
   // S2 — parallel hunts, each contributing up to ~14 candidates.
   const results = await Promise.all(
     hunts.map((q, i) =>

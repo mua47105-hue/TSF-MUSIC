@@ -12,17 +12,26 @@ import { EventLedger } from './core/ledger';
 import { buildProfile, emptyProfile, topArtists } from './core/profile';
 import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory via metro redirect
 import { SessionBrain } from './core/session';
-import { estimateFeatures } from './core/features';
+import { estimateFeatures, calibrate, setLyricDeltaProvider } from './core/features';
+import { loadFeatureTable } from './core/featureTable';
+import { Bandit } from './core/bandit';
+import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
+import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
+import { recordingKeyOf } from './core/bakedKeys';
+import { LYRIC_MOOD, SEARCH_VIBE, SIMILARITY } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
-import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache } from '../storage/store';
+import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
 import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
 import { buildOnTheRise, type OnTheRiseCard } from './surfaces/ontherise';
+import { reasonLine } from './core/decision';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
+import { filterClean } from '../safety';
+import { reconcileRecordings } from '../api/recording';
 
 const CATALOG = {
   search: (q: string, limit = 20) => searchSaavnClean(q, limit),
@@ -46,6 +55,21 @@ class Mindbeat {
   private riseCache: { at: number; card: OnTheRiseCard | null } | null = null;
   private sessionCountAtBoot = 0;
   private disabled = false;
+  /** Phase 3 — the bandit (constructed cheap; hydrated POST-first-frame). */
+  readonly bandit: Bandit = new Bandit({
+    get: <T,>(key: string) => this.kvGet<T>(key),
+    set: <T,>(key: string, value: T) => this.kvSet<T>(key, value),
+  });
+  /** Phase 2/5 lazy-warm state. */
+  private warmStarted = false;
+  private warmDone: Promise<void> | null = null;
+  /** Tier-3 behavioral observations: trackId → recent (energy, completion). */
+  private observations = new Map<string, Array<{ energy: number; completion: number }>>();
+  /** Phase 5 — lyric mood deltas (recordingKey → ±0.25), kv-backed LRU. */
+  private lyricDeltas = new Map<string, number>();
+  private lyricDeltasLoaded = false;
+  /** Phase 6 — sound-alike cache (same stability class as On The Rise). */
+  private alikeCache: { at: number; seedKey: string; tracks: Track[] } | null = null;
 
   /** Boot: open store, recover, start session. Profile builds async after. */
   init(): Promise<void> {
@@ -76,6 +100,113 @@ class Mindbeat {
   /** Await boot readiness (idempotent) — surfaces call this first. */
   ready(): Promise<void> {
     return this.initPromise ?? Promise.resolve();
+  }
+
+  /**
+   * THE LAZY WARM (v4.2.0 law ⑦): everything heavy — the baked feature
+   * table (7MB JSON parse), the bandit hydration, the lyric-delta cache —
+   * happens HERE, after first paint, NEVER inside init(). Cold-start
+   * budget untouched. Safe to call multiple times.
+   */
+  warmHeavyTables(): Promise<void> {
+    if (this.warmDone) return this.warmDone;
+    if (!this.warmStarted) {
+      this.warmStarted = true;
+      setTimeout(() => void this.warmInner(), 300); // after first paint
+    }
+    return this.warmDone ?? Promise.resolve();
+  }
+
+  private async warmInner(): Promise<void> {
+    const run = (async () => {
+      // 1. the baked knowledge table (the parse-once → Map → release path)
+      await loadFeatureTable();
+      // 2. the bandit arms (kv read + eviction)
+      await this.bandit.hydrate();
+      // 3. the lyric-delta cache + its estimator provider
+      await this.hydrateLyricDeltas();
+      setLyricDeltaProvider((key) => this.lyricDeltas.get(key));
+      // 4. tier-3 observation feed for behavioral calibration
+      this.rebuildObservations();
+    })();
+    this.warmDone = run;
+    try {
+      await run;
+    } catch {
+      /* the warm path never blocks the app */
+    }
+    return run;
+  }
+
+  /** Bounded per-track observation summaries from the last rebuild. */
+  private rebuildObservations(): void {
+    const next = new Map<string, Array<{ energy: number; completion: number }>>();
+    void this.ledger
+      ?.getListens(90)
+      .then((listens) => {
+        for (const l of listens) {
+          const arr = next.get(l.trackId) ?? [];
+          if (arr.length < 8) arr.push({ energy: l.energy, completion: l.completionRatio });
+          next.set(l.trackId, arr);
+        }
+        if (next.size > 5000) {
+          // Potato rule ⑧: trim to the 5000 most recent tracks.
+          const keep = [...next.entries()].slice(-5000);
+          next.clear();
+          for (const [k, v] of keep) next.set(k, v);
+        }
+        this.observations = next;
+      })
+      .catch(() => undefined);
+  }
+
+  // ── Phase 5 — the lyric mood cache (kv LRU 1000 by recordingKey) ────
+
+  private async hydrateLyricDeltas(): Promise<void> {
+    if (this.lyricDeltasLoaded) return;
+    this.lyricDeltasLoaded = true;
+    try {
+      const stored = await this.kvGet<Record<string, number>>('lyricMoodCache');
+      if (stored) {
+        for (const [k, v] of Object.entries(stored)) {
+          if (typeof v === 'number') this.lyricDeltas.set(k, v);
+        }
+      }
+    } catch {
+      /* cache is an optimization */
+    }
+  }
+
+  /**
+   * The player lyric path calls this AFTER a fetch completes (off the
+   * critical path): score the words, cache the bounded delta. Fire-and-
+   * forget; failures are silent (the estimator just never sees a delta).
+   */
+  async noteLyricsFetched(track: { title: string; artist: string }, lyricsText: string): Promise<void> {
+    try {
+      const key = recordingKeyOf(track.title, track.artist.split(/,|&/)[0].trim());
+      if (!key || !lyricsText) return;
+      const delta = moodToValenceDelta(scoreLyrics(lyricsText));
+      if (delta == null) return;
+      // TRUE LRU: re-inserting moves the key to the tail of the Map's
+      // insertion order (touch-on-write — reads are plain gets and do not
+      // refresh); eviction drops the head.
+      this.lyricDeltas.delete(key);
+      this.lyricDeltas.set(key, delta);
+      if (this.lyricDeltas.size > LYRIC_MOOD.cacheCap) {
+        const excess = this.lyricDeltas.size - LYRIC_MOOD.cacheCap;
+        const oldest = [...this.lyricDeltas.keys()].slice(0, excess);
+        for (const k of oldest) this.lyricDeltas.delete(k);
+      }
+      // kv persistence is a full rewrite of the capped map (≤1000 floats
+      // ≈ 30KB, once per lyric FETCH — not per frame); the kv tech has no
+      // partial-write API, so this is the honest cost.
+      const out: Record<string, number> = {};
+      for (const [k, v] of this.lyricDeltas) out[k] = Math.round(v * 1000) / 1000;
+      await this.kvSet('lyricMoodCache', out);
+    } catch {
+      /* best-effort */
+    }
   }
 
   private rebuildChain: Promise<TasteProfile> = Promise.resolve(emptyProfile(0));
@@ -153,7 +284,11 @@ class Mindbeat {
 
   async trackStarted(track: Track, surface: SourceSurface): Promise<void> {
     if (!this.ledger || this.disabled) return;
-    const feats = estimateFeatures({ artist: track.artist, title: track.title, album: track.album });
+    // Tier-0..2 estimate, then tier-3 behavioral calibration on top
+    // (bounded ±0.05 for dataset/lyric sources — BAR 2.2 lives in calibrate).
+    let feats = estimateFeatures({ artist: track.artist, title: track.title, album: track.album });
+    const obs = this.observations.get(track.id);
+    if (obs?.length) feats = calibrate(feats, obs);
     await this.ledger.trackStarted(
       {
         trackId: track.id,
@@ -161,6 +296,7 @@ class Mindbeat {
         artistId: track.artistId,
         title: track.title,
         language: track.language,
+        genre: track.genre,
         year: track.year,
         durationMs: (track.duration || 210) * 1000,
         energy: feats.energy,
@@ -173,6 +309,11 @@ class Mindbeat {
     );
     if (track.isRecommended) {
       await this.ledger.recExposed(track.id, surface, 0, !!track.exploration);
+    }
+    // Phase 1 — lazy genre backfill: an old favorite row without a genre
+    // gets one the first time the track plays with a provider tag.
+    if (track.genre) {
+      void backfillFavoriteGenre(track.id, track.genre).catch(() => undefined);
     }
   }
 
@@ -188,11 +329,21 @@ class Mindbeat {
     this.ledger?.markPendingSkip();
   }
 
-  /** Finalize + fold the listen into the session brain (skip storms etc.). */
+  /** Finalize + fold the listen into the session brain (skip storms etc.)
+   *  + feed the bandit arm (Phase 3, single-owner finalization unchanged). */
   async trackFinished(userInitiated: boolean, cause: 'skip' | 'end' | 'jump' | 'background' = 'end'): Promise<void> {
     if (!this.ledger) return;
     const record = await this.ledger.finalizeTrack(userInitiated, cause);
     if (record && this.brain) this.brain.push(record);
+    if (record) {
+      this.bandit.observe(record);
+      void this.bandit.scheduleFlush().catch(() => undefined);
+      // Feed the tier-3 observation map (bounded per track).
+      const arr = this.observations.get(record.trackId) ?? [];
+      if (arr.length >= 8) arr.shift();
+      arr.push({ energy: record.energy, completion: record.completionRatio });
+      this.observations.set(record.trackId, arr);
+    }
   }
 
   async appBackground(): Promise<void> {
@@ -319,6 +470,11 @@ class Mindbeat {
     await this.kvSet('onboardingSeeds', artists);
     await this.kvSet('onboardingGenres', genres);
     await this.kvSet('onboardingSeedTs', Date.now());
+    // BAR 3.3 — cold-start bandit seeding: chosen artists get a trusted
+    // arm (α=3, β=1) so Day-1 Smart Shuffle/Radio surface them instead
+    // of burying them under uniform exploration.
+    for (const a of artists) this.bandit.seedArtist(a);
+    void this.bandit.scheduleFlush().catch(() => undefined);
     await this.rebuildProfile();
   }
 
@@ -380,6 +536,7 @@ class Mindbeat {
       session: this.brain?.state ?? new SessionBrain(Date.now()).state,
       now: Date.now(),
       listens: [] as ListenRecord[],
+      banditArms: this.bandit.snapshot(),
       onExposure: (trackId: string, surface: SourceSurface, rank: number, exploration: boolean) => {
         void this.ledger?.recExposed(trackId, surface, rank, exploration);
       },
@@ -466,6 +623,21 @@ class Mindbeat {
         /* honest empty */
       }
     }
+    // Phase 6 — the new BOTTOM rung: sound-alike from the seed. When the
+    // affinity pools are all dry, the tag-overlap engine still finds the
+    // neighborhood of what's playing (kill switch + honesty preserved).
+    if (!out.length && seed) {
+      try {
+        const rows = await this.soundAlike(seed, 3);
+        for (const t of rows) {
+          if (excludeIds.has(t.id) || out.some((x) => x.id === t.id)) continue;
+          out.push(t);
+          if (out.length >= 3) break;
+        }
+      } catch {
+        /* honest empty */
+      }
+    }
     return out;
   }
 
@@ -477,6 +649,153 @@ class Mindbeat {
       energy: this.brain?.sessionEnergy ?? 0,
       listens: state?.window.length ?? 0,
     };
+  }
+
+  // ── Phase 6 — SOUND ALIKE (the tag-overlap similarity engine) ────────
+
+  /**
+   * "Sounds like <seed>" — tracks sharing ≥2 tag dimensions (artist,
+   * genre, language, era, mood) with the seed, ranked by weighted tag
+   * overlap. Candidates come ONLY from the injected CatalogApi; the
+   * merged pool passes reconcileRecordings() BEFORE ranking (house law
+   * ⑨ / BAR 1.4 — one row per recording) and filterClean() (law ⑨).
+   * Kill switch + 7-day cache respected; empty pool ⇒ honest [].
+   */
+  async soundAlike(seed: Track, count = 8): Promise<Track[]> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return [];
+    const now = Date.now();
+    const seedKey = recordingKeyOf(seed.title, seed.artist.split(/,|&/)[0].trim()) || seed.id;
+    if (
+      !this.alikeCache ||
+      this.alikeCache.seedKey !== seedKey ||
+      now - this.alikeCache.at > SIMILARITY.cacheDays * 86400_000
+    ) {
+      const tracks = await this.buildSoundAlike(seed, seedKey, count);
+      if (tracks.length) this.alikeCache = { at: now, seedKey, tracks };
+      return tracks;
+    }
+    return this.alikeCache.tracks.slice(0, count);
+  }
+
+  private async buildSoundAlike(seed: Track, seedKey: string, count: number): Promise<Track[]> {
+    // ── The bounded candidate pool (60–120, never the world) ──
+    // Sourcing limits: 30 seed-artist + 4×16 neighborhood + 40 genre = 134
+    // requested; after id-dedup the practical ceiling sits ~115 (the
+    // neighborhood loop stops early at poolMin 60) — poolMax 120 is the
+    // hard backstop, not the everyday shape.
+    const pool: Track[] = [];
+    const push = (t: Track) => {
+      if (pool.length >= SIMILARITY.poolMax) return;
+      if (t.id === seed.id || t.id === `saavn-${seed.saavnId ?? ''}`) return;
+      if (pool.some((p) => p.id === t.id)) return;
+      pool.push(t);
+    };
+    try {
+      // The seed's artist — the strongest single pool.
+      const seedArtist = seed.artist.split(/,|&/)[0].trim();
+      if (seedArtist) {
+        const rows = await CATALOG.artistTracks(seedArtist, 30);
+        rows.forEach(push);
+      }
+    } catch {
+      /* pool keeps filling below */
+    }
+    try {
+      // Profile top artists — the taste neighborhood.
+      for (const { artist } of topArtists(this.profile, Date.now(), 4)) {
+        if (pool.length >= SIMILARITY.poolMin) break;
+        const rows = await CATALOG.artistTracks(artist, 16);
+        rows.forEach(push);
+      }
+    } catch {
+      /* honest partial pool */
+    }
+    try {
+      // Genre search — when the seed carries a provider genre (Phase 1).
+      if (seed.genre && pool.length < SIMILARITY.poolMax) {
+        const rows = await CATALOG.search(`${seed.genre} songs`, 40);
+        rows.forEach(push);
+      }
+    } catch {
+      /* honest partial pool */
+    }
+    if (!pool.length) return [];
+
+    // Law ⑨ — safety + one row per recording BEFORE ranking (BAR 1.4).
+    const clean = filterClean(reconcileRecordings(pool));
+    // Dedup against the seed by recording key (covers cross-id clones).
+    const seedTags: TagVector = tagVectorOf(seed);
+    const candidates = clean
+      .filter((t) => (recordingKeyOf(t.title, t.artist.split(/,|&/)[0].trim()) || t.id) !== seedKey)
+      .map((track) => ({ track, tags: tagVectorOf(track) }));
+    const picks = rankSoundAlike(seedTags, candidates, count);
+    const seedArtist = seed.artist.split(/,|&/)[0].trim();
+    return picks.map(({ track }) => ({
+      ...track,
+      isRecommended: true,
+      reasonCode: 'SOUND_ALIKE',
+      reason: reasonLine('SOUND_ALIKE', seedArtist),
+    }));
+  }
+
+  // ── BAR 3.7 — THE DYNAMIC FEED (the feed that reads the room) ────────
+
+  /**
+   * Dynamic song queries for the endless home feed: read from the
+   * profile's real genre/language affinities + the session vibe. Empty
+   * yield (cold start, kill switch) ⇒ the pager falls back to the
+   * legacy hardcoded ladder — byte-identical behavior.
+   */
+  feedSongQueries(): string[] {
+    if (this.disabled) return [];
+    const queries: string[] = [];
+    const vibe = this.brain?.state?.vibe ?? 'WARMUP';
+    const vibeWords: Record<string, string[]> = {
+      WIND_DOWN: ['lofi', 'soft', 'melancholy', 'unplugged'],
+      PEAK: ['party', 'workout', 'high energy'],
+      FLOW: ['hits', 'vibes'],
+      SKIP_STORM: ['calm', 'smooth'],
+    };
+    const moodWords = vibeWords[vibe] ?? [];
+    // Real genre affinities only (the __mood keys are internal buckets —
+    // they make terrible search queries and are excluded on purpose).
+    const genres = Object.entries(this.profile.genres)
+      .filter(([g, e]) => !g.startsWith('__') && e.w > 0.5)
+      .sort((a, b) => b[1].w - a[1].w)
+      .slice(0, 3)
+      .map(([g]) => g);
+    const langs = Object.entries(this.profile.languages)
+      .sort((a, b) => b[1].w - a[1].w)
+      .slice(0, 2)
+      .map(([l]) => l);
+    // The mind-reading combos: mood × genre × language.
+    for (const g of genres) {
+      if (moodWords.length) queries.push(`${moodWords[0]} ${g}`);
+      queries.push(`${g} songs`);
+    }
+    for (const l of langs) {
+      if (moodWords[1]) queries.push(`${moodWords[1]} ${l} songs`);
+      queries.push(`${l} ${vibe === 'PEAK' ? 'party' : 'hits'}`);
+    }
+    // Honest dedup + cap — the pager walks this as a ladder.
+    return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 12);
+  }
+
+  // ── BAR 3.8 — SESSION-AWARE SEARCH RANKING (the vibe aligner) ───────
+
+  /**
+   * The search ranker's vibe context: the session's target energy and
+   * the bonus ceiling. Null when the room gives no signal (WARMUP,
+   * cold start) — the ranker then behaves exactly as before.
+   */
+  searchVibeContext(): { targetEnergy: number; maxBonus: number } | null {
+    if (this.disabled) return null;
+    const vibe = this.brain?.state?.vibe;
+    if (!vibe) return null;
+    const target = SEARCH_VIBE.targetEnergy[vibe];
+    if (typeof target !== 'number') return null;
+    return { targetEnergy: target, maxBonus: SEARCH_VIBE.maxBonus };
   }
 
 

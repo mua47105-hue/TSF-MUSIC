@@ -112,7 +112,7 @@ export async function buildShuffleRecs(
       seedArtists,
       requested: plan.recCount + 2,
     },
-    { profile, session, now },
+    { profile, session, now, banditArms: ctx.banditArms },
     { excludeTrackIds: exclude, serveRecency },
   );
 

@@ -94,7 +94,7 @@ export async function buildRadioV2(
       seedArtists: [seed.artist, ...sessionArtists],
       requested: count,
     },
-    { profile, session, now },
+    { profile, session, now, banditArms: ctx.banditArms },
     { excludeTrackIds: exclude, serveRecency },
   );
 

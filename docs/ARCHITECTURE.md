@@ -10,7 +10,7 @@ flows through the app, and the contracts that keep the standalone promise
 │  SafeArea → Toast → PlayerProvider → DynamicTheme → Navigation     │
 │         (WhatsNewDialog + Onboarding overlay the stack)            │
 ├──────────────┬──────────────┬──────────────┬───────────────────────┤
-│  HomeScreen  │ SearchScreen │ LibraryScreen│ PremiumScreen         │
+│  HomeScreen  │ SearchScreen │ LibraryScreen│ WireScreen            │
 │              │              │              │   (bottom tabs)       │
 ├──────────────┴──────────────┴──────────────┴───────────────────────┤
 │  Stack screens: Player (modal) · Collection · Playlist · Stats ·   │
@@ -40,7 +40,7 @@ flows through the app, and the contracts that keep the standalone promise
 
 - **Providers** (outer→inner): `SafeAreaProvider` → `ToastProvider` →
   `PlayerProvider` → `DynamicThemeProvider` → `NavigationContainer`.
-- **Tabs** (`TabParamList`): Home / Search / Your Library / Premium —
+- **Tabs** (`TabParamList`): Home / Search / Your Library / Wire —
   a full-width pure-black 58px bottom bar (Spotify Android layout), with
   the `MiniPlayer` floating above it.
 - **Stack** (`RootStackParamList`): `Collection`, `Playlist`, `Stats`,
@@ -49,9 +49,9 @@ flows through the app, and the contracts that keep the standalone promise
   `Onboarding` (first-run flow) render above the navigator. Onboarding
   deliberately gates behind the What's-new dismissal so the two modals
   never stack.
-- **Fonts**: six Figtree weights (400–900) are loaded before first
-  render; a load failure falls back to the system font rather than
-  crashing.
+- **Fonts**: 13 fonts are loaded before first render — 6 Figtree weights
+  (400–900) plus 4 Archivo weights, ArchivoBlack, and 2 SpaceMono weights;
+  a load failure falls back to the system font rather than crashing.
 
 ## Data providers (`src/api/`)
 
