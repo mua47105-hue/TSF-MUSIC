@@ -188,6 +188,34 @@ export const GENRE_CAPTURE = {
   maxAffinityEntries: 40,
 } as const;
 
+// ── Lyric mood reading (GENIUS P5 — valence from words) ────────────────
+export const LYRIC_MOOD = {
+  /**
+   * Pre-blend bound on a lyric-derived valence delta. Lyrics are a hint,
+   * not truth — even a uniformly despairing lyric may move the estimate
+   * at most this far before the 0.6 blend shrinks the net effect.
+   */
+  maxDelta: 0.25,
+  /**
+   * Evidence blend: valence' = valence + blendWeight · delta. 0.6 = the
+   * per-song word evidence outweighs the prior guess it corrects, but
+   * the bounded delta keeps the NET shift ≤ ±0.15 — below the baked
+   * table's real numbers and behavioral calibration, which both win.
+   */
+  blendWeight: 0.6,
+  /**
+   * VADER means span roughly ±3 ("catastrophic" −2.7, "overwhelmed" 2.2);
+   * dividing by 3 maps them onto the same ±1 hint scale as the curated
+   * Hindi/Punjabi list before the average.
+   */
+  vaderScale: 3,
+  /** Hard cap on persisted per-song scores (LRU by ts) — 1000 rows ≈
+   *  60 KB kv worst case (potato-phone rule 8). */
+  maxEntries: 1000,
+  /** Debounce for the kv flush of new scores (same pattern as the bandit). */
+  flushDebounceMs: 15_000,
+} as const;
+
 // ── Directional flow memory (GENIUS P4 — knows what you play NEXT) ─────
 export const FLOW = {
   /** Per-node fan-out cap: the top-8 next-tracks a seed may remember.

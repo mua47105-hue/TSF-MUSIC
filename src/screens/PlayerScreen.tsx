@@ -266,6 +266,9 @@ export function PlayerScreen() {
           .filter((l) => l && !l.startsWith('['));
         if (lines.length) setLyricExcerpt(lines.slice(0, 3).join('\n'));
         else setLyricMiss(true); // stamp-only file = instrumental — honest miss
+        // GENIUS P5 — lyrics arrived: score their mood (bounded valence
+        // hint, post-fetch, fire-and-forget; kill-switched inside).
+        void mindbeat.absorbLyrics(active, lyrics);
       })
       .catch(() => undefined);
     fetchSyncedLyrics(active.title, active.artist, ctrl.signal)
@@ -274,6 +277,10 @@ export function PlayerScreen() {
         const parsed = parseLrc(raw);
         // a real timeline, not a fragment: <4 timed lines is not singable
         setSyncedLines(parsed.length >= 4 ? parsed : null);
+        // GENIUS P5 — the synced file carries the same words; if the plain
+        // fetch missed, this is the mood evidence path (absorb is idempotent
+        // per recording: the last write wins with identical inputs).
+        void mindbeat.absorbLyrics(active, raw);
       })
       .catch(() => undefined);
     return () => {

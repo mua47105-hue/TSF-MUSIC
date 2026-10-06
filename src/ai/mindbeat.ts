@@ -16,7 +16,15 @@ import { SessionBrain } from './core/session';
 import { estimateFeatures } from './core/features';
 import { loadFeatureTable } from './core/featureTable';
 import { updateArms, type BanditArms } from './core/bandit';
-import { BANDIT } from './core/constants';
+import {
+  hydrateLexicons,
+  loadScoresFromKV,
+  absorbScore,
+  scoresToKV,
+  lexiconsReady,
+  type LyricScore,
+} from './core/lyricMood';
+import { BANDIT, LYRIC_MOOD } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
 import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -105,6 +113,14 @@ class Mindbeat {
         if (arms && typeof arms === 'object') this.banditArms = arms;
       } catch {
         /* arms stay empty → the bandit term is 0 → legacy scoring */
+      }
+      // GENIUS P5 — lexicons + stored lyric scores hydrate post-paint.
+      try {
+        hydrateLexicons();
+        const kv = await this.kvGet<Record<string, LyricScore>>('lyricMood');
+        loadScoresFromKV(kv ?? null);
+      } catch {
+        /* no scores → every delta lookup misses → behavior unchanged */
       }
     };
     try {
@@ -288,6 +304,37 @@ class Mindbeat {
     }, BANDIT.flushDebounceMs);
   }
 
+  /**
+   * GENIUS P5 — absorb fetched lyrics: score the mood (bounded valence
+   * delta) and persist under the recording key. Fire-and-forget from the
+   * player's lyric path — never on a critical path; the kill switch
+   * blocks writes; a lexicon/asset failure degrades to a silent no-op.
+   */
+  async absorbLyrics(track: Track, text: string | null | undefined): Promise<void> {
+    if (this.disabled || !text || !lexiconsReady()) return;
+    try {
+      const score = absorbScore(text, track.title, track.artist);
+      if (!score) return;
+      this.lyricDirty = true;
+      this.scheduleLyricFlush();
+    } catch {
+      /* best-effort — lyrics are a hint */
+    }
+  }
+
+  private lyricDirty = false;
+  private lyricFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scheduleLyricFlush(): void {
+    if (this.lyricFlushTimer) clearTimeout(this.lyricFlushTimer);
+    this.lyricFlushTimer = setTimeout(() => {
+      this.lyricFlushTimer = null;
+      if (!this.lyricDirty) return;
+      this.lyricDirty = false;
+      void this.kvSet('lyricMood', scoresToKV());
+    }, LYRIC_MOOD.flushDebounceMs);
+  }
+
   async appBackground(): Promise<void> {
     // The in-flight listen is NOT finalized here — audio typically keeps
     // playing in the background and the service keeps feeding heartbeats;
@@ -299,6 +346,13 @@ class Mindbeat {
       if (this.banditFlushTimer) clearTimeout(this.banditFlushTimer);
       this.banditFlushTimer = null;
       void this.kvSet('banditArms', this.banditArms);
+    }
+    // GENIUS P5 — checkpoint pending lyric scores too.
+    if (this.lyricDirty) {
+      this.lyricDirty = false;
+      if (this.lyricFlushTimer) clearTimeout(this.lyricFlushTimer);
+      this.lyricFlushTimer = null;
+      void this.kvSet('lyricMood', scoresToKV());
     }
   }
 

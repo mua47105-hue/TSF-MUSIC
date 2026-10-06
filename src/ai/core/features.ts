@@ -16,10 +16,11 @@
  */
 
 import { ARTIST_PRIORS, GENRE_PRIORS, TITLE_RULES } from './priors';
-import { FEATURE_TABLE } from './constants';
+import { FEATURE_TABLE, LYRIC_MOOD } from './constants';
 import type { TempoClass, TrackFeatures } from './types';
 import { clamp } from './time';
 import { lookupBakedFeatures } from './featureTable';
+import { lyricDeltaFor } from './lyricMood';
 
 const DEFAULT_PRIOR = { energy: 0.5, valence: 0.5, tempo: 'mid' as TempoClass };
 
@@ -58,13 +59,16 @@ export function estimateFeatures(input: {
   // path below runs byte-identically to the pre-change engine.
   const baked = lookupBakedFeatures(input.title, input.artist);
   if (baked) {
-    return {
-      energy: baked.energy,
-      valence: baked.valence,
-      tempoClass: tempoFromClass(baked.energy),
-      confidence: FEATURE_TABLE.confidence,
-      source: 'dataset',
-    };
+    return blendLyricValence(
+      {
+        energy: baked.energy,
+        valence: baked.valence,
+        tempoClass: tempoFromClass(baked.energy),
+        confidence: FEATURE_TABLE.confidence,
+        source: 'dataset',
+      },
+      input,
+    );
   }
   const prior = priorEstimate(input.artist, input.genres);
   let energy = prior.energy;
@@ -78,13 +82,29 @@ export function estimateFeatures(input: {
       adjusted = true;
     }
   }
-  return {
-    energy: clamp(energy, 0, 1),
-    valence: clamp(valence, 0, 1),
-    tempoClass: tempoFromClass(energy),
-    confidence: clamp(prior.confidence + (adjusted ? 0.1 : 0), 0, 0.95),
-    source: adjusted ? 'metadata' : prior.source,
-  };
+  return blendLyricValence(
+    {
+      energy: clamp(energy, 0, 1),
+      valence: clamp(valence, 0, 1),
+      tempoClass: tempoFromClass(energy),
+      confidence: clamp(prior.confidence + (adjusted ? 0.1 : 0), 0, 0.95),
+      source: adjusted ? 'metadata' : prior.source,
+    },
+    input,
+  );
+}
+
+/**
+ * GENIUS P5 — the lyric-mood blend: VALENCE ONLY, bounded, and only when
+ * the recording actually has a stored lyric score. Net shift ≤ ±0.15
+ * (0.6 × ±0.25); energy NEVER moves. No stored score → the estimate is
+ * returned untouched (byte-identical). Calibration still applies on top
+ * afterward and wins over time — lyrics sit BELOW it, as ordered.
+ */
+function blendLyricValence(f: TrackFeatures, input: { title?: string; artist?: string }): TrackFeatures {
+  const delta = lyricDeltaFor(input.title, input.artist);
+  if (delta == null || delta === 0) return f;
+  return { ...f, valence: clamp(f.valence + LYRIC_MOOD.blendWeight * delta, 0, 1) };
 }
 
 export function tempoFromClass(energy: number): TempoClass {
