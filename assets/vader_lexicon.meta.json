@@ -1,0 +1,11 @@
+{
+  "source": "VADER lexicon (Hutto & Gilbert, MIT) \u2014 github.com/cjhutto/vaderSentiment",
+  "words": 5580,
+  "droppedWeakest": 1675,
+  "weakestKeptAbsScore": 1.0,
+  "prunes": [
+    "unmatchable punctuation/emoticon tokens",
+    "weakest-magnitude tail to fit the 100 KB law"
+  ],
+  "precision": 2
+}

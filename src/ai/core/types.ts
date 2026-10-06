@@ -117,7 +117,8 @@ export interface TrackFeatures {
   tempoClass: TempoClass;
   /** 0..1 — how much of this estimate is prior vs observed behavior. */
   confidence: number;
-  source: 'prior' | 'metadata' | 'calibrated';
+  /** GENIUS P2: 'dataset' = real baked Spotify audio features. */
+  source: 'prior' | 'metadata' | 'calibrated' | 'dataset';
 }
 
 // ── Taste Profile (Appendix B) ──────────────────────────────────────────

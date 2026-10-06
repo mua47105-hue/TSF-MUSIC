@@ -16,8 +16,10 @@
  */
 
 import { ARTIST_PRIORS, GENRE_PRIORS, TITLE_RULES } from './priors';
+import { FEATURE_TABLE } from './constants';
 import type { TempoClass, TrackFeatures } from './types';
 import { clamp } from './time';
+import { lookupBakedFeatures } from './featureTable';
 
 const DEFAULT_PRIOR = { energy: 0.5, valence: 0.5, tempo: 'mid' as TempoClass };
 
@@ -48,6 +50,22 @@ export function estimateFeatures(input: {
   album?: string;
   genres?: string[];
 }): TrackFeatures {
+  // GENIUS P2 — tier 0: REAL baked audio features. When the recording is in
+  // the shipped table, its measured (energy, valence) beats every guess:
+  // no title-rule adjustment (the number is not a guess), tempoClass from
+  // the real energy, confidence FEATURE_TABLE.confidence, source
+  // 'dataset'. Table not loaded / recording absent → null → the legacy
+  // path below runs byte-identically to the pre-change engine.
+  const baked = lookupBakedFeatures(input.title, input.artist);
+  if (baked) {
+    return {
+      energy: baked.energy,
+      valence: baked.valence,
+      tempoClass: tempoFromClass(baked.energy),
+      confidence: FEATURE_TABLE.confidence,
+      source: 'dataset',
+    };
+  }
   const prior = priorEstimate(input.artist, input.genres);
   let energy = prior.energy;
   let valence = prior.valence;

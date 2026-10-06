@@ -14,6 +14,7 @@ import { GENRE_CAPTURE } from './core/constants';
 import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory via metro redirect
 import { SessionBrain } from './core/session';
 import { estimateFeatures } from './core/features';
+import { loadFeatureTable } from './core/featureTable';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { Track, WeeklyCrate } from '../types';
 import { getFavorites, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -67,6 +68,7 @@ class Mindbeat {
         if (snapshot && snapshot.builtAt) this.profile = snapshot;
         this.listeners.forEach((fn) => fn(this.profile));
         void this.rebuildProfile();
+        this.warmAssets(); // GENIUS P2 — post-paint, never blocks boot
       } catch {
         // Intelligence layer must never block the app (fallback ladder §10.4).
         this.ledger = null;
@@ -78,6 +80,31 @@ class Mindbeat {
   /** Await boot readiness (idempotent) — surfaces call this first. */
   ready(): Promise<void> {
     return this.initPromise ?? Promise.resolve();
+  }
+
+  /**
+   * GENIUS P2 — warm the lazy intelligence assets AFTER first paint.
+   * Nothing here may touch the cold-start budget (house rule 7): the
+   * loader is deferred until interactions settle, runs async, and a
+   * failure only means the feature lookups miss into the priors path.
+   * InteractionManager resolves lazily (the bun test shim lacks it) with
+   * a plain post-turn timer as the fallback — still off the boot path.
+   */
+  private warmAssets(): void {
+    const warm = () => {
+      void loadFeatureTable().catch(() => undefined);
+    };
+    try {
+      // Lazy require — a top-level named import breaks non-RN environments.
+      const { InteractionManager } = require('react-native');
+      if (InteractionManager?.runAfterInteractions) {
+        InteractionManager.runAfterInteractions(warm);
+        return;
+      }
+    } catch {
+      /* fall through to the timer */
+    }
+    setTimeout(warm, 0);
   }
 
   private rebuildChain: Promise<TasteProfile> = Promise.resolve(emptyProfile(0));

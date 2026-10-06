@@ -188,6 +188,24 @@ export const GENRE_CAPTURE = {
   maxAffinityEntries: 40,
 } as const;
 
+// ── Baked feature table (GENIUS P2 — the biggest intelligence jump) ────
+export const FEATURE_TABLE = {
+  /**
+   * Confidence for REAL Spotify audio features baked into the app.
+   * Above cultural priors (0.7 artist / 0.5 genre / 0.25 default) because
+   * measured truth beats curated guesses; below the behavioral-calibration
+   * ceiling (0.85) because the listener's own graded history still wins
+   * over time (calibrate() pulls dataset values toward observed outcomes).
+   */
+  confidence: 0.8,
+  /**
+   * Gzip ceiling law for assets/baked_features.json — enforced by the
+   * bake script (fails loudly) and asserted in tests. 2.5 MB keeps the
+   * APK delta acceptable and the post-paint parse ~1-2 s on potato phones.
+   */
+  gzipCeilingBytes: 2_621_440,
+} as const;
+
 // ── Profile normalization (§6.2) ────────────────────────────────────────
 export const NORMALIZATION = {
   topArtistRead: 10,
