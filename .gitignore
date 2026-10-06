@@ -24,3 +24,8 @@ screenshots/
 download/*.apk
 download/_apk_audit/
 .evolve/
+
+# GENIUS: dataset downloads stay on disk, never in the repo
+# (the 2.3M-row parquet is 160MB — busts GitHub's 100MB file limit)
+scripts/data/
+
