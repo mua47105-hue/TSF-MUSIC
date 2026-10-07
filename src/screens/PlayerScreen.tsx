@@ -9,7 +9,7 @@
  *   pills. One PanResponder, no blur, no loops — 60fps-light.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -54,7 +54,8 @@ import {
 } from '../player/smartVolume';
 import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
-import { CROSSFADE, FOCUS, CINEMA } from '../ai/core/constants';
+import { CROSSFADE, FOCUS, CINEMA, BOOKMARKS } from '../ai/core/constants';
+import { classifyPress } from '../player/bookmarks';
 import {
   applyMetaOverride,
   getMetaOverridesSync,
@@ -72,6 +73,7 @@ import {
 } from '../player/focus';
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
+import { getAppTables, contentKeyOf } from '../storage/appTables';
 import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
@@ -108,20 +110,55 @@ function ProgressBar({
   position,
   scrubbing,
   scrubValue,
+  bookmarks,
   onScrubStart,
   onScrubMove,
   onScrubEnd,
+  onScrubCancel,
+  onBookmarkSave,
+  onBookmarkDelete,
 }: {
   duration: number;
   position: number;
   scrubbing: boolean;
   scrubValue: number;
+  /** MAGNUM OPUS F7 — saved positions (seconds), rendered as dots. */
+  bookmarks: number[];
   onScrubStart: () => void;
   onScrubMove: (sec: number) => void;
   onScrubEnd: (sec: number) => void;
+  /** a long-press (save/delete) consumed the gesture — reset, never seek */
+  onScrubCancel: () => void;
+  onBookmarkSave: (sec: number) => void;
+  onBookmarkDelete: (sec: number) => void;
 }) {
   const widthRef = useRef(1);
   const ratio = duration > 0 ? Math.min(1, (scrubbing ? scrubValue : position) / duration) : 0;
+
+  // F7 gesture memory: press start time + travel, so classifyPress (pure,
+  // locked in tests/wave2_bookmarks_locks.test.ts) can separate the three
+  // gestures: quick tap = seek (or jump when on a dot), drag = scrub,
+  // press-and-hold = bookmark save (or delete when held ON the dot itself).
+  // Radii live in constants.ts (law ④): JUMP is generous (non-destructive),
+  // DELETE is the visible dot only (the blind critic's P1 — a wide
+  // destructive radius made "hold near a bookmark" erase it).
+  const grantTsRef = useRef(0);
+  const startXRef = useRef(0);
+  const travelRef = useRef(0);
+  const nearestBookmark = (xPx: number, hitPx: number): number | null => {
+    const w = widthRef.current || 1;
+    let best: number | null = null;
+    let bestDist = hitPx;
+    for (const sec of bookmarks) {
+      const dotX = (Math.min(1, sec / Math.max(1, duration))) * w;
+      const d = Math.abs(dotX - xPx);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = sec;
+      }
+    }
+    return best;
+  };
 
   const pan = useMemo(
     () =>
@@ -129,22 +166,53 @@ function ProgressBar({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => {
+          grantTsRef.current = Date.now();
+          startXRef.current = e.nativeEvent.pageX;
+          travelRef.current = 0;
           onScrubStart();
           const w = widthRef.current || 1;
           onScrubMove(Math.max(0, Math.min(1, e.nativeEvent.locationX / w)) * duration);
         },
         onPanResponderMove: (e) => {
+          travelRef.current = Math.max(travelRef.current, Math.abs(e.nativeEvent.pageX - startXRef.current));
           const w = widthRef.current || 1;
           onScrubMove(Math.max(0, Math.min(1, e.nativeEvent.locationX / w)) * duration);
         },
         onPanResponderRelease: (e) => {
           const w = widthRef.current || 1;
-          onScrubEnd(Math.max(0, Math.min(1, e.nativeEvent.locationX / w)) * duration);
+          const xPx = Math.max(0, Math.min(w, e.nativeEvent.locationX));
+          const sec = (xPx / w) * duration;
+          const heldMs = Date.now() - grantTsRef.current;
+          const verdict = classifyPress(heldMs, travelRef.current);
+          if (verdict === 'bookmark') {
+            // the hold landed ON an existing dot (narrow destructive radius)
+            // → DELETE it; anywhere else → SAVE a new bookmark there
+            const hit = nearestBookmark(xPx, BOOKMARKS.dotDeletePx);
+            if (hit != null) onBookmarkDelete(hit);
+            else onBookmarkSave(sec);
+            onScrubCancel(); // the gesture was a bookmark op, never a seek
+            return;
+          }
+          // quick tap near a dot → jump to the BOOKMARK (snapped) position
+          const tapHit = travelRef.current <= BOOKMARKS.moveTolerancePx ? nearestBookmark(xPx, BOOKMARKS.dotHitPx) : null;
+          if (tapHit != null) {
+            onScrubMove(tapHit);
+            onScrubEnd(tapHit);
+            return;
+          }
+          onScrubEnd(sec);
         },
-        onPanResponderTerminate: () => onScrubEnd(scrubValue),
+        onPanResponderTerminate: () => {
+          // a system-stolen gesture (back swipe, overlay) must never commit
+          // a scrub that never happened: a held-still press was a bookmark
+          // intent — cancel honestly instead of seeking (blind-critic P2)
+          const heldMs = Date.now() - grantTsRef.current;
+          if (classifyPress(heldMs, travelRef.current) === 'bookmark') onScrubCancel();
+          else onScrubEnd(scrubValue);
+        },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [duration],
+    [duration, bookmarks],
   );
 
   return (
@@ -155,7 +223,7 @@ function ProgressBar({
       }}
       {...pan.panHandlers}
     >
-      <View style={styles.barTrack}>
+      <View style={styles.barTrack} testID="progress-bar">
         {/* the fill: acid with hard ink stripes (the prototype's hatch) */}
         <View style={[styles.barFillWrap, { width: `${ratio * 100}%` }]}>
           <View style={styles.barFillStripes}>
@@ -164,6 +232,12 @@ function ProgressBar({
             ))}
           </View>
         </View>
+        {/* F7 — the bookmark dots (visual only; the parent pan responder
+            owns every touch: tap near a dot jumps, hold on it deletes) */}
+        {bookmarks.map((sec) => {
+          const dotRatio = duration > 0 ? Math.min(1, sec / duration) : 0;
+          return <View key={`bm-${sec}`} style={[styles.bookmarkDot, { left: `${dotRatio * 100}%` }]} />;
+        })}
       </View>
     </View>
   );
@@ -205,6 +279,59 @@ export function PlayerScreen() {
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubValue, setScrubValue] = useState(0);
   const duration = liveDuration > 0 ? liveDuration : active?.duration ?? 0;
+
+  // MAGNUM OPUS F7 — the track's audio bookmarks (recordingKey-keyed),
+  // loaded off the paint path; the bar renders dots + handles gestures.
+  // A request-id guard drops stale responses (a slow list() for the
+  // PREVIOUS track must never paint its dots on this track).
+  const [bookmarks, setBookmarks] = useState<number[]>([]);
+  const bookmarkReqRef = useRef(0);
+  const reloadBookmarks = useCallback(async () => {
+    const req = ++bookmarkReqRef.current;
+    if (!active?.title || !active?.artist) {
+      setBookmarks([]);
+      return;
+    }
+    try {
+      const tables = await getAppTables();
+      const rows = await tables.bookmarks.list(contentKeyOf(active));
+      if (req === bookmarkReqRef.current) setBookmarks(rows.map((b) => b.positionMs / 1000));
+    } catch {
+      if (req === bookmarkReqRef.current) setBookmarks([]);
+    }
+  }, [active?.title, active?.artist]);
+  useEffect(() => {
+    void reloadBookmarks();
+  }, [reloadBookmarks]);
+  const saveBookmarkAt = useCallback(
+    async (sec: number) => {
+      if (!active) return;
+      try {
+        const tables = await getAppTables();
+        await tables.bookmarks.add(contentKeyOf(active), sec * 1000, '', Date.now());
+        await reloadBookmarks();
+        toast.show({ message: `BOOKMARK · ${fmt(sec)}`, icon: 'bookmarks-outline' });
+      } catch {
+        toast.show({ message: 'COULD NOT SAVE THE BOOKMARK', icon: 'alert-outline' });
+      }
+    },
+    [active, reloadBookmarks, toast],
+  );
+  const deleteBookmarkAt = useCallback(
+    async (sec: number) => {
+      if (!active) return;
+      try {
+        const tables = await getAppTables();
+        const id = `${contentKeyOf(active)}:${Math.round(sec)}`;
+        await tables.bookmarks.remove(id);
+        await reloadBookmarks();
+        toast.show({ message: 'BOOKMARK REMOVED', icon: 'remove-outline' });
+      } catch {
+        /* best-effort */
+      }
+    },
+    [active, reloadBookmarks, toast],
+  );
 
   const [showQueue, setShowQueue] = useState(false);
   const [showSleep, setShowSleep] = useState(false);
@@ -364,6 +491,26 @@ export function PlayerScreen() {
 
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
+
+  // MAGNUM OPUS F6 — the Song Story for the playing recording, keyed by
+  // recordingKey (portable across sources), rendered as the italic line
+  // below the lyrics. Empty state renders NOTHING — a player is not the
+  // place to nag about the memories a song does not have.
+  const [story, setStory] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setStory(null);
+    if (!active?.title || !active?.artist) return undefined;
+    getAppTables()
+      .then((t) => t.stories.getStory(contentKeyOf(active)))
+      .then((s) => {
+        if (!cancelled && s?.text) setStory(s.text);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [trackKey]);
 
   // MAGNUM OPUS F4 — the cinema flight: a row tap armed an art flight;
   // the player consumes it on mount (one retry covers a lost frame) and
@@ -662,6 +809,7 @@ export function PlayerScreen() {
             position={position}
             scrubbing={scrubbing}
             scrubValue={scrubValue}
+            bookmarks={bookmarks}
             onScrubStart={() => {
               setScrubbing(true);
               setScrubValue(position);
@@ -671,6 +819,9 @@ export function PlayerScreen() {
               setScrubbing(false);
               void seek(sec);
             }}
+            onScrubCancel={() => setScrubbing(false)}
+            onBookmarkSave={(sec) => void saveBookmarkAt(sec)}
+            onBookmarkDelete={(sec) => void deleteBookmarkAt(sec)}
           />
           <View style={styles.times}>
             <MonoText size={10} color={colors.ink60}>
@@ -767,6 +918,15 @@ export function PlayerScreen() {
                   ? 'NO LYRICS FILED · INSTRUMENTAL OR OFF-DESK — TAP TO RETRY'
                   : 'FETCHING FROM THE LYRICS DESK…'}
           </MonoText>
+          {/* MAGNUM OPUS F6 — the Song Story: an italic memory line under
+              the lyrics. Honest empty state = renders nothing at all. */}
+          {story ? (
+            <View style={styles.storyWrap} testID="song-story-line">
+              <Text style={styles.storyText} numberOfLines={4}>
+                “{story}”
+              </Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
       )}
@@ -1183,6 +1343,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper2,
     overflow: 'hidden',
   },
+  bookmarkDot: {
+    position: 'absolute',
+    top: 1,
+    bottom: 1,
+    width: 6,
+    marginLeft: -3,
+    backgroundColor: colors.orange,
+    borderWidth: 1,
+    borderColor: colors.ink,
+  },
   barFillWrap: {
     position: 'absolute',
     left: 0,
@@ -1251,6 +1421,19 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     backgroundColor: colors.paper2,
     padding: 13,
+  },
+  storyWrap: {
+    marginTop: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.orange,
+    paddingLeft: 10,
+  },
+  storyText: {
+    fontStyle: 'italic',
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.ink78,
+    fontFamily: fonts.regular,
   },
   lyricsLine: {
     color: colors.ink,

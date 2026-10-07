@@ -17,6 +17,7 @@
  */
 
 import type { LedgerEvent, ListenRecord, SessionRecord } from './types';
+import type { HistoricalDay } from './historical';
 
 export interface LedgerStore {
   /** Append raw events (batched by the ledger's write chain). */
@@ -39,6 +40,19 @@ export interface LedgerStore {
 
   getKV<T>(key: string): Promise<T | null>;
   setKV<T>(key: string, value: T): Promise<void>;
+
+  // ── F9 · historical_summary (OPTIONAL methods) ────────────────────────
+  // The Time Machine's own table. These are ADDITIVE to the contract:
+  // the events/listens/sessions tables and their behaviors are untouched
+  // (sacred-ground law L1). Implementations that predate F9 simply omit
+  // them and the ledger skips the fold (honest degradation).
+
+  /** Upsert one day summary (keyed by dayKey). */
+  upsertHistoricalDay?(day: HistoricalDay): Promise<void>;
+  /** Day summaries with dayStartTs ≥ sinceTs, oldest first. */
+  getHistoricalDays?(sinceTs?: number): Promise<HistoricalDay[]>;
+  /** Retention: drop summaries older than the cutoff, return count removed. */
+  deleteHistoricalDaysBefore?(cutoffTs: number): Promise<number>;
 
   /** Close + (for sqlite) checkpoint. Safe to call repeatedly. */
   close(): Promise<void>;

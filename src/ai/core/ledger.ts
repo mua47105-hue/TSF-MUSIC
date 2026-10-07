@@ -15,12 +15,15 @@
 
 import {
   HEARTBEAT_SECONDS,
+  HISTORY,
   RETENTION,
   SESSION,
   SKIP_THRESHOLDS,
 } from './constants';
 import type { LedgerStore } from './store';
 import type { LedgerEvent, ListenRecord, ReasonCode, SessionRecord, SourceSurface } from './types';
+import type { HistoricalDay } from './historical';
+import { dayStartOf, foldEventsIntoDays, type TrackMeta } from './historical';
 import { blockOf, dayKindOf } from './time';
 
 export interface TrackStartMeta {
@@ -179,23 +182,100 @@ export class EventLedger {
     };
   }
 
-  /** First-open-of-day compaction + hard cap (§5.4). */
+  /** First-open-of-day compaction + hard cap (§5.4).
+   *
+   *  F9 · TIME MACHINE (sacred-ground laws L1–L4): BEFORE the old events
+   *  are deleted, the doomed events are folded into `historical_summary`
+   *  (a NEW table — the events table, its ids and the 90-day behavior
+   *  stay byte-identical) and the summary's own 3-year retention runs in
+   *  the SAME pass. When the store predates F9 (no historical methods)
+   *  the fold is skipped and deletion behaves exactly as before. */
   async maybeCompact(): Promise<void> {
     const today = new Date(this.now()).toDateString();
     if (today === this.lastCompactionDay) return;
     this.lastCompactionDay = today;
     try {
       const now = this.now();
-      await this.store.deleteEventsBefore(now - RETENTION.rawEventDays * 86400_000);
+      const cutoff = now - RETENTION.rawEventDays * 86400_000;
+      await this.foldDoomedEventsIntoHistory(cutoff); // L2: BEFORE delete, same pass
+      await this.store.deleteEventsBefore(cutoff);
       const count = await this.store.countEvents();
       if (count > RETENTION.maxRawEvents) {
         // Hard cap: keep the newest (max - compactBatch) events.
         const events = await this.store.getEvents();
         const keepFrom = events[Math.max(0, events.length - (RETENTION.maxRawEvents - RETENTION.compactBatch))];
-        if (keepFrom) await this.store.deleteEventsBefore(keepFrom.ts);
+        if (keepFrom) {
+          await this.foldDoomedEventsIntoHistory(keepFrom.ts); // hard-cap eviction folds too
+          await this.store.deleteEventsBefore(keepFrom.ts);
+        }
+      }
+      // L3 — the summary's own retention, same pass.
+      if (this.store.deleteHistoricalDaysBefore) {
+        await this.store
+          .deleteHistoricalDaysBefore(now - HISTORY.retentionDays * 86400_000)
+          .catch(() => undefined);
       }
     } catch {
       /* compaction failures are non-fatal */
+    }
+  }
+
+  /**
+   * F9 — fold the events about to be deleted (ts < cutoffTs) into
+   * historical_summary. Additive + best-effort: a fold failure NEVER
+   * blocks deletion (compaction must always proceed).
+   *
+   * IDEMPOTENCY (blind-critic P1): a persisted KV watermark marks how
+   * far the fold has processed, written BEFORE the fold itself. A crash
+   * after the watermark can therefore LOSE those days from the summary
+   * (honest absence — "not enough history yet") but can never fold them
+   * TWICE (fabricated minutes — the anti-hallucination trade, law ⑰:
+   * never fabricate). Without it, a crash between fold and delete would
+   * double-count the same events on the next pass.
+   */
+  private async foldDoomedEventsIntoHistory(cutoffTs: number): Promise<void> {
+    try {
+      if (!this.store.upsertHistoricalDay || !this.store.getHistoricalDays) return; // pre-F9 store
+      const WATERMARK = 'historical.foldedThroughTs';
+      const prevWatermark = (await this.store.getKV<number>(WATERMARK)) ?? 0;
+      const doomed = (await this.store.getEvents()).filter((e) => e.ts < cutoffTs && e.ts > prevWatermark);
+      if (!doomed.length) return;
+      // declare intent BEFORE folding (monotonic raise — the hard-cap
+      // pass can run after the 90-day pass in the same compaction)
+      const newWatermark = Math.max(prevWatermark, cutoffTs - 1);
+      await this.store.setKV(WATERMARK, newWatermark);
+      // P0 (blind critic): the event stream carries artistId, never the
+      // artist NAME — resolve names from the listens table (retained
+      // 180d, so listens for 90d-doomed events always exist here).
+      const meta = new Map<string, TrackMeta>();
+      try {
+        const listens = await this.store.getlistens(doomed[0].ts);
+        for (const l of listens) {
+          if (!l.trackId) continue;
+          const cur = meta.get(l.trackId) ?? {};
+          if (!cur.artist && l.artist) cur.artist = l.artist;
+          if (!cur.title && l.title) cur.title = l.title;
+          meta.set(l.trackId, cur);
+        }
+      } catch {
+        /* a listen-join failure degrades to the honest Unknown, never blocks */
+      }
+      const existingRows = await this.store.getHistoricalDays();
+      const existingByDay = new Map<string, HistoricalDay>();
+      for (const row of existingRows) {
+        // only merge rows whose day could overlap the doomed window
+        if (row.dayStartTs >= dayStartOf(doomed[0].ts) && row.dayStartTs <= dayStartOf(doomed[doomed.length - 1].ts)) {
+          existingByDay.set(row.dayKey, row);
+        }
+      }
+      const folded = foldEventsIntoDays(doomed, existingByDay, HISTORY.topN, meta);
+      for (const day of folded.values()) {
+        if (existingByDay.has(day.dayKey) || day.streams > 0) {
+          await this.store.upsertHistoricalDay(day);
+        }
+      }
+    } catch {
+      /* the fold never blocks compaction */
     }
   }
 

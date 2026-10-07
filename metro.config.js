@@ -32,6 +32,9 @@ const WEB_PATH_REDIRECTS = [
   // MINDBEAT: the SQLite ledger store has no web build — the in-memory
   // store exports the same createLedgerStore() signature (harness parity).
   { suffix: path.join('src', 'ai', 'core', 'storeSqlite.ts'), to: path.join(projectRoot, 'src/ai/core/storeMemory.ts') },
+  // MAGNUM OPUS: the app-content tables (stories/bookmarks/memory tags/
+  // session snapshots) swap SQLite for Maps on web (house rule ⑮ parity).
+  { suffix: path.join('src', 'storage', 'appTables.ts'), to: path.join(projectRoot, 'src/webmocks/appTables.ts') },
 ];
 
 module.exports = (async () => {

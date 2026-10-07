@@ -12,7 +12,7 @@
  * §10.4 — never emptier than before).
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +21,10 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ListeningStats } from '../types';
 import { getStats } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
+import { computeRadarAxesKey, radarShareText, type RadarAxes } from '../ai/radar';
+import { RadarChart } from '../components/RadarChart';
+import type { HistoricalDay } from '../ai/core/historical';
+import { shareWrappedNow } from '../share/share';
 import { RewindCards, RewindEmpty, RewindUnavailable } from '../components/RewindCards';
 import type { WrappedSummary } from '../ai/wrapped';
 import { usePlayer } from '../player/PlayerProvider';
@@ -49,6 +53,11 @@ function fmtMinutes(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** All-zero axes = nothing streamed — the honest cold caption. */
+function radarIsEmpty(axes: RadarAxes): boolean {
+  return computeRadarAxesKey(axes) === '0|0|0|0|0|0';
 }
 
 function ListeningClock({ byHour }: { byHour: number[] }) {
@@ -90,6 +99,13 @@ export function StatsScreen() {
     | { state: 'unavailable' }
     | { state: 'summary'; summary: WrappedSummary }
   >({ state: 'loading' });
+  // MAGNUM OPUS F8 — the Taste Radar (null = ledger unavailable; the
+  // all-zero case renders the honest cold caption, never a fake shape).
+  const [radar, setRadar] = useState<RadarAxes | null>(null);
+  const radarRef = useRef<View | null>(null);
+  const [radarSharing, setRadarSharing] = useState(false);
+  // MAGNUM OPUS F9 — Time Machine (null = honest "not enough history yet").
+  const [timeMachine, setTimeMachine] = useState<HistoricalDay | null | 'loading'>('loading');
 
   useEffect(() => {
     (async () => {
@@ -136,6 +152,16 @@ export function StatsScreen() {
         .wrapped(30)
         .then((w) => setRewind(w ? { state: 'summary', summary: w } : { state: 'empty' }))
         .catch(() => setRewind({ state: 'unavailable' }));
+      // MAGNUM OPUS F8/F9 — radar + time machine load alongside (both
+      // off the paint path, both honest on null)
+      mindbeat
+        .radarAxes()
+        .then((axes) => setRadar(axes))
+        .catch(() => setRadar(null));
+      mindbeat
+        .thisDayLastYear()
+        .then((d) => setTimeMachine(d))
+        .catch(() => setTimeMachine(null));
       // resolve REAL artist photos for the top rows (seed cache → live
       // lookup, cached); photo-less artists keep the initials stamp.
       merged.topArtists.slice(0, 8).forEach((a) => {
@@ -241,6 +267,83 @@ export function StatsScreen() {
               </View>
             ) : null}
           </View>
+
+          {/* MAGNUM OPUS F8 — the Taste Radar: six axes over the listener's
+              own graded listens. Static render (nothing animates → the
+              reduce-motion intent is honored by construction). */}
+          <View style={styles.radarCard}>
+            <View style={styles.radarHead}>
+              <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                TASTE RADAR
+              </MonoText>
+              {radar && !radarIsEmpty(radar) ? (
+                <Pressable
+                  hitSlop={8}
+                  disabled={radarSharing}
+                  onPress={() => {
+                    if (radarSharing) return;
+                    setRadarSharing(true);
+                    // the EXISTING share pipeline: card capture on native,
+                    // honest text fallback elsewhere/offline
+                    shareWrappedNow(radarRef, radarShareText(radar))
+                      .catch(() => undefined)
+                      .finally(() => setRadarSharing(false));
+                  }}
+                >
+                  <MonoText size={9} bold color={colors.ink60} style={{ letterSpacing: 1.6 }}>
+                    {radarSharing ? 'SHARING…' : 'SHARE'}
+                  </MonoText>
+                </Pressable>
+              ) : null}
+            </View>
+            {radar && !radarIsEmpty(radar) ? (
+              <View ref={radarRef} collapsable={false}>
+                <RadarChart axes={radar} />
+                <MonoText size={8.5} color={colors.ink40} style={styles.radarFoot}>
+                  {`ENERGY · VIBE · RANGE · FINDS · LOYALTY · ERAS — FROM ${stats.streams} COUNTED STREAMS`}
+                </MonoText>
+              </View>
+            ) : (
+              <MonoText size={10} color={colors.ink60} style={styles.radarEmpty}>
+                {radar == null
+                  ? 'THE LEDGER IS UNAVAILABLE — THE RADAR SITS THIS ONE OUT'
+                  : 'PLAY SOME MUSIC (30 SECONDS +) AND THE RADAR TAKES SHAPE'}
+              </MonoText>
+            )}
+          </View>
+
+          {/* MAGNUM OPUS F9 — Time Machine: this day in a prior year, from
+              the compaction pass's own summary table. null renders the
+              honest "not enough history yet" — never fabricated nostalgia. */}
+          {timeMachine === 'loading' ? null : (
+            <View style={styles.tmCard} testID="time-machine-card">
+              <View style={styles.tmHead}>
+                <Ionicons name="time-outline" size={14} color={colors.orange} />
+                <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                  TIME MACHINE
+                </MonoText>
+              </View>
+              {timeMachine ? (
+                <>
+                  <Text style={styles.tmTitle}>
+                    {`${new Date(timeMachine.dayStartTs).getFullYear()} · ${new Date(timeMachine.dayStartTs).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`}
+                  </Text>
+                  <MonoText size={9.5} color={colors.ink60} style={{ marginTop: 4, letterSpacing: 0.6 }}>
+                    {`${fmtMinutes(Math.round(timeMachine.minutes))} · ${timeMachine.streams} ${timeMachine.streams === 1 ? 'STREAM' : 'STREAMS'}`}
+                  </MonoText>
+                  {timeMachine.topTracks.slice(0, 3).map((t) => (
+                    <MonoText key={t.id} size={10} color={colors.ink} style={{ marginTop: 6 }} numberOfLines={1}>
+                      {`▸ ${t.title} — ${t.artist}`}
+                    </MonoText>
+                  ))}
+                </>
+              ) : (
+                <MonoText size={10} color={colors.ink60} style={{ marginTop: 8, letterSpacing: 0.6 }}>
+                  NOT ENOUGH HISTORY YET — THIS CARD FILLS AS THE DAYS STACK UP
+                </MonoText>
+              )}
+            </View>
+          )}
 
           {/* Taste DNA entry — see and edit what the app believes (§6.6) */}
           <Brutal haptic shadow={3} style={styles.dnaCard} onPress={() => nav.navigate('Taste')}>
@@ -403,6 +506,38 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   dnaTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '700', fontFamily: fonts.bold, textTransform: 'uppercase', letterSpacing: 0.3 },
+  radarCard: {
+    marginHorizontal: 18,
+    marginTop: 18,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    padding: 14,
+  },
+  radarHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  radarFoot: { textAlign: 'center', letterSpacing: 1, marginTop: 8 },
+  radarEmpty: { letterSpacing: 0.6, textAlign: 'center', paddingVertical: 12 },
+  tmCard: {
+    marginHorizontal: 18,
+    marginTop: 14,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    padding: 14,
+  },
+  tmHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tmTitle: {
+    marginTop: 8,
+    fontFamily: fonts.display,
+    fontSize: 17,
+    color: colors.ink,
+    textTransform: 'uppercase',
+  },
   secLabel: {
     flexDirection: 'row',
     alignItems: 'center',

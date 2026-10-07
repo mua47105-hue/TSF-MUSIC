@@ -552,6 +552,106 @@ export const CINEMA = {
   doubleTapWindowMs: 320,
 } as const;
 
+// ── THE MAGNUM OPUS (v5.0.0 mission) — WAVE 2: emotional features ──────
+
+/** F6 — Song Stories: personal notes attached to recordings ("this was
+ *  playing when we met"). Factual USER data, not a recommendation — the
+ *  kill switch deliberately does NOT gate it (the switch disables the
+ *  intelligence layer; it must never delete or hide the user's own
+ *  memories). Every number here is a storage bound, not a score. */
+export const STORIES = {
+  /** LRU cap (by updatedAt) on stored stories. 1000 memories at ~200
+   *  bytes ≈ 200KB SQLite worst case — a decade of heavy use stays
+   *  lightweight (potato rule ⑯: every new table declares its cap). */
+  cap: 1000,
+  /** Hard character cap on one story's text. A memory note, not a
+   *  diary — keeps a single row honest and the input box scroll-free. */
+  maxChars: 500,
+} as const;
+
+/** F7 — Audio Bookmarks: long-press the progress bar to save a position
+ *  (+ optional note); dots on the bar; tap a dot to jump. Keyed by
+ *  recordingKey so a bookmark survives source switches (saavn→YT for the
+ *  same recording keeps its place). */
+export const BOOKMARKS = {
+  /** Per-recording cap (a 10-min podcast chapter list, not a diary). */
+  perTrackCap: 50,
+  /** Global cap across all recordings (LRU by createdAt). */
+  totalCap: 500,
+  /** Optional note length bound. */
+  maxNoteChars: 120,
+  /** The press-and-hold duration that distinguishes SAVE from SCRUB —
+   *  a normal scrub gesture ends well under this; holding still longer
+   *  means "remember this spot". Distinct gesture, scrubbing untouched. */
+  longPressMs: 550,
+  /** Max finger travel (px) during the hold for it to count as a
+   *  long-press and not a slow scrub. */
+  moveTolerancePx: 10,
+  /** Bookmark positions snap to whole seconds (clean dots, clean jumps). */
+  snapMs: 1000,
+  /** Tap-to-JUMP radius around a dot (px) — generous, because a jump is
+   *  non-destructive (blind-critic P1: the F7 hit area is wider than the
+   *  6px dot on purpose, so quick taps near a dot still land on it). */
+  dotHitPx: 14,
+  /** Hold-to-DELETE radius around a dot (px) — deliberately NARROW (the
+   *  visible dot itself): the blind critic caught that reusing the
+   *  generous 14px radius for the destructive branch made "hold NEAR a
+   *  bookmark" silently destroy it instead of saving a new one. */
+  dotDeletePx: 4,
+} as const;
+
+/** F8 — Taste Radar: six axes in [0,1], each a DOCUMENTED formula over
+ *  the listener's own graded listens. Pure description of data the
+ *  listener already owns — no kill-switch involvement (same posture as
+ *  stats()). */
+export const RADAR = {
+  /** Axis formulas (all clamp01'd by the caller):
+   *  energy   = mean baked/estimated energy of counted streams
+   *  valence  = mean valence of counted streams
+   *  diversity= distinctArtists / artistSaturation  (more artists = wider taste)
+   *  discovery= tracksWithSinglePlay / distinctTracks (1-play rows = finds you met once)
+   *  loyalty  = topArtistShare / loyaltySaturation   (one artist's share of streams)
+   *  eraSpread= distinctDecades / eraSaturation      (how many eras you roam)
+   * Saturation = the raw share/value that reads as a FULL axis. */
+  artistSaturation: 25,
+  loyaltySaturation: 0.5,
+  eraSaturation: 6,
+  /** The 30-second rule applies before any axis is computed — a 2s
+   *  accidental open is not taste evidence. */
+  minStreamMs: 30000,
+  /** Listen window the radar reads (graded listens are retained 180d). */
+  windowDays: 180,
+  /** Hexagon render size scale for the share card. */
+  chartSize: 240,
+} as const;
+
+/** F9 — Time Machine ("This Day Last Year"). THE LEDGER IS SACRED
+ *  GROUND (R-LOCK-1): the raw events table, its id format and the 90-day
+ *  RETENTION.rawEventDays behavior stay byte-identical; the summary is a
+ *  NEW table written during the EXISTING first-open-of-day compaction
+ *  pass (never a separate scan), with its own retention below. */
+export const HISTORY = {
+  /** Top-N tracks/artists kept per day in the summary. */
+  topN: 5,
+  /** Summary retention in days (3 years ≈ 1096 rows). MEASURED on-disk
+   *  cost with the compact array encoding (historical.ts): a full day
+   *  (top-5+top-5) ≈ 350B, the scripted 400-day realistic fixture ≈
+   *  59KB total, 3 years of the same realistic pattern ≈ 163KB. The
+   *  original <100KB/3yr estimate holds for the 400-day bar and light
+   *  use, not for three years of near-daily listening — stated honestly
+   *  here rather than gamed in the fixture (anti-hallucination law ⑰). */
+  retentionDays: 3 * 365 + 1,
+  /** The month-day match window for "this day last year": the summary
+   *  is matched on LOCAL calendar month/day across prior years. */
+  lookbackYears: 3,
+  /** Leap-safe year length for the lookback window arithmetic — 366
+   *  OVERSHOOTS the retention edge on purpose (a 366th day slightly
+   *  outside the window is harmless; a 365-day window could drop Feb 29
+   *  summaries on leap years). Blind-critic note: law ④ wants no magic
+   *  numbers, so it lives here with its rationale. */
+  daysPerLookbackYear: 366,
+} as const;
+
 /** F5 — Hermes/metro cold-start optimization. Two REAL levers:
  *  (a) metro `inlineRequires: true` — Expo's default is FALSE
  *      (ExpoMetroConfig.js:322); inline requires defer every non-boot

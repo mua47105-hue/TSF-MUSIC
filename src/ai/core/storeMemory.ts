@@ -7,12 +7,15 @@
 
 import type { LedgerStore } from './store';
 import type { LedgerEvent, ListenRecord, SessionRecord } from './types';
+import type { HistoricalDay } from './historical';
 
 class MemoryStore implements LedgerStore {
   private events: LedgerEvent[] = [];
   private listens: ListenRecord[] = [];
   private sessions = new Map<string, SessionRecord>();
   private kv = new Map<string, unknown>();
+  /** F9 · historical_summary — the Time Machine's own table. */
+  private historical = new Map<string, HistoricalDay>();
 
   async appendEvents(events: LedgerEvent[]): Promise<void> {
     this.events.push(...events);
@@ -63,6 +66,28 @@ class MemoryStore implements LedgerStore {
 
   async setKV<T>(key: string, value: T): Promise<void> {
     this.kv.set(key, value);
+  }
+
+  // ── F9 · historical_summary ──────────────────────────────────────────
+
+  async upsertHistoricalDay(day: HistoricalDay): Promise<void> {
+    this.historical.set(day.dayKey, { ...day });
+  }
+
+  async getHistoricalDays(sinceTs?: number): Promise<HistoricalDay[]> {
+    const all = [...this.historical.values()].sort((a, b) => a.dayStartTs - b.dayStartTs);
+    return sinceTs == null ? all : all.filter((d) => d.dayStartTs >= sinceTs);
+  }
+
+  async deleteHistoricalDaysBefore(cutoffTs: number): Promise<number> {
+    let removed = 0;
+    for (const [key, day] of this.historical) {
+      if (day.dayStartTs < cutoffTs) {
+        this.historical.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   async close(): Promise<void> {

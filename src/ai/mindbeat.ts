@@ -18,7 +18,7 @@ import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS } from './core/constants';
+import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -33,6 +33,8 @@ import { buildFocusArtistPool, isMutedRow } from './focusPicks';
 import { buildTasteDna, computeBlend, decodeTasteDna, encodeTasteDna, type TasteBlend } from './tasteDna';
 import { buildWrapped, type WrappedSummary } from './wrapped';
 import { reasonLine } from './core/decision';
+import { computeRadarAxes, type RadarAxes } from './radar';
+import { pickThisDay, type HistoricalDay } from './core/historical';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
 import { filterClean } from '../safety';
 import { reconcileRecordings, recordingKey } from '../api/recording';
@@ -740,6 +742,45 @@ class Mindbeat {
     if (!this.ledger) throw new Error('ledger unavailable');
     const listens = await this.ledger.getListens(Math.max(rangeDays, 0) + 1);
     return buildWrapped(listens, rangeDays, Date.now());
+  }
+
+  /**
+   * MAGNUM OPUS F9 — TIME MACHINE ("This Day Last Year"). Reads the
+   * historical_summary table (the compaction pass's own aggregate —
+   * NEVER a scan of the raw ledger). NULL = honest cold state ("Not
+   * enough history yet") when no prior-year summary exists for this
+   * local month-day. Factual user data — the kill switch does not gate
+   * it (same posture as stats()/smartFolders()).
+   */
+  async thisDayLastYear(now: number = Date.now()): Promise<HistoricalDay | null> {
+    await this.ready();
+    if (!this.ledger) return null;
+    try {
+      const store = this.ledger.store_;
+      if (!store.getHistoricalDays) return null; // pre-F9 store — honest null
+      const since = now - HISTORY.lookbackYears * HISTORY.daysPerLookbackYear * 86400_000;
+      const rows = await store.getHistoricalDays(since);
+      return pickThisDay(rows, now);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * MAGNUM OPUS F8 — the Taste Radar's six axes, computed from the
+   * listener's OWN graded listens (30-second rule applied). NULL when
+   * the ledger is unavailable; zero axes when nothing has streamed —
+   * the UI renders the honest cold caption either way.
+   */
+  async radarAxes(): Promise<RadarAxes | null> {
+    await this.ready();
+    if (!this.ledger) return null;
+    try {
+      const listens = await this.ledger.getListens(RADAR.windowDays);
+      return computeRadarAxes(this.profile, listens, Date.now());
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -15,6 +15,14 @@
 import * as SQLite from 'expo-sqlite';
 import type { LedgerStore } from './store';
 import type { LedgerEvent, ListenRecord, SessionRecord } from './types';
+import type { HistoricalDay } from './historical';
+import {
+  encodeArtistList,
+  encodeMinutes,
+  encodeTrackList,
+  type EncodedArtist,
+  type EncodedTrack,
+} from './historical';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
@@ -66,6 +74,19 @@ CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- F9 · TIME MACHINE: the summary table (NEW — the events table above is
+-- byte-identical to pre-F9; sacred-ground law L1). One row per LOCAL
+-- day, written only by the compaction pass's fold.
+CREATE TABLE IF NOT EXISTS historical_summary (
+  dayKey TEXT PRIMARY KEY,
+  dayStartTs INTEGER NOT NULL,
+  minutes REAL NOT NULL,
+  streams INTEGER NOT NULL,
+  topTracks TEXT NOT NULL,
+  topArtists TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_historical_start ON historical_summary(dayStartTs);
 `;
 
 interface EventRow {
@@ -109,6 +130,16 @@ interface SessionRow {
   dayKind: string;
   trackCount: number;
   totalListenMs: number;
+}
+
+/** Parse a JSON array column defensively (corrupt row ≠ dead read path). */
+function safeParseArray<T>(raw: string): T[] {
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function createLedgerStore(): Promise<LedgerStore> {
@@ -261,6 +292,54 @@ export async function createLedgerStore(): Promise<LedgerStore> {
         trackCount: r.trackCount,
         totalListenMs: r.totalListenMs,
       }));
+    },
+
+    // ── F9 · historical_summary (the Time Machine's own table) ──────
+
+    async upsertHistoricalDay(day: HistoricalDay): Promise<void> {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO historical_summary (dayKey, dayStartTs, minutes, streams, topTracks, topArtists)
+         VALUES (?,?,?,?,?,?)`,
+        [
+          day.dayKey,
+          day.dayStartTs,
+          encodeMinutes(day.minutes),
+          day.streams,
+          JSON.stringify(encodeTrackList(day.topTracks ?? [])),
+          JSON.stringify(encodeArtistList(day.topArtists ?? [])),
+        ],
+      );
+    },
+
+    async getHistoricalDays(sinceTs?: number): Promise<HistoricalDay[]> {
+      const rows: Array<{
+        dayKey: string;
+        dayStartTs: number;
+        minutes: number;
+        streams: number;
+        topTracks: string;
+        topArtists: string;
+      }> = sinceTs == null
+        ? await db.getAllAsync(`SELECT * FROM historical_summary ORDER BY dayStartTs ASC`)
+        : await db.getAllAsync(`SELECT * FROM historical_summary WHERE dayStartTs >= ? ORDER BY dayStartTs ASC`, [sinceTs]);
+      return rows.map((r) => ({
+        dayKey: r.dayKey,
+        dayStartTs: r.dayStartTs,
+        minutes: r.minutes,
+        streams: r.streams,
+        topTracks: safeParseArray<EncodedTrack>(r.topTracks).map(([id, title, artist, plays]) => ({
+          id,
+          title,
+          artist,
+          plays,
+        })),
+        topArtists: safeParseArray<EncodedArtist>(r.topArtists).map(([name, plays]) => ({ name, plays })),
+      }));
+    },
+
+    async deleteHistoricalDaysBefore(cutoffTs: number): Promise<number> {
+      const res = await db.runAsync(`DELETE FROM historical_summary WHERE dayStartTs < ?`, [cutoffTs]);
+      return res.changes;
     },
 
     async getKV<T>(key: string): Promise<T | null> {

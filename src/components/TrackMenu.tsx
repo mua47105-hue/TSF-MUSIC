@@ -24,6 +24,8 @@ import {
 } from '../storage/metaOverrides';
 import { usePlayer } from '../player/PlayerProvider';
 import { mindbeat } from '../ai/mindbeat';
+import { getAppTables, contentKeyOf } from '../storage/appTables';
+import { STORIES } from '../ai/core/constants';
 import { useToast } from '../components/Toast';
 import { PressableScale } from '../components/PressableScale';
 import { colors, fonts, radius, spacing } from '../theme';
@@ -64,6 +66,12 @@ export function TrackMenu({
   const [eAlbum, setEAlbum] = useState('');
   const [eArtwork, setEArtwork] = useState('');
   const hasOverride = track ? !!getMetaOverridesSync()[metaOverrideKeyFor(track)] : false;
+  // MAGNUM OPUS F6 — the Song Stories editor ("Add a memory"). The story
+  // is keyed by recordingKey (NOT trackId) and never carries a streamUrl:
+  // the schema has no column for one (type-level law in songStories.ts).
+  const [storyOpen, setStoryOpen] = useState(false);
+  const [storyText, setStoryText] = useState('');
+  const [storyExists, setStoryExists] = useState(false);
 
   useEffect(() => {
     if (visible && track) {
@@ -71,8 +79,31 @@ export function TrackMenu({
       setCreating(false);
       setNewName('');
       setEditing(false);
+      setStoryOpen(false);
+      setStoryText('');
+      setStoryExists(false);
       getPlaylists().then(setPlaylists);
       isDownloaded(track.id).then(setDownloaded);
+      // the existing memory (if any) loads so the editor edits, not wipes.
+      // A cancelled flag drops stale responses: opening menu B before A's
+      // story resolved must never put A's memory text into B's editor
+      // (the blind critic's P2 — the guard the story display had and the
+      // editor lacked).
+      let cancelled = false;
+      if (track.title && track.artist) {
+        getAppTables()
+          .then((t) => t.stories.getStory(contentKeyOf(track)))
+          .then((story) => {
+            if (!cancelled && story) {
+              setStoryExists(true);
+              setStoryText(story.text);
+            }
+          })
+          .catch(() => undefined);
+      }
+      return () => {
+        cancelled = true;
+      };
     }
   }, [visible, track]);
 
@@ -116,6 +147,36 @@ export function TrackMenu({
     if (!track) return;
     await removeMetaOverride(metaOverrideKeyFor(track));
     toast.show({ message: 'PROVIDER INFO RESTORED', icon: 'refresh-outline' });
+    onClose();
+  }, [track, toast, onClose]);
+
+  // MAGNUM OPUS F6 — save / remove the memory. Blank save is an honest
+  // no-op (isBlankStory), never a lying "saved" toast.
+  const saveStory = useCallback(async () => {
+    if (!track) return;
+    const tables = await getAppTables();
+    const key = contentKeyOf(track);
+    const text = storyText;
+    if (!text.trim()) {
+      if (storyExists) {
+        await tables.stories.removeStory(key);
+        toast.show({ message: 'MEMORY REMOVED', icon: 'trash-outline' });
+      } else {
+        toast.show({ message: 'NOTHING TO REMEMBER YET', icon: 'information-circle-outline' });
+      }
+      onClose();
+      return;
+    }
+    await tables.stories.setStory(key, text, Date.now());
+    toast.show({ message: 'MEMORY SAVED · ON THIS DEVICE ONLY', icon: 'heart-outline' });
+    onClose();
+  }, [track, storyText, storyExists, toast, onClose]);
+
+  const removeStory = useCallback(async () => {
+    if (!track) return;
+    const tables = await getAppTables();
+    await tables.stories.removeStory(contentKeyOf(track));
+    toast.show({ message: 'MEMORY REMOVED', icon: 'trash-outline' });
     onClose();
   }, [track, toast, onClose]);
 
@@ -236,6 +297,46 @@ export function TrackMenu({
                   icon="create-outline"
                   label="Edit info"
                   onPress={() => openEditor()}
+                />
+              )}
+              {/* MAGNUM OPUS F6 — the Song Stories editor ("Add a memory").
+                  A memory is factual user data: the kill switch never gates
+                  it, and it stays on this device (the schema has no column
+                  a streamUrl could occupy). */}
+              {storyOpen ? (
+                <>
+                  <Text style={styles.pickerTitle}>
+                    {storyExists ? 'Edit the memory' : 'Add a memory'} · this device only
+                  </Text>
+                  <TextInput
+                    style={[styles.input, styles.storyInput]}
+                    placeholder="This was playing when…"
+                    placeholderTextColor={colors.textFaint}
+                    value={storyText}
+                    onChangeText={setStoryText}
+                    multiline
+                    maxLength={STORIES.maxChars}
+                    testID="story-editor-input"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                    <PressableScale style={styles.cancelBtn} onPress={() => setStoryOpen(false)} haptic>
+                      <Text style={styles.cancelText}>Back</Text>
+                    </PressableScale>
+                    {storyExists ? (
+                      <PressableScale style={styles.cancelBtn} onPress={() => void removeStory()} haptic>
+                        <Text style={styles.cancelText}>Remove</Text>
+                      </PressableScale>
+                    ) : null}
+                    <PressableScale style={styles.createBtn} onPress={() => void saveStory()} haptic>
+                      <Text style={styles.createText}>Save</Text>
+                    </PressableScale>
+                  </View>
+                </>
+              ) : (
+                <Action
+                  icon="sparkles-outline"
+                  label={storyExists ? 'Edit the memory' : 'Add a memory'}
+                  onPress={() => setStoryOpen(true)}
                 />
               )}
               {/* MINDBEAT taste corrections (§6.6) — every action changes
@@ -467,6 +568,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 8,
     height: 44,
+  },
+  storyInput: {
+    height: 'auto',
+    minHeight: 88,
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontFamily: fonts.mono,
   },
   cancelBtn: {
     flex: 1,
