@@ -24,6 +24,8 @@ import { mindbeat } from '../ai/mindbeat';
 import { crossfadeTick, initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
 import { initPlaybackRate } from './playbackRate';
+import { primePrewarm } from './prewarm';
+import { primeImagePrewarm } from './imagePrewarm';
 import type { Track } from '../types';
 
 let refreshing = false;
@@ -89,6 +91,21 @@ export async function playbackService(): Promise<void> {
               // lazily in the headless context (the provider never ran).
               applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: t.title, artist: t.artist }));
               initPlaybackRate();
+              // MAGNUM OPUS F1/F3 — headless transitions prime the same
+              // prewarm stores (idempotent per active id; the UI provider,
+              // when alive, is the foreground owner of the same call).
+              void (async () => {
+                try {
+                  const q = (await TrackPlayer.getQueue()) as unknown as Track[];
+                  const idx = q.findIndex((x) => x.id === t.id);
+                  if (idx >= 0) {
+                    primePrewarm(q, idx);
+                    primeImagePrewarm(q, idx);
+                  }
+                } catch {
+                  /* best-effort */
+                }
+              })();
             }
             radioServedCount += t.isRecommended ? 1 : 0;
           }

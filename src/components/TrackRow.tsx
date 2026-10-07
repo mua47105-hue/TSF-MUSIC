@@ -24,6 +24,7 @@ import type { Track } from '../types';
 import { colors, fonts } from '../theme';
 import { Artwork } from './Artwork';
 import { usePlayer } from '../player/PlayerProvider';
+import { armFlight } from '../player/cinema';
 import { isDownloaded } from '../storage/downloads';
 import {
   applyMetaOverride,
@@ -126,9 +127,24 @@ export const TrackRow = React.memo(function TrackRow({
     subtitle ??
     [shown.artist, shown.album].filter(Boolean).join(' \u00b7 ');
 
+  // MAGNUM OPUS F4 — cinema arm: on tap, the row reports its art rect so
+  // the player can fly it to the hero slot. measureInWindow is async and
+  // NEVER gates the press — playback starts first, the measure lands a
+  // frame later and arms the flight; if the player mounts before the
+  // measure (or the row has no art), the flight is honestly skipped.
+  const artRef = useRef<View | null>(null);
+  const handlePress = () => {
+    if (showArtwork && !isActive && shown.artwork) {
+      artRef.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0 && h > 0) armFlight(shown.artwork, { x, y, width: w, height: h });
+      });
+    }
+    onPress?.();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       onLongPress={onLongPress}
       testID="track-row"
       delayLongPress={280}
@@ -145,7 +161,9 @@ export const TrackRow = React.memo(function TrackRow({
             <EqualizerBars playing={isPlaying} size={18} />
           </View>
         ) : (
-          <Artwork uri={shown.artwork} seed={track.id} size={44} />
+          <View ref={artRef}>
+            <Artwork uri={shown.artwork} seed={track.id} size={44} />
+          </View>
         )
       ) : null}
 

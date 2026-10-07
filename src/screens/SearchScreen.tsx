@@ -48,6 +48,7 @@ import { mindbeat } from '../ai/mindbeat';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, collectionIsClean, type AutocompleteBundle } from '../api/saavn';
 import { browseColumnsFor } from '../ui/windowing';
 import { planSearch } from '../search/plan';
+import { usePrefetch } from '../search/prefetch';
 import { verifyLyrics, type Candidate } from '../search/verify';
 import { rememberResolve } from '../search/learn';
 import { artistAffinity } from '../ai/core/decision';
@@ -582,6 +583,14 @@ export function SearchScreen() {
     },
     [vibe, source],
   );
+
+  // MAGNUM OPUS F2 — SEARCH PREFETCH: from the 3rd character the real
+  // pipeline flies in parallel with the 700ms debounce (learning
+  // disabled inside the prefetch — the visible search stays the only
+  // writer). By Enter-press or by debounce-fire the retrieve LRU-200
+  // answers from cache. Gated to the catalog path: vibe mode and the
+  // YouTube source read different pipelines entirely.
+  usePrefetch(query, source === 'catalog' && !vibe, engineDeps);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);

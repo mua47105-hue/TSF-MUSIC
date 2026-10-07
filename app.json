@@ -42,7 +42,8 @@
     },
     "plugins": [
       "expo-sqlite",
-      "./plugins/withWindowPolicy"
+      "./plugins/withWindowPolicy",
+      "./plugins/withHermesFlags"
     ]
   }
 }

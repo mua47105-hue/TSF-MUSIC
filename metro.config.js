@@ -37,6 +37,19 @@ const WEB_PATH_REDIRECTS = [
 module.exports = (async () => {
   const config = await getDefaultConfig(projectRoot);
 
+  // MAGNUM OPUS F5 — inline requires ON (Expo's default is FALSE,
+  // @expo/metro-config ExpoMetroConfig.js). Module bodies initialize at
+  // first require instead of at bundle load: the boot path executes only
+  // what App.tsx actually needs before first paint. Behavior is
+  // unchanged (same modules, same singletons — later timing); the full
+  // test suite + web lab validate both.
+  config.transformer.getTransformOptions = async () => ({
+    transform: {
+      experimentalImportSupport: false,
+      inlineRequires: true,
+    },
+  });
+
   config.resolver.resolveRequest = (context, moduleName, platform) => {
     if (platform === 'web' && WEB_MODULE_ALIASES[moduleName]) {
       return context.resolveRequest(

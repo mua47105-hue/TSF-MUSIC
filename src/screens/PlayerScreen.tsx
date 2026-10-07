@@ -36,6 +36,8 @@ import { SingAlong } from '../components/SingAlong';
 import { ShareCard } from '../share/ShareCard';
 import { shareNowPlaying } from '../share/share';
 import { isDoubleTap } from '../player/miniModel';
+import { CinemaTransition } from '../components/CinemaTransition';
+import { consumeFlight, type CinemaFlight, type Rect } from '../player/cinema';
 import { usePlayer } from '../player/PlayerProvider';
 import {
   armSleepTimer,
@@ -52,7 +54,7 @@ import {
 } from '../player/smartVolume';
 import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
-import { CROSSFADE, FOCUS } from '../ai/core/constants';
+import { CROSSFADE, FOCUS, CINEMA } from '../ai/core/constants';
 import {
   applyMetaOverride,
   getMetaOverridesSync,
@@ -362,6 +364,24 @@ export function PlayerScreen() {
 
   const isFav = active ? favorites.has(active.id) : false;
   const trackKey = active?.id ?? 'none';
+
+  // MAGNUM OPUS F4 — the cinema flight: a row tap armed an art flight;
+  // the player consumes it on mount (one retry covers a lost frame) and
+  // flies it to the hero rect measured below. focus mode replaces the
+  // hero layout, so the flight is honestly skipped there.
+  const [flight, setFlight] = useState<CinemaFlight | null>(null);
+  const [heroRect, setHeroRect] = useState<Rect | null>(null);
+  const heroRef = useRef<View | null>(null);
+  useEffect(() => {
+    const first = consumeFlight();
+    if (first) {
+      setFlight(first);
+      return;
+    }
+    const t = setTimeout(() => setFlight(consumeFlight()), CINEMA.consumeRetryMs);
+    return () => clearTimeout(t);
+  }, []);
+
   // THE TEN F9 — the aura's energy: the track's BAKED energy (null ⇒ calm
   // wash; the facade read is an in-memory lookup, never a blocker)
   const auraEnergy = useMemo(
@@ -566,7 +586,15 @@ export function PlayerScreen() {
         </View>
 
         {/* ── artwork + the 320 kbps stamp ─────────────────────────── */}
-        <View style={[styles.artWrap, { width: artSize, height: artSize }]}>
+        <View
+          ref={heroRef}
+          style={[styles.artWrap, { width: artSize, height: artSize }]}
+          onLayout={() => {
+            heroRef.current?.measureInWindow((x, y, w, h) => {
+              if (w > 0 && h > 0) setHeroRect({ x, y, width: w, height: h });
+            });
+          }}
+        >
           <Pressable
             onPress={onArtworkPress}
             testID="player-artwork"
@@ -754,6 +782,13 @@ export function PlayerScreen() {
           onPress={() => (focusArmed ? undefined : setShowFocus(true))}
         />
       </View>
+
+      {/* MAGNUM OPUS F4 — the cinema flight overlay: absolute, touch-
+          transparent, transform-only. Skipped honestly in focus mode
+          (the hero layout it targets is not mounted). */}
+      {flight && heroRect && !focusArmed ? (
+        <CinemaTransition flight={flight} to={heroRect} onDone={() => setFlight(null)} />
+      ) : null}
 
       {/* ── queue sheet (the prototype's #queueSheet) ───────────────── */}
       <Modal visible={showQueue} transparent animationType="slide" onRequestClose={() => setShowQueue(false)}>

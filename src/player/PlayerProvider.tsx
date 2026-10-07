@@ -61,6 +61,8 @@ import { initMetaOverrides } from '../storage/metaOverrides';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
+import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
+import { primeImagePrewarm } from './imagePrewarm';
 
 let setupPromise: Promise<void> | null = null;
 let notifAsked = false;
@@ -241,6 +243,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return activeRN as unknown as Track;
   }, [activeRN]);
 
+  // MAGNUM OPUS F1/F3 — prime the upcoming tracks (stream URLs + art)
+  // once the authoritative queue is known. Fire-and-forget, keyed on the
+  // ACTIVE id inside the prewarm modules (a seek never re-primes).
+  const primeWave1 = useCallback(async (activeId: string) => {
+    try {
+      const q = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const idx = q.findIndex((x) => x.id === activeId);
+      if (idx >= 0) {
+        primePrewarm(q, idx);
+        primeImagePrewarm(q, idx);
+      }
+    } catch {
+      /* player not ready — the next transition primes */
+    }
+  }, []);
+
   // Record play history + play counts (sanitized — no stream URLs in storage)
   // + the graded MINDBEAT listen (L1 ledger: the previous track finalizes,
   // the new one starts, surface-tagged).
@@ -283,7 +301,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       incrementPlayCount(meta as Track).catch(() => undefined);
     }
     void mindbeat.trackStarted(active as Track, surfaceRef.current);
-  }, [active?.id]);
+    // MAGNUM OPUS F1/F3 — prime ONLY on a real transition (prevId set):
+    // the very first active-set is either a boot restore (queue just
+    // rehydrated, URLs as fresh as the kill) or a first tap (playQueue
+    // JUST resolved every row) — prewarming then spends network for
+    // nothing, and races the data-saver boot read. Blind-critic P2-b.
+    if (prevId) void primeWave1(active.id);
+  }, [active?.id, primeWave1]);
 
   const state = playback?.state;
   const isPlaying = state === 'playing';
@@ -316,7 +340,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           while (cursor < ytTracks.length) {
             const t = ytTracks[cursor];
             cursor += 1;
-            const url = t.streamUrl ?? (await ytStreamUrlForTrack(t).catch(() => null));
+            // MAGNUM OPUS F1 — a prewarmed URL (resolved seconds ago at
+            // the last track start) outranks the row's build-time URL.
+            const pre = await consumePrewarm(t);
+            const url = pre?.url ?? t.streamUrl ?? (await ytStreamUrlForTrack(t).catch(() => null));
             ytUrls.set(t.id, url);
           }
         }),
@@ -325,9 +352,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const playable: RNTrack[] = [];
     for (const t of tracks) {
       const local = byId.get(t.id);
+      // MAGNUM OPUS F1 (blind-critic P1-1): the batch map ALREADY holds
+      // the freshest URL for a YT row (prewarmed > just-resolved), so it
+      // is consulted BEFORE the row's build-time streamUrl — the old
+      // order consumed a parked URL and then discarded it for the stale
+      // one. "Fresh beats stale" is needsPrewarm's locked design.
       const url =
         t.source === 'youtube'
-          ? t.streamUrl || ytUrls.get(t.id) || null
+          ? ytUrls.get(t.id) || t.streamUrl || null
           : local?.localUri || t.localUri || resolveStreamUrl(t);
       // THE TEN F4 — the smart crates (and stats' top tracks) reconstruct
       // rows from the ledger, which stores NO stream URLs. A URL-less
@@ -336,8 +368,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // contract as the YouTube retry ladder. Failures drop the row and
       // are negative-cached for the session; they never stall the queue.
       if (!url && t.source === 'saavn') {
-        const fresh = await resolveSaavnRow(t, getSongById);
-        const freshUrl = fresh ? resolveStreamUrl(fresh) : null;
+        // MAGNUM OPUS F1 — the rescue may already be parked by the
+        // prewarm prime (same ladder, zero double network spend).
+        const pre = await consumePrewarm(t);
+        const fresh = pre?.row ?? (await resolveSaavnRow(t, getSongById));
+        const freshUrl = pre?.url ?? (fresh ? resolveStreamUrl(fresh) : null);
         if (fresh && freshUrl) {
           playable.push({
             id: t.id,
@@ -406,6 +441,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   async function playQueue(tracks: Track[], startIndex = 0, surface: SourceSurface = 'user_playlist'): Promise<void> {
     surfaceRef.current = surface;
+    // MAGNUM OPUS F1 — a fresh queue makes every parked URL obsolete
+    // (the prewarm store re-primes on the first transition).
+    resetPrewarm();
     // INSTANT TAP (Task 29, critic IT-1): answer the press BEFORE any await
     // — ensureSetup/notification-permission must never sit between the tap
     // and the mini bar's TUNING IN.
@@ -617,6 +655,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const reordered = on
         ? shuffleArray(upcoming)
         : originalQueue.current.filter((t) => t.id !== currentId);
+      // MAGNUM OPUS F1 — the order changed; parked positions are lies now.
+      resetPrewarm();
 
       const removeIndices = rntpQueue
         .map((_, i) => i)

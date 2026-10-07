@@ -470,3 +470,102 @@ export const FOCUS = {
   /** Focus playlist size. */
   picksCount: 12,
 } as const;
+
+// ── THE MAGNUM OPUS (v5.0.0 mission) — WAVE 1: performance & polish ─────
+
+/** F1 — Predictive Track Pre-warming: when track N starts, the stream
+ *  URLs of N+1/N+2 are re-resolved through the same ladder buildPlayable
+ *  uses (YT client ladder / saavn rescue) and parked in a single-use
+ *  store. Queue rebuilds, shuffle reorders, smart-shuffle heals and the
+ *  just-in-time recommendation/radio inserts then consume the parked
+ *  URLs instead of paying a fresh resolve. */
+export const PREWARM = {
+  /** How many UPCOMING tracks are primed (the radioPrefetch precedent). */
+  ahead: 2,
+  /** Hard cap on the parked-promise store (LRU eviction, potato rule ⑧).
+   *  ahead×2 headroom so two primes can overlap during fast skips. */
+  cap: 5,
+  /** Parked URLs expire: CDN links carry signed query params (JioSaavn
+   *  and YT googlevideo both rot). A prewarmed URL consumed after this
+   *  window is DISCARDED, never handed to the player — a fresh resolve
+   *  is slower than a dead URL is fatal. */
+  ttlMs: 30_000,
+  /** The savings bar the feature must clear vs a fresh resolve (locked
+   *  in tests/wave1_prewarm_locks.test.ts with a 600ms fake resolver). */
+  minSavedMs: 500,
+} as const;
+
+/** F2 — Search prefetch: at ≥3 characters the typeahead pipeline is
+ *  fired in parallel with the 700ms debounce, so by Enter-press (or by
+ *  the debounce itself) the LRU-200 retrieve cache already holds the
+ *  ranked list. The prefetch runs the real orchestrator with learning
+ *  DISABLED (deps.disabled() === true) — the user-visible search stays
+ *  the single writer of lexicon/ledger evidence (house rule ③). */
+export const SEARCH_PREFETCH = {
+  /** Below 3 characters provider results are noise (prefix flood). */
+  minLength: 3,
+  /** The cache-hit budget a prefetched query must answer inside when
+   *  the real search lands on it (retrieve()'s LRU path budgets <15ms;
+   *  the lock asserts the whole orchestrator call <50ms). */
+  hitBudgetMs: 50,
+} as const;
+
+/** F3 — Image prefetch for the queue: next N artworks are warmed through
+ *  RN Image.prefetch so the transition paints art, not placeholders.
+ *  Gated exactly like F1 (data saver ⇒ WiFi only). */
+export const IMAGE_PREWARM = {
+  /** Queue rows ahead of the current track whose art gets warmed. */
+  ahead: 5,
+  /** LRU cap on the already-prefetched URI set (memory rule ⑧; a URI
+   *  set entry is a string — 60 rows ≈ a few KB). */
+  cap: 60,
+  /** A warmed URI is not re-warmed inside this window (RN's image cache
+   *  is opaque; this only bounds OUR re-issue rate). */
+  ttlMs: 10 * 60_000,
+} as const;
+
+/** F4 — Cinema transition: tapping a row flies its art to the player's
+ *  hero slot (pure-JS Animated — react-native-reanimated is NOT a
+ *  dependency of this repo, and adding it for one transition violates
+ *  potato rule ⑯; the mission explicitly provides for the fallback). */
+export const CINEMA = {
+  /** Flight duration — the bar is <400ms end to end. */
+  durationMs: 340,
+  /** An armed flight older than this is honestly skipped (the player
+   *  must consume it while the tap is still "the same gesture"). */
+  armTtlMs: 600,
+  /** Retry window for the player's first consume attempt (measureInWindow
+   *  resolves on the next frame; one retry covers a lost frame). */
+  consumeRetryMs: 150,
+  /** How long the overlay waits for the image's onLoad before giving up
+   *  honestly (the row JUST displayed this URI, so it is nearly always
+   *  memory-cached and onLoad lands the same frame; the timeout covers
+   *  the degenerate slow-CDN case). Blind-critic P0-1: without a WAIT
+   *  state the mount effect ran unloaded, self-skipped and unmounted —
+   *  the flight could never start. */
+  loadWaitMs: 800,
+  // critic N1: loadWaitMs > armTtlMs means a load landing in the final
+  // 200ms of the wait window is already expired and skips — harmless
+  // (unloaded art paints nothing), documented overlap, not a bug.
+  /** The double-tap guard mirrors miniModel.DOUBLE_TAP_MS (320) — the
+   *  runtime uses isDoubleTap() directly so the two cannot drift. */
+  doubleTapWindowMs: 320,
+} as const;
+
+/** F5 — Hermes/metro cold-start optimization. Two REAL levers:
+ *  (a) metro `inlineRequires: true` — Expo's default is FALSE
+ *      (ExpoMetroConfig.js:322); inline requires defer every non-boot
+ *      module's body off the startup path (the classic TTI win).
+ *  (b) hermesc `-fstrip-function-names` — verified against the RN
+ *      0.76.9 toolchain's `hermesc --help`; strips function names from
+ *      the bytecode string table (the v4.3.1 verifier work showed that
+ *      table is a large packed blob). Anti-hallucination note: the
+ *      mission draft suggested '-emit-moving-average' — that flag DOES
+ *      NOT EXIST in hermesc and was NOT shipped; '-O' was already the
+ *      RN gradle default (ReactExtension.kt hermesFlags convention). */
+export const HERMES = {
+  /** Extra hermesc flags on top of the RN default ['-O','-output-source-map']. */
+  extraFlags: ['-fstrip-function-names'] as const,
+  /** Metro transform — inline requires ON (expo default false). */
+  inlineRequires: true,
+} as const;
