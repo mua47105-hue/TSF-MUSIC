@@ -3,6 +3,166 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v5.0.0 — 2026-10-08 — THE MAGNUM OPUS: 20 features in 5 gauntleted waves
+
+The Magnum Opus upgrade ships fifteen new features on top of Wave 1's
+performance work, each wave through the full gauntlet (BUILD → LOCK →
+MUTATE → CRITIC → FIX → COMMIT → PUSH), each feature with a pure
+testable core, behavioral locks asserting literals, ≥2 red-proven
+mutations, honest empty states, and a one-line honesty statement about
+what it CANNOT do. Every wave kept `tsc --noEmit` clean, every
+pre-existing test green, and the cold path byte-identical (Wave 5's
+only App.tsx change is a LAZY `getComponent` registration — the cold
+path gains the pointer, never the work).
+
+### Wave 1 — performance & polish (bf63cff)
+
+- **Prewarm + prefetch** — the next track's stream and search results
+  resolve before they are asked for; taps land on warm URLs.
+- **Image prewarm + cinema flight** — artwork pre-fetched; a row tap
+  flies its cover to the player on a transform-only flight.
+- Hermes alignment + the wave-1 lock battery.
+
+### Wave 2 — emotional features (72631da)
+
+- **F6 Song Stories** (`song_stories` table, cap 1000 LRU): a note
+  pinned to a recording ("this was playing when we met"), keyed by
+  `recordingKey` (portable across providers), rendered as an italic
+  line under the lyrics; editor in the track menu ("Add a memory").
+  CANNOT: leave the device, or gate on the kill switch (factual user
+  data — deliberately exempt).
+- **F7 Audio Bookmarks** (`bookmarks`, cap 50/track, 500 total):
+  long-press the progress bar to save a position + note; dots on the
+  bar, tap to jump (the existing seek path), hold a dot to delete.
+  Scrubbing is byte-identical. CANNOT: sync anywhere.
+- **F8 Taste Radar**: a six-axis hexagon (Energy, Valence, Diversity,
+  Discovery Rate, Artist Loyalty, Era Spread) computed by the pure
+  `computeRadarAxes`, rendered with Views + transforms (no svg), on the
+  Stats desk, shareable through the existing offline share pipeline.
+  CANNOT: animate (static by construction — reduce-motion respected).
+- **F9 Time Machine** (`historical_summary`, 3-year retention, folded
+  DURING the existing first-open-of-day compaction pass — the raw
+  `events` table stays byte-identical; `ledger.test.ts` and
+  `gauntlet-r2.test.ts` pass unmodified): `mindbeat.thisDayLastYear()`
+  reopens the same date's top-5 tracks/artists. CANNOT: show anything
+  before the fold started — an honest "Not enough history yet" until
+  real days accumulate. Storage: 59KB/400 days measured, disclosed
+  honestly in constants (163KB for 3 realistic years, > the 100KB bar —
+  documented, not gamed).
+
+### Wave 3 — intelligent playback (90e94ff)
+
+- **F10 Haptic Choreography** (`haptics.ts`): pure
+  `hapticEvent(action, track, elapsedMs, settings)` → haptic spec|null
+  over expo-haptics; beat tick (tempo-class-derived, throttled), heart
+  tap, crate generate, bookmark save; persisted `reducedHaptics`
+  (default full). NEVER fires from the audio thread. CANNOT: feel
+  synchronized to the actual audio buffer (tempo is baked metadata) —
+  battery cost disclosed in the honesty note.
+- **F11 Pseudo-Visualizer**: amplitude bars behind the player art,
+  driven by BAKED energy/valence/tempoClass (no audio-buffer DSP);
+  `visualizerState` pure; RN-core Animated, `useNativeDriver: true`,
+  opacity/transform only; mounts in the Player modal ONLY (zero cold
+  start); no features ⇒ calmest wash; reduce-motion ⇒ frozen frame.
+  CANNOT: react to the real waveform.
+- **F12 Karaoke Words** (`singalong.ts` extension): word-level
+  interpolation between LRC timestamps, `activeWord(line, positionMs)`
+  pure; LRC parsed once, memoized; current word enlarged + palette
+  glow; no word timings ⇒ identical line-level behavior. CANNOT:
+  improve a sparse LRC (interpolation only, honestly bounded).
+- **F13 Shuffle by Vibe** (`queueOptimizer.ts`): greedy nearest-neighbour
+  on energy (max step 0.25, tiebreak by original index); user-dragged
+  PINNED tracks never move; user-initiated ONLY via the queue-sheet
+  button. CANNOT: run automatically — explicit order is never silently
+  overridden.
+
+### Wave 4 — deep intelligence (e4ac921)
+
+- **F14 Mood Journey**: `mindbeat.moodJourney(from, to, count)` —
+  12-slot queue drifting toward the target, per-slot steps bounded
+  ±0.15; candidates through the injected CatalogApi + the existing
+  proxy feature space; kill-switch-gated (silent []); empty slots
+  skipped, never fabricated. CANNOT: fill slots the catalog lacks.
+- **F15 Session Memory** (`session_snapshots`, max 3 FIFO): snapshot on
+  app background ONLY when the session has ≥3 tracks (pure
+  `shouldSnapshot` is the only gate); `mindbeat.resumeSession(id)`
+  rebuilds the vibe with ≤30% unheard rows (share of the actual mix);
+  mutes honored via filterClean. CANNOT: snapshot mid-song — the
+  moment is the background event, not the track.
+- **F16 Decade Radio**: `mindbeat.decadeRadio(year, count)` —
+  deterministic `decadeQuery` ladder ("1994 hits" → "90s bollywood"),
+  year-filtered where metadata exists; kill-switch-gated; a thin year
+  says so in the toast (undated rows disclosed). CANNOT: date rows the
+  catalog leaves undated.
+- **F17 Artist Timeline**: albums on a horizontal year axis
+  (`groupAlbumsByYear` pure); decade chips play through the existing
+  radio/shuffle surfaces (filterClean); 0-album artists fall back to
+  the top-tracks timeline, honestly. CANNOT: show albums the provider
+  never returned.
+
+### Wave 5 — social & exploration (a1ae714)
+
+- **F18 Concert Mode** (`concert.ts`): the playlist + a synchronized
+  start travel as ONE base64url code (the TasteDNA codec pattern, ZERO
+  new dependencies); share from the player queue (existing
+  `Share.share`), join by pasting on the Wire desk. ≤50 tracks,
+  versioned (v1), corrupt/wrong-version/oversized ⇒ null + honest
+  toast. Rows carry IDENTIFIERS (source/saavnId), never stream handles
+  — forged `streamUrl`/`encryptedUrl`/`previewUrl` payloads are
+  REJECTED; the import maps explicitly (`concertRowToTrack`, no blind
+  cast) and `playQueue` now returns the REAL resolved count, so the
+  join toast reports the truth (silence is announced, never disguised).
+  CANNOT (disclosed on the tin): true clock sync — each phone starts
+  on its own clock, the ±500ms drift is real, the receiver's start is
+  a scheduled timer with a "keep the app open" disclosure, and rows
+  the resolver cannot rescue by id simply do not play (counted).
+- **F19 Genre Explorer** (`genreExplorer.ts` + `GenreExplorer.tsx`):
+  a seeded, deterministic bubble map of the 26-genre taxonomy
+  (`genreMapLayout(genres, seed)` — mulberry32, same seed = same map
+  on every device, law X4; stratified scatter + deterministic
+  relaxation). Pan/zoom via RN-core PanResponder (no gesture-handler);
+  TAP classified at release (≤6px, ≤500ms) and hit-tested through the
+  ONE shared `mapToScreen` transform; play routes through the existing
+  `searchSaavnClean` ladder (already filterClean). Radius band 48..100
+  chosen BY MEASUREMENT (74% packing made separation geometrically
+  impossible — worst overlap −69; the shipped band reaches positive
+  clearance for every pair). Art probed AFTER PAINT, once per app run.
+  CANNOT: draw a map beyond the priors' taxonomy (no genre column
+  exists in the baked table — the priors ARE the genre truth).
+- **F20 Memory Tags — LITE** (`memoryTags.ts`, `memory_tags` table,
+  cap 500 LRU by `at` with COUNTED deletions): "tag this moment"
+  stamps a timestamp + note onto the playing song; per-second
+  deterministic ids (re-tag = update that keeps the original moment);
+  240-char sanitized notes; MEMORIES chip + inline list on the player;
+  keyed by `recordingKey`; `streamUrl` can never enter the schema.
+  DEPENDENCY DECISION, honestly: option (B) LITE — expo-location and
+  expo-camera change the NATIVE build and no APK rebuild could be
+  verified in this mission's environment; the schema keeps nullable
+  lat/lng/photoUri columns so the full-fat version needs ZERO
+  migration. CANNOT: capture location or photos (nothing is captured,
+  nothing is displayed, no permission is asked).
+
+### Gauntlet evidence (waves 2–5)
+
+- **Locks**: every wave ≥8 behavioral locks asserting LITERALS (never
+  a constant checked against itself) — 48+ wave-2, 33 wave-3, 31
+  wave-4, 53 wave-5.
+- **Mutations**: 15 (wave 2) + 11 (wave 3) + 10 (wave 4) + 16 (wave 5)
+  = **52 mutations, all RED**, each reverted byte-exact
+  (sha256-verified) — including mutations ON the critic fixes, and one
+  lock weakness the harness itself caught (a dead
+  `if (false) void playGenre(...)` grepped as present; the lock now
+  asserts the LIVE call).
+- **Blind critics**: fresh-context adversarial passes per wave — wave 2
+  BLOCK (a real P0: the fold laundered missing artist names; fixed via
+  a listens-join), wave 3 FIX-FIRST (2 P1 + 7 P2), wave 4 FIX-FIRST
+  (a P0: an aliased require bypassed Metro's rewrite — dead feature
+  disguised as an honest cold state), wave 5 FIX-FIRST (2 P0: F19's
+  headline tap was dead code; F18 imported queues could never resolve
+  while toasting success). Every P0/P1 fixed and re-locked RED.
+- **Cold path**: `App.tsx` and `mindbeat.init()` diff against bf63cff —
+  no synchronous additions (wave 5's screen registers lazily).
+
 ## v4.3.1 — 2026-10-07 — Final paperwork: the auditor sealed it, the docs caught up
 
 The code was already flawless — this release ships the proof and clears the

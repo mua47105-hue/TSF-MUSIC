@@ -10,7 +10,7 @@ No server · No account · No tracking · Install and it works
 
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=1ED760&label=release)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
-[![Tests](https://img.shields.io/badge/replay_tests-571_passing-1ED760?labelColor=121212)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/replay_tests-807_passing-1ED760?labelColor=121212)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-3E3E3E?labelColor=121212)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-1ED760?labelColor=121212)](#privacy)
 
@@ -175,11 +175,11 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v4.3.1** (THE TEN, sealed — in-place upgrades, same keystore since v2.0) |
+| Latest release | **v5.0.0** (THE MAGNUM OPUS — 20 features across 5 waves: stories, bookmarks, taste radar, time machine, haptics, visualizer, karaoke words, vibe shuffle, mood journey, session memory, decade radio, artist timeline, concert mode, genre explorer, memory tags; in-place upgrades, same keystore since v2.0) |
 | Audio | 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 571 replay tests · 2,977 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 807 replay tests · 3,948 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -226,7 +226,7 @@ Full module map, data flow and contracts: **[docs/ARCHITECTURE.md](docs/ARCHITEC
 ```bash
 bun install
 bun run typecheck        # tsc --noEmit (strict) — must be clean
-bun test                 # 571 replay tests incl. latency budgets
+bun test                 # 807 replay tests incl. latency budgets
 bunx expo start          # Metro dev server
 bunx expo run:android    # native debug build
 ```

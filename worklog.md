@@ -1935,3 +1935,48 @@ Stage Summary:
 - Next: RELEASE — version sync 5.0.0, WhatsNew bulletin, CHANGELOG,
   README, verify_v50_apk.py, final gates, tag v5.0.0, push, CI check,
   X8 interaction audit + the 8-item final report.
+
+---
+Task ID: 6 (Magnum Opus — RELEASE v5.0.0)
+Agent: Super Z (main agent)
+
+Task: Version sync, docs, verifier, final gates, tag, push, CI check.
+
+Work Log:
+- Version sync: package.json + app.json → 5.0.0; WhatsNewDialog
+  SEEN_KEY → tsf.whatsNew.v5_0_0 with a v5.0.0 bulletin describing all
+  20 features by wave (the sheet scrolls; the CTA stays — the v4.3.1
+  e2e lesson respected).
+- docs/CHANGELOG.md: the full v5.0.0 entry — every feature by wave
+  with its honest CANNOT line + the gauntlet evidence (52 mutations,
+  4 blind critics, cold-path law).
+- README.md: latest-release row → v5.0.0; real test counts (807
+  replay tests · 3,948 assertions).
+- scripts/verify_v50_apk.py: the v4.3 verifier pattern (embedded hbc
+  string-table parser, EXACT membership — no substring false
+  positives); asserts the baked table + lexicons + THE TEN ride along
+  (regression), then Wave 2–5 markers (stories/bookmarks/radar/time-
+  machine/haptics/visualizer/karaoke/vibe-shuffle/mood/session/
+  decade/timeline/concert/genre/memory-tags), the wave-5 constants
+  block, the v5.0.0 bulletin key, and webmock hygiene.
+- X8 interaction audit (code-path evidence):
+  1. haptics × karaoke JS-thread: both ride the existing progress
+     tick — beat tick throttled via lastBeatRef + HAPTICS constants
+     (no per-frame loop), karaoke is a memoized timeline + index diff;
+     no rAF anywhere; PASS.
+  2. visualizer × aura double-decode: featuresForTrack is a pure
+     in-memory estimate (estimateFeatures); aura reads
+     bakedEnergyFor → lookupBakedFeatures (Map lookup). Two consumers,
+     one in-memory source, zero decode passes; PASS.
+  3. optimizer × mood journey: moodJourney only seeds queues via
+     playQueue (Wire card); optimizeQueueByVibe reorders only on the
+     explicit queue-sheet button and touches nothing else; no
+     automatic interference; PASS.
+  4. SQLite growth: new tables = song_stories (≤1000), bookmarks
+     (≤500), memory_tags (≤500), session_snapshots (≤3) +
+     historical_summary (3-yr, columnar ≈163KB worst case) — bounded
+     ≈0.67MB worst case, every cap enforced in code + constants; PASS.
+
+Stage Summary:
+- Final gates: tsc exit 0; 807/0 tests. Release commit `v5.0.0 — THE
+  MAGNUM OPUS`, tag v5.0.0, pushed; CI check follows.
