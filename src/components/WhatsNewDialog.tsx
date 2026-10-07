@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v4_3_0';
+const SEEN_KEY = 'tsf.whatsNew.v4_3_1';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
@@ -68,7 +68,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 4.3.0 — THE TEN
+            TSF MUSIC 4.3.1 — THE TEN, SEALED
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

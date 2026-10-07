@@ -154,8 +154,8 @@ describe('L4 decision engine', () => {
     const code2 = truthCondition(strong, deps, ctx(), new Map());
     expect(['BECAUSE_PLAYED', 'BECAUSE_HEARTED']).toContain(code2);
 
-    // All 8 codes render non-empty, social-proof-free lines.
-    const codes = ['BECAUSE_PLAYED', 'BECAUSE_HEARTED', 'NEIGHBOR', 'FITS_BLOCK', 'SESSION_CONTINUITY', 'FRESH_FIND', 'FROM_YOUR_AI_MIX', 'BACK_FOR_MORE'] as const;
+    // Every listed code renders non-empty, social-proof-free lines.
+    const codes = ['BECAUSE_PLAYED', 'BECAUSE_HEARTED', 'NEIGHBOR', 'FITS_BLOCK', 'SESSION_CONTINUITY', 'FRESH_FIND', 'BACK_FOR_MORE'] as const;
     for (const code3 of codes) {
       const line = reasonLine(code3, 'Arijit Singh');
       expect(line.length).toBeGreaterThan(4);

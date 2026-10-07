@@ -234,7 +234,6 @@ export type ReasonCode =
   | 'FITS_BLOCK'
   | 'SESSION_CONTINUITY'
   | 'FRESH_FIND'
-  | 'FROM_YOUR_AI_MIX'
   | 'BACK_FOR_MORE';
 
 export interface Candidate {

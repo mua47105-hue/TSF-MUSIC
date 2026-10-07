@@ -425,7 +425,6 @@ export function reasonLine(code: ReasonCode, detail?: string): string {
     case 'FITS_BLOCK': return `Fits your ${detail ?? 'right-now'} sound`;
     case 'SESSION_CONTINUITY': return "Keeps tonight's mood going";
     case 'FRESH_FIND': return 'A fresh find — see if it sticks';
-    case 'FROM_YOUR_AI_MIX': return 'From the AI mix you saved';
     case 'BACK_FOR_MORE': return 'You replayed this last week';
     default: return 'A fresh find';
   }

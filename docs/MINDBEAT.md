@@ -131,7 +131,6 @@ freshness block, hard 30-second stream-count rule in stats.
 | `FITS_BLOCK` | fits your current daypart cell |
 | `SESSION_CONTINUITY` | matches the current session's energy/mood |
 | `FRESH_FIND` | never played before (exploration slot) |
-| `FROM_YOUR_AI_MIX` | surfaced from your saved AI playlist |
 | `BACK_FOR_MORE` | you completed it recently and it's due back |
 
 ## L5 — The Surfaces (`src/ai/surfaces/`)

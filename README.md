@@ -10,7 +10,7 @@ No server · No account · No tracking · Install and it works
 
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=1ED760&label=release)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
-[![Tests](https://img.shields.io/badge/replay_tests-439_passing-1ED760?labelColor=121212)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/replay_tests-571_passing-1ED760?labelColor=121212)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-3E3E3E?labelColor=121212)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-1ED760?labelColor=121212)](#privacy)
 
@@ -175,13 +175,13 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v3.4.5** (versionCode 165 — in-place upgrades, same keystore since v2.0) |
+| Latest release | **v4.3.1** (THE TEN, sealed — in-place upgrades, same keystore since v2.0) |
 | Audio | 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 439 replay tests · 2,200+ assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 571 replay tests · 2,977 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
-| Size | ~79 MB APK, RN 0.76 + Expo 52, zero telemetry |
+| Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
 ## Installation
 
@@ -226,7 +226,7 @@ Full module map, data flow and contracts: **[docs/ARCHITECTURE.md](docs/ARCHITEC
 ```bash
 bun install
 bun run typecheck        # tsc --noEmit (strict) — must be clean
-bun test                 # 439 replay tests incl. latency budgets
+bun test                 # 571 replay tests incl. latency budgets
 bunx expo start          # Metro dev server
 bunx expo run:android    # native debug build
 ```
@@ -242,14 +242,17 @@ git tag v3.4.6 && git push origin v3.4.6   # → signed release APK in ~15 min
 ```
 
 After every release, the **shipped APK itself** is deep-verified — manifest
-version probe, Hermes bundle markers for each feature, webmock-leak check,
-window-policy assertions (`scripts/verify_v345_apk.py` is the current
-template, 19/19 checks on v3.4.5).
+version probe, exact markers for every feature read from the **parsed
+Hermes string table** (raw substring greps false-positive across the
+packed string storage), webmock-leak check (`scripts/verify_v43_apk.py`
+is the current template; all green on v4.3.0, 25 discriminating failures
+on v4.1.0).
 
 ## Quality assurance
 
-1. **439 replay tests** — engine behavior, latency budgets, gauntlet
-   regression locks (every shipped bug class is locked red-on-old-code)
+1. **571 replay tests** — engine behavior, latency budgets, gauntlet
+   regression locks (every shipped bug class is locked red-on-old-code),
+   plus the adversarial mutation harness (44/44 caught)
 2. **The device lab** — the real app on react-native-web with fixture
    data layers, driven by Playwright at hardware-faithful viewports:
    93 checkpoints × 3 devices, zero console errors
@@ -268,7 +271,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, playback pipeline, theming, persistence, CI topology |
 | [MINDBEAT.md](docs/MINDBEAT.md) | The six-layer intelligence stack: surfaces, reason codes, tuning, privacy |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setup, workflow, device lab, gauntlet methodology, release process, conventions |
-| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v3.4.5, root-caused and verified |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v4.3.1, root-caused and verified |
 | [SEARCH-INTENT-RESCUE-PLAN.md](docs/SEARCH-INTENT-RESCUE-PLAN.md) | Engineering RFC: the specific-intent guarantee (shipped in v3.4.0) |
 | [YOUTUBE-INTEGRATION-PLAN.md](docs/YOUTUBE-INTEGRATION-PLAN.md) | Engineering RFC: the YouTube source design (shipped in v3.4.0) |
 | [LAB-TESTING-GUIDE.md](docs/LAB-TESTING-GUIDE.md) | The staging-repo workflow that device-verified the v3.4.0 line |
@@ -277,6 +280,8 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v4.3.1** | Final paperwork — the auditor's 4 P1s squashed (behavioral safety locks, the volume-bus fix, blend determinism, the lost doc), the v4 line backfilled into the changelog, the v4.3 APK verifier, dead reason code removed |
+| **v4.3.0** | **THE TEN** — Smart Volume · Crossfade + Playback Speed · Smart Crates · Edit Info · Local Rewind (monthly Wrapped) · Taste DNA Blend · Kinetic Lyrics · Aura Visualizer · Focus Mode — ten features, four waves, all on-device |
 | **v4.2.0** | **GODMODE INTELLIGENCE** — the 6-phase "Lightweight Genius" lift: baked Spotify feature table (122k rows, offline), Thompson bandit + hard reject veto, directed Markov flow memory (FLOW_NEXT), lyric mood reading (VADER + romanized Hindi/Punjabi, ±0.25 bounded), tag-overlap sound-alike, dynamic mind-reading home feed, session-aligned search, cold-start artist seeding |
 | **v4.1.0** | **THE GODMODE EDITION** — synced karaoke lyrics, instant tap, share card, weekly crate, sleep timer, data saver |
 | **v4.0.0** | **PULSE** — the complete UI redesign: editorial brutalism, the Wire tab, broadsheet player, real LRCLIB lyrics, micro-interactions everywhere |
