@@ -24,17 +24,26 @@ import {
   type SessionSnapshotsStore,
   type SessionSnapshot,
 } from '../ai/sessionMemory';
+import {
+  createMemoryTags,
+  type MemoryTagsService,
+  type MemoryTagsStore,
+  type MemoryTag,
+} from '../storage/memoryTags';
 
 export interface AppTables {
   stories: SongStoriesService;
   bookmarks: BookmarksService;
   /** F15 — the last few session snapshots (FIFO max 3). */
   sessions: SessionSnapshotsService;
+  /** F20 (LITE) — the listener's tagged moments. */
+  memoryTags: MemoryTagsService;
 }
 
 const storiesMap = new Map<string, SongStory>();
 const bookmarksMap = new Map<string, Bookmark>();
 const sessionsMap = new Map<string, SessionSnapshot>();
+const memoryTagsMap = new Map<string, MemoryTag>();
 
 let instance: Promise<AppTables> | null = null;
 
@@ -79,10 +88,25 @@ export function getAppTables(): Promise<AppTables> {
         sessionsMap.delete(id);
       },
     };
+    const memoryTagsStore: MemoryTagsStore = {
+      async get(id) {
+        return memoryTagsMap.get(id) ?? null;
+      },
+      async all() {
+        return [...memoryTagsMap.values()];
+      },
+      async put(tag) {
+        memoryTagsMap.set(tag.id, { ...tag });
+      },
+      async del(id) {
+        memoryTagsMap.delete(id);
+      },
+    };
     instance = Promise.resolve({
       stories: createSongStories(storiesStore),
       bookmarks: createBookmarks(bookmarksStore),
       sessions: createSessionSnapshots(sessionsStore),
+      memoryTags: createMemoryTags(memoryTagsStore),
     });
   }
   return instance;

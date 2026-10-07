@@ -1818,3 +1818,120 @@ Stage Summary:
 - Next: Wave 4 (F14 Mood Journey, F15 Session Memory, F16 Decade
   Radio, F17 Artist Timeline) — every new facade surface must check
   the kill switch + honest empty states.
+
+---
+Task ID: 4 (Magnum Opus Wave 4 — deep intelligence F14–F17)
+Agent: Super Z (main agent)
+
+Task: Build, lock, mutate, critic-fix, commit Wave 4: F14 Mood
+Journey, F15 Session Memory, F16 Decade Radio, F17 Artist Timeline.
+
+Work Log:
+- Built four pure cores (moodJourney / sessionMemory / decadeRadio /
+  artistTimeline) + appTables sessions service (native + webmock) +
+  three mindbeat facades (moodJourney / resumeSession / decadeRadio,
+  all kill-switch-gated, reconcileRecordings + filterClean at merge
+  points) + wiring: MOOD JOURNEY card (Wire desk), background session
+  snapshots (PlayerProvider), RESUME A SESSION card (Stats),
+  PLAY THE SOUND OF {year} (Stats Time Machine), TIMELINE decade chips
+  (CollectionScreen artist page).
+- 31 wave-4 locks (incl. a strengthened groupAlbumsByYear fixture the
+  gauntlet forced); 10 mutations all RED.
+- BLIND CRITIC verdict FIX-FIRST → fixed:
+  [P0] resumeSession's ALIASED require_ bypassed Metro's dependency
+  rewrite (dead feature on device, disguised by the catch as the
+  honest cold state) → direct require + a red-on-regression source
+  lock banning the alias;
+  [P1] snapshot pre-gate at 4 (QUEUE_VIBE.minTracks) behind a '≥3'
+  comment → the pure shouldSnapshot is the only gate;
+  [P1] ≤30%-unheard broke for short spines → fresh cap is a share of
+  the actual mix (min(target share, room, spine × 3/7));
+  [P2] dead round-trip lock made real; inline numbers hoisted
+  (MOOD_JOURNEY.artistPool/candidateCap/rowsPerArtist,
+  SESSION_MEMORY.rowsPerArtist, DECADE_RADIO.rowsPerRung); fresh
+  kill-switch checks at press time; undated-row disclosure in the
+  decade toast.
+- Commit e4ac921 created. 754/0 tests, tsc clean.
+
+Stage Summary:
+- WAVE 4 IS COMMITTED LOCALLY BUT **NOT PUSHED**: git push failed
+  TWICE with `! [remote rejected] main -> main (Internal Server
+  Error)` — a GitHub-side 500, NOT an auth/refs problem (ls-remote
+  works; remote main = 90e94ff = wave 3). Per the mission's push
+  protocol: no blind retries; push stopped.
+- LOCAL AHEAD BY 1: e4ac921 (wave 4). Waves 2–3 ARE on origin.
+- NEXT: resume protocol — before any Wave 5 work, retry the push of
+  e4ac921 ONCE; if GitHub recovers, push and continue Wave 5; if it
+  still 500s, Wave 5 must NOT start (wave N+1 requires wave N pushed)
+  — report and wait.
+- PUSH RECOVERED: after a ~3-minute wait, `git push origin main`
+  succeeded (90e94ff..e4ac921). Wave 4 is now green + committed +
+  PUSHED. Wave 5 may start (wave N+1 ordering satisfied).
+
+---
+Task ID: 5 (Magnum Opus Wave 5 — social & exploration F18–F20)
+Agent: Super Z (main agent)
+
+Task: Build, lock, mutate, critic-fix, commit and push Wave 5: F18
+Concert Mode, F19 Genre Explorer, F20 Memory Tags (LITE).
+
+Work Log:
+- Session resumed mid-Wave 5 (BUILD was ~80% done from the previous
+  session): concert.ts / genreExplorer.ts / GenreExplorer.tsx /
+  memoryTags.ts cores + tables existed uncommitted. Completed the
+  missing F20 player wiring (MEMORIES chip + TAG THIS MOMENT inline
+  editor + memoryDateLabel, recordingKey-keyed via contentKeyOf) and
+  made the App.tsx registration LAZY (getComponent + require) so the
+  X5 cold-path diff stays free of synchronous module evaluation.
+- F20 DEPENDENCY DECISION: (B) LITE — timestamp + note. expo-location/
+  expo-camera change the NATIVE build and no APK rebuild could be
+  verified in this environment; the schema keeps nullable lat/lng/
+  photoUri columns (zero migration when full-fat lands). Source-locked.
+- 53 wave-5 locks (wave5_concert/genre/memory_tags), all literal
+  assertions; source laws scoped to imports/call-sites (comments stay
+  free to name what is absent).
+- MUTATIONS: 16 (4 F18 / 4 F19 / 4 F20 / 4 on critic-fix surfaces),
+  all RED then sha256-verified byte-exact reverts. Script:
+  scripts/mutate_wave5.sh. The harness itself caught a lock weakness
+  (a dead `if (false) void playGenre(...)` still grepped as present) —
+  lock strengthened to the LIVE call pattern.
+- BLIND CRITIC (fresh-context) verdict: FIX-FIRST — 2 P0 + 6 P1:
+  [P0-1] F19's headline "TAP A BUBBLE TO PLAY" was DEAD CODE — the pan
+  responder's onStartShouldSetPanResponder swallowed every child press
+  and playGenre was unreachable → tap now CLASSIFIED at release
+  (≤6px travel, ≤500ms) + screen-space hit-test through the ONE shared
+  mapToScreen transform; busy guard moved to a ref (stale closure).
+  [P0-2] F18 imported queues could NEVER resolve (ConcertTrack carried
+  no identifiers; rows dropped silently while the toast promised a
+  room) → ConcertTrack now carries source/saavnId (IDENTIFIERS, never
+  handles; decoder rejects unknown sources + previewUrl/encryptedUrl
+  forgeries), explicit concertRowToTrack mapping (no blind cast),
+  playQueue now returns Promise<number> and the join flow toasts the
+  REAL resolved count — silence is announced honestly.
+  [P1s fixed] pan math (g.dx is cumulative: base + dx·damping, not
+  per-event accumulation that overshot 4–8×); art probes moved to
+  post-paint (InteractionManager + useEffect + module-level per-run
+  cache — was a render-body burst of ~18 requests); 14 inline tuning
+  numbers hoisted to constants (shareLeadInMs, joinScheduleThresholdMs,
+  viewport/mapSeed/zoom/pan/tap bands, relaxGap, rowsPerGenre, opacity,
+  art probe seeds, previewCount); drift copy now interpolates
+  CONCERT.clockDriftMs + names the per-phone-clock truth; scheduled
+  start is cancellable on unmount + KEEP THE APP OPEN disclosure;
+  [P2] LRU deletion-counting (a re-tagged OLD moment can no longer
+  strand the cap at 501), mapToScreen reused in render (no drift),
+  pinch re-arm when a finger lifts, pan clamp.
+- Real tuning correction the locks forced: the genre radius band
+  60..130 packed the 26-bubble map at 74% area where separation is
+  geometrically impossible (measured worst overlap −69 map units) —
+  re-banded to 48..100 (~48% packing, measured positive clearance for
+  every pair) with the measurement documented in constants.ts.
+- Commit created. 807/0 tests, tsc clean. Cold path: App.tsx diff vs
+  bf63cff = the lazy registration only; mindbeat.ts untouched.
+
+Stage Summary:
+- Wave 5 GREEN: tsc 0, 807/0 tests, 53 wave-5 locks, 16 mutations RED,
+  critic FIX-FIRST → all P0/P1/P2 actionable fixed → 16/16 still RED
+  after fixes.
+- Next: RELEASE — version sync 5.0.0, WhatsNew bulletin, CHANGELOG,
+  README, verify_v50_apk.py, final gates, tag v5.0.0, push, CI check,
+  X8 interaction audit + the 8-item final report.

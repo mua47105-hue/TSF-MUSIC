@@ -145,7 +145,7 @@ interface PlayerState {
   autoplay: boolean;
   repeat: 'off' | 'queue' | 'track';
   favorites: Set<string>;
-  playQueue: (tracks: Track[], startIndex?: number, surface?: SourceSurface) => Promise<void>;
+  playQueue: (tracks: Track[], startIndex?: number, surface?: SourceSurface) => Promise<number>;
   togglePlay: () => Promise<void>;
   next: () => Promise<void>;
   prev: () => Promise<void>;
@@ -479,7 +479,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return playable;
   }
 
-  async function playQueue(tracks: Track[], startIndex = 0, surface: SourceSurface = 'user_playlist'): Promise<void> {
+  async function playQueue(tracks: Track[], startIndex = 0, surface: SourceSurface = 'user_playlist'): Promise<number> {
+    // returns the number of rows that actually made it into the engine —
+    // 0 on every honest-failure path (blind-critic P0-2: a caller that
+    // promises a room must be able to hear silence)
     surfaceRef.current = surface;
     // MAGNUM OPUS F1 — a fresh queue makes every parked URL obsolete
     // (the prewarm store re-primes on the first transition).
@@ -526,14 +529,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             await TrackPlayer.skip(startAt2);
             await TrackPlayer.play();
             setOptimistic(null); // the real track takes over from the plant
-            return;
+            return retry.length;
           }
           // P1-3: the retry promise gets a FINAL honest answer, never silence
           toast.show({ message: 'That YouTube track is unavailable right now', icon: 'alert-outline' });
           if (__DEV__) console.warn('[yt] resolve failed:', trail);
         }
         setOptimistic(null); // honest failure: the plant comes down
-        return;
+        return 0;
       }
       // the WANTED row itself dropped (others survived) — never start on a
       // different song than the user asked for (P2-3: ALL sources, not
@@ -548,7 +551,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           icon: 'alert-outline',
         });
         setOptimistic(null); // honest failure: the plant comes down
-        return;
+        return 0;
       }
       const startAt = Math.max(0, playable.findIndex((t) => t.id === wantedId));
       const mapped = playable as unknown as Track[];
@@ -567,10 +570,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (smartShuffle) {
         void injectRecommendations(startAt);
       }
+      return playable.length;
     } catch {
       /* transient setup/network failure — next tap retries */
       if (staleTimer.current) clearTimeout(staleTimer.current);
       setOptimistic(null); // honest failure: the plant comes down
+      return 0;
     }
   }
 

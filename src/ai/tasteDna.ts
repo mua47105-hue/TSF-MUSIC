@@ -65,7 +65,7 @@ export function buildTasteDna(profile: TasteProfile): TasteDna {
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
-function utf8Bytes(s: string): number[] {
+export function utf8Bytes(s: string): number[] {
   const out: number[] = [];
   for (let i = 0; i < s.length; i++) {
     let c = s.charCodeAt(i);
@@ -84,7 +84,7 @@ function utf8Bytes(s: string): number[] {
   return out;
 }
 
-function bytesToUtf8(bytes: number[]): string {
+export function bytesToUtf8(bytes: number[]): string {
   let out = '';
   for (let i = 0; i < bytes.length; ) {
     const b = bytes[i];
@@ -108,7 +108,7 @@ function bytesToUtf8(bytes: number[]): string {
   return out;
 }
 
-function bytesToB64url(bytes: number[]): string {
+export function bytesToB64url(bytes: number[]): string {
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
     const b0 = bytes[i];
@@ -124,7 +124,7 @@ function bytesToB64url(bytes: number[]): string {
   return out;
 }
 
-function b64urlToBytes(s: string): number[] {
+export function b64urlToBytes(s: string): number[] {
   // Strip whitespace ONLY — '-' is a live base64url digit (value 62),
   // not noise (the round-trip lock caught exactly this bug).
   const clean = s.replace(/\s+/g, '');

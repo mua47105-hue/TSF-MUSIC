@@ -612,6 +612,101 @@ export const ARTIST_TIMELINE = {
   maxTracks: 60,
 } as const;
 
+/** F18 — Concert Mode: the playlist + synchronized start travel as ONE
+ *  base64url code (the TasteDNA codec pattern, zero new dependencies).
+ *  streamUrl can NEVER enter the payload (stripped at the type level). */
+export const CONCERT = {
+  /** The codec version — decode rejects anything else (no
+   *  fake-comprehension of unknown formats). */
+  version: 1,
+  /** A concert caps at 50 rows (a set, not an iPod). */
+  maxTracks: 50,
+  /** THE HONEST DRIFT: two phones' clocks differ; the synchronized
+   *  start can be ±500ms apart. No NTP exists in a standalone app —
+   *  disclosed in the toast + the code comment, never hidden. */
+  clockDriftMs: 500,
+  /** The sender arms a start 30s ahead (the receiver needs time to
+   *  open the code, resolve rows and settle before the first bar). */
+  shareLeadInMs: 30_000,
+  /** A scheduled start shorter than this fires immediately (a wait the
+   *  user cannot perceive is not worth a second toast). */
+  joinScheduleThresholdMs: 1_500,
+} as const;
+
+/** F19 — Genre Explorer: a seeded, deterministic bubble map of the
+ *  genre taxonomy (GENRE_PRIORS). Zero image assets; pan/zoom via RN's
+ *  PanResponder (no gesture-handler in the repo). */
+export const GENRE_EXPLORER = {
+  /** The normalized map space each bubble lives in (a virtual square,
+   *  scaled to the viewport at render — the math stays testable). */
+  space: 1000,
+  /** The on-screen viewport of the map (px) — the render scale is
+   *  viewport / space. */
+  viewport: 340,
+  /** THE SEED: a fixed seed means every listener sees the same map
+   *  (which is the point — a shared map, not a personal one). */
+  mapSeed: 1994,
+  /** Pan/zoom bounds: zoom clamps (pinch) and the per-event pan
+   *  damping (g.dx is CUMULATIVE from gesture start — the pan is
+   *  base + dx·damping, critic P1-1). */
+  minZoom: 0.6,
+  maxZoom: 3,
+  panDamping: 0.15,
+  /** How far the map may be dragged off-center before it clamps (px,
+   *  per axis) — a map dragged out of view is a lost map. */
+  panClampPx: 260,
+  /** A release with ≤ this displacement (px) and ≤ maxMs duration is a
+   *  TAP on a bubble (the pan responder owns every touch, so taps are
+   *  classified here — critic P0-1). */
+  tapSlopPx: 6,
+  tapMaxMs: 500,
+  /** Bubble radius band (map units), scaled by the genre prior's
+   *  energy (louder genres sit in bigger bubbles). The band is chosen
+   *  so the 26-genre taxonomy packs at ~48% of the map area — measured:
+   *  at 60..130 the packing was 74% and the relaxer could NOT fully
+   *  separate the bubbles (worst pair overlapped by 69 map units);
+   *  at 48..100 every pair reaches positive clearance. Physics first:
+   *  a lock asserts the separation, not the intent. */
+  minRadius: 48,
+  maxRadius: 100,
+  /** Relaxation passes that push overlapping bubbles apart (more
+   *  passes = cleaner separation; 40 is cheap and deterministic), and
+   *  the gap (map units) two bubbles are pushed to keep between them. */
+  relaxPasses: 40,
+  relaxGap: 12,
+  /** Rows fetched per genre tap through the EXISTING search ladder. */
+  rowsPerGenre: 16,
+  /** Bubble ink opacity = base + span·energy (a calmer map, not a UI
+   *  theme change — purely local rendering). */
+  bubbleOpacityBase: 0.55,
+  bubbleOpacitySpan: 0.4,
+  /** Bubbles smaller than this skip the artwork probe entirely (an
+   *  invisible image is a wasted request); the probe seed multiplier
+   *  and row window keep the per-genre art choice deterministic. */
+  artMinSize: 44,
+  artProbeSeed: 7919,
+  artProbeRowsMin: 3,
+  artProbeRowsJitter: 2,
+} as const;
+
+/** F20 — Memory Tags ("tag this moment"). LITE EDITION, honestly: the
+ *  timestamp + note only. expo-location and expo-camera are first-party
+ *  Expo packages, but adding them changes the NATIVE build (new
+ *  modules, new permission screens) and no Android rebuild could be
+ *  verified in this mission's environment — unverified native deps
+ *  would break the verification gates harder than a lite feature. The
+ *  schema keeps nullable lat/lng/photoUri columns so a future
+ *  full-fat version needs zero migration. */
+export const MEMORY_TAGS = {
+  /** LRU cap (by `at`) on stored tags (potato rule ⑯). */
+  cap: 500,
+  /** Hard character cap on one tag's note. */
+  maxNoteChars: 240,
+  /** How many tags the player's Memories list shows inline (the rest
+   *  honestly count: "+N more on this device"). */
+  previewCount: 3,
+} as const;
+
 /** FEATURE 9 — Aura Visualizer (battery-safe, GPU-cheap: three gradient
  *  layers animating ONLY opacity, native driver, no per-frame JS math;
  *  the layer count is JSX structure, not a runtime tuning number). */

@@ -16,8 +16,10 @@ import {
   PanResponder,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  TextInput,
   Animated,
   useWindowDimensions,
   View,
@@ -60,6 +62,8 @@ import { classifyPress } from '../player/bookmarks';
 import { hapticEvent, fireHaptic } from '../player/haptics';
 import { PseudoVisualizer } from '../player/PseudoVisualizer';
 import type { VisualizerFeatures } from '../player/visualizer';
+import { encodeConcert } from '../ai/concert';
+import { CONCERT, MEMORY_TAGS } from '../ai/core/constants';
 import {
   applyMetaOverride,
   getMetaOverridesSync,
@@ -78,6 +82,7 @@ import {
 import { Artwork } from '../components/Artwork';
 import { EqualizerBars } from '../components/TrackRow';
 import { getAppTables, contentKeyOf } from '../storage/appTables';
+import type { MemoryTag } from '../storage/memoryTags';
 import { Brutal, MonoText } from '../components/Brutal';
 import { TrackMenu } from '../components/TrackMenu';
 import { useToast } from '../components/Toast';
@@ -245,6 +250,14 @@ function ProgressBar({
       </View>
     </View>
   );
+}
+
+/** F20 — a tag's moment rendered as a stable, locale-free label
+ *  (Hermes' Intl is thin; the format is ours: `2026.08.29 · 14:05`). */
+function memoryDateLabel(at: number): string {
+  const d = new Date(at);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} · ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 export function PlayerScreen() {
@@ -583,6 +596,66 @@ export function PlayerScreen() {
       cancelled = true;
     };
   }, [trackKey]);
+
+  // MAGNUM OPUS F20 (LITE) — the playing recording's memory tags, keyed
+  // by recordingKey (portable across sources). LITE = timestamp + note
+  // (no location, no photo — none is captured, so none is displayed).
+  // Empty state renders NOTHING but the small tag action — a player is
+  // not the place to nag. Kill switch irrelevant (factual user data).
+  const [memories, setMemories] = useState<MemoryTag[]>([]);
+  const [memOpen, setMemOpen] = useState(false);
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
+  const [tagNote, setTagNote] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setMemories([]);
+    setMemOpen(false);
+    setTagEditorOpen(false);
+    setTagNote('');
+    if (!active?.title || !active?.artist) return undefined;
+    getAppTables()
+      .then((t) => t.memoryTags.list(contentKeyOf(active)))
+      .then((rows) => {
+        if (!cancelled) setMemories(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [trackKey]);
+  const saveMemoryTag = () => {
+    if (!active?.title || !active?.artist) return;
+    const here = contentKeyOf(active); // narrowed once, before the closure
+    void (async () => {
+      try {
+        const tables = await getAppTables();
+        const saved = await tables.memoryTags.attach(here, Date.now(), tagNote);
+        if (!saved) return; // blank note — an honest no-op
+        setMemories(await tables.memoryTags.list(here));
+        setTagNote('');
+        setTagEditorOpen(false);
+        setMemOpen(true);
+        toast.show({ message: 'MOMENT TAGGED · LIVES ON THIS DEVICE ONLY', icon: 'time-outline' });
+      } catch {
+        toast.show({ message: 'COULD NOT TAG THE MOMENT — TRY AGAIN', icon: 'alert-outline' });
+      }
+    })();
+  };
+  const removeMemoryTag = (id: string) => {
+    if (!active) return;
+    const here = contentKeyOf(active);
+    void (async () => {
+      try {
+        const tables = await getAppTables();
+        await tables.memoryTags.remove(id);
+        const rest = await tables.memoryTags.list(here);
+        setMemories(rest);
+        if (!rest.length) setMemOpen(false);
+      } catch {
+        /* the row stays — a failed delete never lies about success */
+      }
+    })();
+  };
 
   // MAGNUM OPUS F4 — the cinema flight: a row tap armed an art flight;
   // the player consumes it on mount (one retry covers a lost frame) and
@@ -1008,6 +1081,100 @@ export function PlayerScreen() {
               </Text>
             </View>
           ) : null}
+          {/* MAGNUM OPUS F20 — the MEMORIES chip (only when this song has
+              tagged moments) + the TAG THIS MOMENT action. LITE edition:
+              timestamp + note; nothing else is captured, nothing else
+              shown. Honest empty state: no tags ⇒ no chip. */}
+          {memories.length ? (
+            <Pressable
+              testID="memory-chip"
+              accessibilityRole="button"
+              accessibilityLabel={`${memories.length} tagged memories for this song`}
+              onPress={() => setMemOpen((v) => !v)}
+              style={styles.memoryChip}
+            >
+              <Ionicons name="time-outline" size={11} color={colors.ink} />
+              <MonoText size={8.5} bold color={colors.ink} style={{ letterSpacing: 1.2 }}>
+                {`MEMORIES · ${memories.length}`}
+              </MonoText>
+              <Ionicons name={memOpen ? 'chevron-up' : 'chevron-down'} size={11} color={colors.ink40} />
+            </Pressable>
+          ) : null}
+          {memOpen && memories.length ? (
+            <View style={styles.memoryList} testID="memory-list">
+              {memories.slice(0, MEMORY_TAGS.previewCount).map((m) => (
+                <View key={m.id} style={styles.memoryRow}>
+                  <MonoText size={8} color={colors.ink40} style={styles.memoryDate}>
+                    {memoryDateLabel(m.at)}
+                  </MonoText>
+                  <Text style={styles.memoryNote} numberOfLines={3}>
+                    {m.note}
+                  </Text>
+                  <Pressable
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove this memory"
+                    testID={`memory-del-${m.id}`}
+                    onPress={() => removeMemoryTag(m.id)}
+                    style={styles.memoryDel}
+                  >
+                    <Ionicons name="close-circle-outline" size={13} color={colors.ink40} />
+                  </Pressable>
+                </View>
+              ))}
+              {memories.length > MEMORY_TAGS.previewCount ? (
+                <MonoText size={8} color={colors.ink40} style={{ letterSpacing: 0.8 }}>
+                  {`+${memories.length - MEMORY_TAGS.previewCount} MORE ON THIS DEVICE`}
+                </MonoText>
+              ) : null}
+            </View>
+          ) : null}
+          {tagEditorOpen ? (
+            <View style={styles.tagEditor} testID="memory-tag-editor">
+              <TextInput
+                style={styles.tagInput}
+                placeholder="This moment, in a few words…"
+                placeholderTextColor={colors.textFaint}
+                value={tagNote}
+                onChangeText={setTagNote}
+                multiline
+                maxLength={MEMORY_TAGS.maxNoteChars}
+                testID="memory-tag-input"
+              />
+              <View style={styles.tagBtnRow}>
+                <Pressable hitSlop={6} onPress={() => setTagEditorOpen(false)} testID="memory-tag-cancel">
+                  <MonoText size={8.5} bold color={colors.ink40} style={{ letterSpacing: 1.2 }}>
+                    CANCEL
+                  </MonoText>
+                </Pressable>
+                <Pressable
+                  hitSlop={6}
+                  disabled={!tagNote.trim()}
+                  onPress={saveMemoryTag}
+                  testID="memory-tag-save"
+                  style={!tagNote.trim() ? { opacity: 0.4 } : null}
+                >
+                  <MonoText size={8.5} bold color={colors.orange} style={{ letterSpacing: 1.2 }}>
+                    TAG IT
+                  </MonoText>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              testID="memory-tag-btn"
+              accessibilityRole="button"
+              accessibilityLabel="Tag this moment"
+              hitSlop={6}
+              onPress={() => setTagEditorOpen(true)}
+              style={styles.tagBtn}
+            >
+              <Ionicons name="bookmark-outline" size={10} color={colors.ink40} />
+              <MonoText size={8} color={colors.ink40} style={{ letterSpacing: 1.4 }}>
+                TAG THIS MOMENT
+              </MonoText>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
       )}
@@ -1101,6 +1268,38 @@ export function PlayerScreen() {
                 {`QUEUE ${upNext.length}/4 — SHUFFLE BY VIBE NEEDS ${QUEUE_VIBE.minTracks} UPCOMING TRACKS`}
               </MonoText>
             )}
+
+            {/* MAGNUM OPUS F18 — SHARE AS CONCERT: the queue + a synced
+                start travel as ONE base64url code (no server, no room
+                service — the code IS the room). The ±500ms clock-drift
+                reality is disclosed in the confirm toast. */}
+            <Pressable
+              testID="concert-share-btn"
+              accessibilityRole="button"
+              accessibilityLabel="Share the queue as a concert code"
+              onPress={() => {
+                void (async () => {
+                  try {
+                    const code = encodeConcert(queue, Date.now() + CONCERT.shareLeadInMs, Date.now());
+                    if (!code) {
+                      toast.show({ message: 'NOTHING TO SHARE YET — QUEUE SOME SONGS', icon: 'information-circle-outline' });
+                      return;
+                    }
+                    await Share.share({
+                      message: `CONCERT CODE — start this queue together (±${CONCERT.clockDriftMs}ms clock drift is real):\n\n${code}`,
+                    });
+                  } catch {
+                    toast.show({ message: 'COULD NOT BUILD THE CONCERT CODE', icon: 'alert-outline' });
+                  }
+                })();
+              }}
+              style={({ pressed }) => [styles.vibeSortBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="radio-outline" size={14} color={colors.ink} />
+              <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.6 }}>
+                SHARE AS CONCERT
+              </MonoText>
+            </Pressable>
 
             {/* THE TEN F3 — playback speed (pitch preserved by the engine's
                 time-stretch; 1.0× is always one tap away) */}
@@ -1547,6 +1746,76 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: colors.orange,
     paddingLeft: 10,
+  },
+  memoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+  },
+  memoryList: {
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.ink,
+    paddingLeft: 10,
+    gap: 8,
+  },
+  memoryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  memoryDate: {
+    letterSpacing: 0.6,
+    marginTop: 2,
+    minWidth: 62,
+  },
+  memoryNote: {
+    flex: 1,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: colors.ink78,
+    fontFamily: fonts.regular,
+  },
+  memoryDel: {
+    marginTop: 1,
+  },
+  tagEditor: {
+    marginTop: 10,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    padding: 10,
+  },
+  tagInput: {
+    borderWidth: 1,
+    borderColor: colors.ink40,
+    color: colors.ink,
+    minHeight: 44,
+    padding: 8,
+    fontSize: 12,
+    textAlignVertical: 'top',
+    fontFamily: fonts.regular,
+  },
+  tagBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  tagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 3,
   },
   storyText: {
     fontStyle: 'italic',

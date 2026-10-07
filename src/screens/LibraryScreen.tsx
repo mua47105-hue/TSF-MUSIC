@@ -520,6 +520,20 @@ export function LibraryScreen() {
               ))}
             </View>
 
+            {/* MAGNUM OPUS F19 — the door to the genre map */}
+            <Brutal
+              haptic
+              shadow={2}
+              testID="genre-map-btn"
+              onPress={() => nav.navigate('GenreExplorer')}
+              style={styles.genreMapBtn}
+            >
+              <Ionicons name="map-outline" size={13} color={colors.ink} />
+              <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 1.4 }}>
+                THE GENRE MAP
+              </MonoText>
+            </Brutal>
+
             {/* sort row + view toggle */}
             <View style={styles.sortRow}>
               <Pressable hitSlop={8} onPress={() => setSortRecent((v) => !v)} style={styles.sortBtn}>
@@ -724,6 +738,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  genreMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    marginTop: 10,
+    paddingVertical: 9,
   },
   chips: {
     flexDirection: 'row',

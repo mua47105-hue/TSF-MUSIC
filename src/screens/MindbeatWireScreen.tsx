@@ -8,7 +8,7 @@
  * only the surface is PULSE.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -39,9 +39,9 @@ import { Brutal, MonoText, OutlineText, PulseDot } from '../components/Brutal';
 import { Artwork } from '../components/Artwork';
 import { colors, fonts } from '../theme';
 import { useStableField } from '../hooks/useStableField';
-import { MOOD_JOURNEY } from '../ai/core/constants';
+import { decodeConcert, concertStartPlan, concertRowToTrack } from '../ai/concert';
+import { CONCERT, MOOD_JOURNEY } from '../ai/core/constants';
 import type { RootStackParamList } from './navigation';
-import type { Track } from '../types';
 
 type Stage = 0 | 1 | 2 | 3 | 4 | 5; // 5 = done
 
@@ -81,6 +81,17 @@ export function MindbeatWireScreen() {
   // MAGNUM OPUS F14 — the mood journey runner
   const [journeyBusy, setJourneyBusy] = useState<string | null>(null);
   const [mindbeatDisabled, setMindbeatDisabled] = useState(false);
+  // MAGNUM OPUS F18 — the concert room import
+  const [concertCode, setConcertCode] = useState('');
+  const [concertBusy, setConcertBusy] = useState(false);
+  // a scheduled room start is a Cancellable promise — an unmounted screen
+  // never fires a start into a dead component (critic P1-5)
+  const concertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (concertTimerRef.current) clearTimeout(concertTimerRef.current);
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     mindbeat
@@ -327,6 +338,84 @@ export function MindbeatWireScreen() {
             ))}
           </Animated.View>
         ) : null}
+
+        {/* ── MAGNUM OPUS F18 — JOIN A CONCERT (paste the code) ── */}
+        <View style={styles.journeyCard} testID="concert-import-card">
+          <View style={styles.ysHead}>
+            <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+              JOIN A CONCERT
+            </MonoText>
+          </View>
+          <TextInput
+            style={[styles.input, { minHeight: 64, textAlignVertical: 'top' }]}
+            placeholder="PASTE THE CONCERT CODE…"
+            placeholderTextColor={colors.textFaint}
+            value={concertCode}
+            onChangeText={setConcertCode}
+            multiline
+            testID="concert-import-input"
+          />
+          <Pressable
+            testID="concert-import-btn"
+            disabled={!concertCode.trim() || concertBusy}
+            onPress={() => {
+              setConcertBusy(true);
+              void (async () => {
+                try {
+                  const payload = decodeConcert(concertCode);
+                  if (!payload) {
+                    toast.show({ message: 'THAT CODE DID NOT PARSE — ASK FOR A FRESH ONE', icon: 'alert-outline' });
+                    return;
+                  }
+                  const rows = payload.tracks.map(concertRowToTrack); // explicit field-by-field mapping — never a blind cast (critic P0-2)
+                  const plan = concertStartPlan(payload, Date.now());
+                  const start = () => {
+                    void (async () => {
+                      // THE HONEST COUNT (critic P0-2): playQueue now returns
+                      // how many rows ACTUALLY made it into the engine — the
+                      // toast reports that number, never a promised room.
+                      const queued = await playQueue(rows, 0);
+                      if (!queued) {
+                        toast.show({ message: 'THE ROOM DID NOT RESOLVE — ASK FOR A FRESH CODE', icon: 'alert-outline' });
+                        return;
+                      }
+                      toast.show({
+                        message: plan.late
+                          ? `JOINED IN PROGRESS · ${queued} SONGS — THEY ARE AHEAD OF YOU`
+                          : `CONCERT QUEUED · ${queued} SONGS · CLOCKS MAY DRIFT ±${CONCERT.clockDriftMs}MS`,
+                        icon: 'radio-outline',
+                      });
+                    })();
+                  };
+                  if (plan.delayMs > CONCERT.joinScheduleThresholdMs) {
+                    toast.show({ message: `THE ROOM STARTS IN ${Math.ceil(plan.delayMs / 1000)}S — KEEP THE APP OPEN`, icon: 'radio-outline' });
+                    concertTimerRef.current = setTimeout(start, plan.delayMs);
+                    setConcertCode(''); // consumed — the timer owns the start now
+                  } else {
+                    start();
+                    setConcertCode('');
+                  }
+                } finally {
+                  setConcertBusy(false);
+                }
+              })();
+            }}
+            style={({ pressed }) => [
+              styles.journeyBtn,
+              (!concertCode.trim() || concertBusy) && { opacity: 0.4 },
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Ionicons name="radio-outline" size={13} color={colors.orange} />
+            <MonoText size={9.5} bold color={colors.ink} style={{ letterSpacing: 1.6, flex: 1 }}>
+              {concertBusy ? 'READING THE ROOM…' : 'JOIN THE ROOM'}
+            </MonoText>
+            <Ionicons name="play" size={12} color={colors.ink40} />
+          </Pressable>
+          <MonoText size={8} color={colors.ink40} style={{ marginTop: 8, letterSpacing: 0.6 }}>
+            {'NO SERVER — THE CODE IS THE ROOM · EACH PHONE STARTS ON ITS OWN CLOCK (±' + CONCERT.clockDriftMs + 'MS IS REAL)'}
+          </MonoText>
+        </View>
 
         {/* ── MAGNUM OPUS F14 — the Mood Journey card ── */}
         <View style={styles.journeyCard} testID="mood-journey-card">

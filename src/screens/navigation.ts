@@ -10,6 +10,7 @@ export type RootStackParamList = {
   Taste: undefined;
   AI: undefined;
   Premium: undefined;
+  GenreExplorer: undefined;
 };
 
 export type TabParamList = {

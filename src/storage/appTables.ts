@@ -35,6 +35,12 @@ import {
   type SessionSnapshotsStore,
   type SessionSnapshot,
 } from '../ai/sessionMemory';
+import {
+  createMemoryTags,
+  type MemoryTagsService,
+  type MemoryTagsStore,
+  type MemoryTag,
+} from './memoryTags';
 
 /** Parse a JSON array column defensively (corrupt row ≠ dead read path). */
 function safeParseArray<T>(raw: string): T[] {
@@ -89,6 +95,8 @@ export interface AppTables {
   bookmarks: BookmarksService;
   /** F15 — the last few session snapshots (FIFO max 3). */
   sessions: SessionSnapshotsService;
+  /** F20 (LITE) — the listener's tagged moments. */
+  memoryTags: MemoryTagsService;
 }
 
 let instance: Promise<AppTables> | null = null;
@@ -169,10 +177,30 @@ export function getAppTables(): Promise<AppTables> {
         },
       };
 
+      const memoryTagsStore: MemoryTagsStore = {
+        async get(id) {
+          const row = await db.getFirstAsync<MemoryTag>(`SELECT * FROM memory_tags WHERE id = ?`, [id]);
+          return row ?? null;
+        },
+        async all() {
+          return db.getAllAsync<MemoryTag>(`SELECT * FROM memory_tags`);
+        },
+        async put(tag) {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO memory_tags (id, recordingKey, lat, lng, at, photoUri, note) VALUES (?,?,?,?,?,?,?)`,
+            [tag.id, tag.recordingKey, tag.lat, tag.lng, tag.at, tag.photoUri, tag.note],
+          );
+        },
+        async del(id) {
+          await db.runAsync(`DELETE FROM memory_tags WHERE id = ?`, [id]);
+        },
+      };
+
       return {
         stories: createSongStories(storiesStore),
         bookmarks: createBookmarks(bookmarksStore),
         sessions: createSessionSnapshots(sessionsStore),
+        memoryTags: createMemoryTags(memoryTagsStore),
       };
     })();
     instance.catch(() => {

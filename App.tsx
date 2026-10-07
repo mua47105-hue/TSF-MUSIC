@@ -192,6 +192,15 @@ export default function App() {
                   component={PremiumScreen}
                   options={{ animation: 'slide_from_right' }}
                 />
+                {/* MAGNUM OPUS F19 — the genre map (seeded, deterministic).
+                    LAZY on purpose: getComponent defers the module's
+                    evaluation to first navigation — the cold path gains
+                    the registration, never the work (bar X5). */}
+                <Stack.Screen
+                  name="GenreExplorer"
+                  getComponent={() => require('./src/screens/GenreExplorer').GenreExplorer}
+                  options={{ animation: 'slide_from_right' }}
+                />
                 <Stack.Screen
                   name="Player"
                   component={PlayerScreen}
