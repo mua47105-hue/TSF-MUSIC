@@ -29,9 +29,24 @@ import {
   type BookmarksStore,
   type Bookmark,
 } from '../player/bookmarks';
+import {
+  createSessionSnapshots,
+  type SessionSnapshotsService,
+  type SessionSnapshotsStore,
+  type SessionSnapshot,
+} from '../ai/sessionMemory';
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS song_stories (
+/** Parse a JSON array column defensively (corrupt row ≠ dead read path). */
+function safeParseArray<T>(raw: string): T[] {
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const SCHEMA = `CREATE TABLE IF NOT EXISTS song_stories (
   recordingKey TEXT PRIMARY KEY,
   text TEXT NOT NULL,
   createdAt INTEGER NOT NULL,
@@ -72,6 +87,8 @@ CREATE TABLE IF NOT EXISTS session_snapshots (
 export interface AppTables {
   stories: SongStoriesService;
   bookmarks: BookmarksService;
+  /** F15 — the last few session snapshots (FIFO max 3). */
+  sessions: SessionSnapshotsService;
 }
 
 let instance: Promise<AppTables> | null = null;
@@ -128,9 +145,34 @@ export function getAppTables(): Promise<AppTables> {
         },
       };
 
+      const sessionsStore: SessionSnapshotsStore = {
+        async put(snapshot: SessionSnapshot) {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO session_snapshots (id, vibeLabel, seedTrackIds, startedAt, endedAt) VALUES (?,?,?,?,?)`,
+            [snapshot.id, snapshot.vibeLabel, JSON.stringify(snapshot.seedTrackIds), snapshot.startedAt, snapshot.endedAt],
+          );
+        },
+        async all() {
+          const rows = await db.getAllAsync<{ id: string; vibeLabel: string; seedTrackIds: string; startedAt: number; endedAt: number }>(
+            `SELECT * FROM session_snapshots`,
+          );
+          return rows.map((r) => ({
+            id: r.id,
+            vibeLabel: r.vibeLabel,
+            seedTrackIds: safeParseArray<string>(r.seedTrackIds),
+            startedAt: r.startedAt,
+            endedAt: r.endedAt,
+          }));
+        },
+        async del(id) {
+          await db.runAsync(`DELETE FROM session_snapshots WHERE id = ?`, [id]);
+        },
+      };
+
       return {
         stories: createSongStories(storiesStore),
         bookmarks: createBookmarks(bookmarksStore),
+        sessions: createSessionSnapshots(sessionsStore),
       };
     })();
     instance.catch(() => {

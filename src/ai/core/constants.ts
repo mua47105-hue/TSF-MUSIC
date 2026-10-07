@@ -534,6 +534,84 @@ export const QUEUE_VIBE = {
   minTracks: 4,
 } as const;
 
+/** F14 — Mood Journey ("take me from anxious to calm"): a bounded drift
+ *  in the (energy, valence) proxy space, candidates sourced through the
+ *  injected CatalogApi and matched to the path. Kill switch respected;
+ *  unfilled slots are skipped, never fabricated. */
+export const MOOD_JOURNEY = {
+  /** The per-axis step bound between consecutive slots — small enough
+   *  that the listener FEELS the drift, large enough that 12 slots can
+   *  cross the whole axis (12 × 0.15 = 1.8 ≥ 1.0). */
+  maxStep: 0.15,
+  /** A candidate may sit at most this far (proxy-space distance) from
+   *  its slot's target — beyond that the slot is skipped honestly. */
+  maxCandidateDistance: 0.3,
+  /** The default slot count (a 12-song journey ≈ 45 minutes). */
+  defaultCount: 12,
+  /** The canned journeys the Wire card offers (anxious → calm, flat →
+   *  lifted). Points are in the proxy space, documented per entry. */
+  canned: [
+    { label: 'ANXIOUS → CALM', from: { energy: 0.85, valence: 0.25 }, to: { energy: 0.2, valence: 0.75 } },
+    { label: 'FLAT → LIFTED', from: { energy: 0.4, valence: 0.35 }, to: { energy: 0.85, valence: 0.85 } },
+  ] as ReadonlyArray<{ label: string; from: { energy: number; valence: number }; to: { energy: number; valence: number } }>,
+  /** The affinity pool the journey sources from (top-N artists). */
+  artistPool: 4,
+  /** The candidate cap before matching (fewer → wider search; more →
+   *  wasted scoring). */
+  candidateCap: 40,
+  /** Rows pulled per artist from the catalog. */
+  rowsPerArtist: 12,
+} as const;
+
+/** F15 — Session Memory ("resume Gym"): the last few sessions,
+ *  snapshotted on app background with their vibe + queue spine. */
+export const SESSION_MEMORY = {
+  /** FIFO cap — three memories, not a diary. */
+  maxSnapshots: 3,
+  /** A session worth remembering had at least this many tracks queued. */
+  minTracks: 3,
+  /** The seed spine caps at this many track ids (a 200-track queue
+   *  snapshots its first 25 — the spine, not the whale). */
+  maxSeedTracks: 25,
+  /** Fresh catalog rows may fill at most this share of a resumed
+   *  playlist (≤30% unheard — the rest is YOUR session coming back). */
+  freshShare: 0.3,
+  /** The resume playlist's length. */
+  resumeCount: 12,
+  /** Rows pulled per artist when the resume needs fresh rows. */
+  rowsPerArtist: 12,
+} as const;
+
+/** F16 — Decade Radio ("play me the sound of 1994"): a deterministic
+ *  search ladder per year, filtered by the rows' own year metadata. */
+export const DECADE_RADIO = {
+  /** The provider's catalog reaches this far back (film music from the
+   *  60s); earlier years return honest empties. */
+  minYear: 1950,
+  /** The future is not radio-able either. */
+  maxYear: 2077,
+  /** The ladder's default playlist length. */
+  defaultCount: 12,
+  /** Below this many tracks a decade is declared THIN — the UI says so
+   *  instead of padding with unrelated rows. */
+  thinCount: 5,
+  /** Rows pulled per ladder rung. */
+  rowsPerRung: 20,
+} as const;
+
+/** F17 — Artist Timeline: the artist's eras on an axis. Pure grouping
+ *  in src/ai/artistTimeline.ts; the provider's album rows arrive
+ *  undated, so the top-tracks timeline (real year metadata) is the
+ *  honest primary. */
+export const ARTIST_TIMELINE = {
+  /** A decade with fewer than this many tracks renders the honest
+   *  "thin era" caption instead of a one-song decade chip. */
+  thinDecade: 3,
+  /** The timeline reads at most this many top tracks (the artist page
+   *  already carries ~60; the axis needs no more). */
+  maxTracks: 60,
+} as const;
+
 /** FEATURE 9 — Aura Visualizer (battery-safe, GPU-cheap: three gradient
  *  layers animating ONLY opacity, native driver, no per-frame JS math;
  *  the layer count is JSX structure, not a runtime tuning number). */

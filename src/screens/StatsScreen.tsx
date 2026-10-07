@@ -21,6 +21,9 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ListeningStats } from '../types';
 import { getStats } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
+import { useToast } from '../components/Toast';
+import { getAppTables, type AppTables } from '../storage/appTables';
+import { SESSION_MEMORY } from '../ai/core/constants';
 import { computeRadarAxesKey, radarShareText, type RadarAxes } from '../ai/radar';
 import { RadarChart } from '../components/RadarChart';
 import type { HistoricalDay } from '../ai/core/historical';
@@ -106,6 +109,24 @@ export function StatsScreen() {
   const [radarSharing, setRadarSharing] = useState(false);
   // MAGNUM OPUS F9 — Time Machine (null = honest "not enough history yet").
   const [timeMachine, setTimeMachine] = useState<HistoricalDay | null | 'loading'>('loading');
+  // MAGNUM OPUS F16 — the decade radio dial (busy flag while the ladder walks)
+  const [decadeBusy, setDecadeBusy] = useState(false);
+  const toast = useToast();
+  // MAGNUM OPUS F15 — SESSION MEMORY: the last snapshots (newest first)
+  const [sessions, setSessions] = useState<Awaited<ReturnType<AppTables['sessions']['list']>>>([]);
+  const [resumeBusyId, setResumeBusyId] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    getAppTables()
+      .then((t) => t.sessions.list())
+      .then((rows) => {
+        if (live) setSessions(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -312,6 +333,49 @@ export function StatsScreen() {
             )}
           </View>
 
+          {/* MAGNUM OPUS F15 — SESSION MEMORY: the last sessions, one tap
+              to resume (≥70% your spine, ≤30% fresh catalog rows). */}
+          {sessions.length > 0 ? (
+            <View style={styles.tmCard} testID="session-memory-card">
+              <View style={styles.tmHead}>
+                <Ionicons name="bookmark-outline" size={14} color={colors.orange} />
+                <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+                  RESUME A SESSION
+                </MonoText>
+              </View>
+              {sessions.slice(0, SESSION_MEMORY.maxSnapshots).map((s) => (
+                <Pressable
+                  key={s.id}
+                  testID={`resume-session-${s.id}`}
+                  disabled={resumeBusyId != null}
+                  onPress={() => {
+                    setResumeBusyId(s.id);
+                    void mindbeat
+                      .resumeSession(s.id)
+                      .then((mix) => {
+                        if (!mix) {
+                          toast.show({ message: 'THAT SESSION LOST ITS SPINE — CANNOT RESUME HONESTLY', icon: 'information-circle-outline' });
+                        } else {
+                          playQueue(mix, 0);
+                          toast.show({ message: `RESUMED · ${mix.length} SONGS · MOSTLY YOURS`, icon: 'play' });
+                        }
+                      })
+                      .catch(() => toast.show({ message: 'COULD NOT RESUME — TRY AGAIN', icon: 'alert-outline' }))
+                      .finally(() => setResumeBusyId(null));
+                  }}
+                  style={({ pressed }) => [styles.tmPlayBtn, pressed && { opacity: 0.6 }]}
+                >
+                  <Ionicons name="play" size={12} color={colors.ink} />
+                  <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.2, flex: 1 }} numberOfLines={1}>
+                    {resumeBusyId === s.id
+                      ? 'RESUMING…'
+                      : `${s.vibeLabel} · ${s.seedTrackIds.length} TRACKS · ${new Date(s.endedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                  </MonoText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
           {/* MAGNUM OPUS F9 — Time Machine: this day in a prior year, from
               the compaction pass's own summary table. null renders the
               honest "not enough history yet" — never fabricated nostalgia. */}
@@ -336,6 +400,51 @@ export function StatsScreen() {
                       {`▸ ${t.title} — ${t.artist}`}
                     </MonoText>
                   ))}
+                  {/* MAGNUM OPUS F16 — DECADE RADIO: the sound of that year,
+                      from the deterministic ladder + the rows' own years. */}
+                  <Pressable
+                    testID="decade-radio-btn"
+                    accessibilityRole="button"
+                    accessibilityLabel="Play the sound of that year"
+                    disabled={decadeBusy}
+                    onPress={() => {
+                      setDecadeBusy(true);
+                      void (async () => {
+                        try {
+                          // the kill switch is checked FRESH — a disabled
+                          // brain is reported as such, never as a fake
+                          // "thin catalog" (the blind critic's P2)
+                          if (await mindbeat.isDisabled()) {
+                            toast.show({ message: 'THE BRAIN IS SWITCHED OFF — DECADE RADIO NEEDS IT ON', icon: 'information-circle-outline' });
+                            return;
+                          }
+                          const res = await mindbeat.decadeRadio(new Date(timeMachine.dayStartTs).getFullYear());
+                          if (!res.tracks.length) {
+                            toast.show({ message: `NO RADIO SURVIVED FROM ${res.ladder.exact.toUpperCase()} — TOO THIN`, icon: 'information-circle-outline' });
+                          } else {
+                            playQueue(res.tracks, 0);
+                            const undated = res.tracks.filter((t) => typeof t.year !== 'number' || t.year <= 0).length;
+                            toast.show({
+                              message: res.thin
+                                ? `THE SOUND OF ${res.ladder.decadeStart}s · THIN CATALOG · ${res.tracks.length} SONGS${undated ? ` · ${undated} UNDATED` : ''}`
+                                : `THE SOUND OF ${res.ladder.decadeStart}s · ${res.tracks.length} SONGS${undated ? ` · ${undated} UNDATED` : ''}`,
+                              icon: 'disc',
+                            });
+                          }
+                        } catch {
+                          toast.show({ message: 'THE TIME MACHINE SPUTTERED — TRY AGAIN', icon: 'alert-outline' });
+                        } finally {
+                          setDecadeBusy(false);
+                        }
+                      })();
+                    }}
+                    style={({ pressed }) => [styles.tmPlayBtn, pressed && { opacity: 0.6 }]}
+                  >
+                    <Ionicons name="disc" size={13} color={colors.ink} />
+                    <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.6 }}>
+                      {decadeBusy ? 'DIALING THE DECADE…' : `PLAY THE SOUND OF ${new Date(timeMachine.dayStartTs).getFullYear()}`}
+                    </MonoText>
+                  </Pressable>
                 </>
               ) : (
                 <MonoText size={10} color={colors.ink60} style={{ marginTop: 8, letterSpacing: 0.6 }}>
@@ -531,6 +640,18 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   tmHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tmPlayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 7,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 10,
+  },
   tmTitle: {
     marginTop: 8,
     fontFamily: fonts.display,

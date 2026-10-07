@@ -63,7 +63,9 @@ import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
 import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queueOptimizer';
-import { QUEUE_VIBE } from '../ai/core/constants';
+import { QUEUE_VIBE, SESSION_MEMORY } from '../ai/core/constants';
+import { shouldSnapshot } from '../ai/sessionMemory';
+import { getAppTables } from '../storage/appTables';
 import { primeImagePrewarm } from './imagePrewarm';
 
 let setupPromise: Promise<void> | null = null;
@@ -178,6 +180,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // F13 — tracks explicitly queued via "play next" are PINNED: the vibe
   // walk never moves them. Cleared when the walk consumes the arrangement.
   const pinnedIdsRef = useRef<Set<string>>(new Set());
+  // F15 — when the current listening session began (for the snapshot).
+  const sessionStartRef = useRef<number | null>(null);
   // the 8s stale-plant timer (critic IT-3): cleared before every new plant
   const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shuffle, setShuffleState] = useState(false);
@@ -236,14 +240,40 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
+        // F15 — a new session begins when the app comes back with music
+        sessionStartRef.current ??= Date.now();
         void refreshQueue();
         void mindbeat.appActive();
       } else if (state === 'background') {
         void mindbeat.appBackground();
+        // MAGNUM OPUS F15 — SESSION MEMORY: snapshot on background, only
+        // when the session carried ≥ SESSION_MEMORY.minTracks tracks
+        // (a 2-song drive is not a session worth remembering). FIFO cap
+        // 3 lives in the pure service (sessionMemory.ts).
+        void (async () => {
+          try {
+            // the ONLY gate is the pure law: ≥ SESSION_MEMORY.minTracks (3).
+            // (The blind critic caught a pre-gate at QUEUE_VIBE.minTracks=4
+            // that silently made 3-song sessions unrememberable.)
+            if (!shouldSnapshot(queue.length)) return;
+            const now = Date.now();
+            const tables = await getAppTables();
+            await tables.sessions.save({
+              vibeLabel: mindbeat.sessionReadout().vibe,
+              seedTrackIds: queue.slice(0, SESSION_MEMORY.maxSeedTracks).map((t) => t.id),
+              startedAt: sessionStartRef.current ?? now,
+              endedAt: now,
+            });
+          } catch {
+            /* a failed snapshot must never block the background transition */
+          } finally {
+            sessionStartRef.current = null; // the next foreground starts a fresh session
+          }
+        })();
       }
     });
     return () => sub.remove();
-  }, [refreshQueue]);
+  }, [refreshQueue, queue]);
 
   const playback = usePlaybackState();
   const activeRN = useActiveTrack();

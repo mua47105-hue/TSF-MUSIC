@@ -18,14 +18,23 @@ import {
   type BookmarksStore,
   type Bookmark,
 } from '../player/bookmarks';
+import {
+  createSessionSnapshots,
+  type SessionSnapshotsService,
+  type SessionSnapshotsStore,
+  type SessionSnapshot,
+} from '../ai/sessionMemory';
 
 export interface AppTables {
   stories: SongStoriesService;
   bookmarks: BookmarksService;
+  /** F15 — the last few session snapshots (FIFO max 3). */
+  sessions: SessionSnapshotsService;
 }
 
 const storiesMap = new Map<string, SongStory>();
 const bookmarksMap = new Map<string, Bookmark>();
+const sessionsMap = new Map<string, SessionSnapshot>();
 
 let instance: Promise<AppTables> | null = null;
 
@@ -59,9 +68,21 @@ export function getAppTables(): Promise<AppTables> {
         bookmarksMap.delete(id);
       },
     };
+    const sessionsStore: SessionSnapshotsStore = {
+      async put(snapshot: SessionSnapshot) {
+        sessionsMap.set(snapshot.id, { ...snapshot });
+      },
+      async all() {
+        return [...sessionsMap.values()];
+      },
+      async del(id) {
+        sessionsMap.delete(id);
+      },
+    };
     instance = Promise.resolve({
       stories: createSongStories(storiesStore),
       bookmarks: createBookmarks(bookmarksStore),
+      sessions: createSessionSnapshots(sessionsStore),
     });
   }
   return instance;

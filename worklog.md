@@ -1781,3 +1781,40 @@ Stage Summary:
 - Cold path: App.tsx diff empty; mindbeat.init() body byte-identical.
 - Next: Wave 3 (F10 haptics, F11 pseudo-visualizer, F12 karaoke, F13
   queue optimizer).
+
+---
+Task ID: 3 (Magnum Opus Wave 3 — intelligent playback F10–F13)
+Agent: Super Z (main agent)
+
+Task: Build, lock, mutate, critic-fix, commit and push Wave 3: F10
+Haptic Choreography, F11 Pseudo-Visualizer, F12 Karaoke Words, F13
+Shuffle by Vibe.
+
+Work Log:
+- Built all four pure cores (haptics.ts / visualizer.ts / singalong
+  extension / queueOptimizer.ts) + PseudoVisualizer.tsx component +
+  constants (HAPTICS, VISUALIZER, KARAOKE, QUEUE_VIBE) + persisted
+  reducedHaptics + mindbeat.featuresForTrack facade (the law-② door
+  for the UI's feature reads).
+- Wired: beat tick (player, playing-only), heart (button + double-tap),
+  bookmark-save, crate-generate (HomeScreen force-refresh, gated by
+  the persisted switch); visualizer behind the art (one native loop per
+  bar, transform-only); karaoke word-level active row (memoized word
+  timeline, structural degradation); SHUFFLE BY VIBE button in the
+  queue sheet (pinned = playNext-tracked ids, honest step toast).
+- 33 wave-3 locks; 11 mutations all RED (incl. a fixture improvement
+  the gauntlet itself forced: the pinned-track fixture was degenerate —
+  the NN walk agreed with the pin until the fixture discriminated).
+- BLIND CRITIC verdict FIX-FIRST → fixed: [P1] lastBeatRef now resets
+  on track change (the tick was dead for minutes after every switch);
+  [P1] six inline tuning numbers hoisted to constants; [P2×7] stagger
+  delay before the loop, frozen = true rest, sung/upcoming dim split,
+  degenerate-span guard, dead spring skipped, engine-real toast count,
+  stale-pin cleanup, crate-buzz unmount guard.
+- Commit 90e94ff pushed (72631da..90e94ff). 721/0 tests, tsc clean.
+
+Stage Summary:
+- Wave 3 GREEN and pushed. Cold path untouched; 11 mutations RED.
+- Next: Wave 4 (F14 Mood Journey, F15 Session Memory, F16 Decade
+  Radio, F17 Artist Timeline) — every new facade surface must check
+  the kill switch + honest empty states.

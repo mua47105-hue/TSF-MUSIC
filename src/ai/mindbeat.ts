@@ -18,7 +18,7 @@ import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR } from './core/constants';
+import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR, MOOD_JOURNEY, DECADE_RADIO, SESSION_MEMORY } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile, TrackFeatures } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -35,6 +35,9 @@ import { buildWrapped, type WrappedSummary } from './wrapped';
 import { reasonLine } from './core/decision';
 import { computeRadarAxes, type RadarAxes } from './radar';
 import { pickThisDay, type HistoricalDay } from './core/historical';
+import { planMoodPath, assignSlots, type MoodPoint, type MoodSlot } from './moodJourney';
+import { decadeQuery, inDecade } from './decadeRadio';
+import { mixResumeSession } from './sessionMemory';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
 import { filterClean } from '../safety';
 import { reconcileRecordings, recordingKey } from '../api/recording';
@@ -793,6 +796,141 @@ class Mindbeat {
    */
   featuresForTrack(track: { artist: string; title: string; album?: string }): TrackFeatures {
     return estimateFeatures({ artist: track.artist, title: track.title, album: track.album });
+  }
+
+  /**
+   * MAGNUM OPUS F14 — MOOD JOURNEY. `count` slots drifting from `from`
+   * to `to` (each step bounded to MOOD_JOURNEY.maxStep), candidates
+   * sourced through the injected CatalogApi and matched to the path in
+   * the proxy feature space. Kill switch → silent []. A slot the
+   * catalog cannot fill is SKIPPED (the result simply has fewer rows
+   * — honest absence, never fabricated). reconcileRecordings runs at
+   * the merge point (house rule ⑥).
+   */
+  async moodJourney(
+    from: MoodPoint,
+    to: MoodPoint,
+    count: number = MOOD_JOURNEY.defaultCount,
+  ): Promise<{ tracks: Track[]; plan: MoodSlot[]; skippedSlots: number[] }> {
+    await this.ready();
+    if (this.disabled) return { tracks: [], plan: [], skippedSlots: [] }; // kill switch, silent
+    const plan = planMoodPath(from, to, count);
+    if (!plan.length) return { tracks: [], plan: [], skippedSlots: [] };
+
+    // candidates: the listener's own affinity pool first (top artists),
+    // deepened by the seed artist when the profile is young
+    const artists: string[] = [];
+    const pushArtist = (a?: string) => {
+      const name = (a ?? '').split(/,|&/)[0].trim();
+      if (name && !artists.some((x) => x.toLowerCase() === name.toLowerCase())) artists.push(name);
+    };
+    for (const { artist } of topArtists(this.profile, Date.now(), MOOD_JOURNEY.artistPool)) pushArtist(artist);
+
+    let candidates: Track[] = [];
+    for (const a of artists) {
+      if (candidates.length >= MOOD_JOURNEY.candidateCap) break;
+      try {
+        const rows = await CATALOG.artistTracks(a, MOOD_JOURNEY.rowsPerArtist);
+        candidates = candidates.concat(rows);
+      } catch {
+        /* one artist failing never kills the journey */
+      }
+    }
+    candidates = reconcileRecordings(candidates);
+    candidates = filterClean(candidates);
+    if (!candidates.length) return { tracks: [], plan, skippedSlots: plan.map((s) => s.slot) };
+
+    const featureOf = (t: Track): MoodPoint => {
+      const f = estimateFeatures({ artist: t.artist, title: t.title, album: t.album });
+      return { energy: f.energy, valence: f.valence };
+    };
+    const { picks, skippedSlots } = assignSlots(plan, candidates, featureOf);
+    return { tracks: picks.map(({ track }) => ({ ...track, isRecommended: true })), plan, skippedSlots };
+  }
+
+  /**
+   * MAGNUM OPUS F15 — RESUME SESSION. The snapshot's seed spine (heard,
+   * ≥70% of the result) plus at most 30% fresh catalog rows matching
+   * the vibe. NULL = the snapshot is gone (FIFO) or its seeds cannot be
+   * resolved — the honest cold state, never a fabricated session.
+   */
+  async resumeSession(id: string): Promise<Track[] | null> {
+    await this.ready();
+    if (this.disabled) return null;
+    let seeds: Track[] = [];
+    try {
+      // Metro rewrites a DIRECT `require('...')` call into the bundle
+      // graph (and the webmock redirect swaps appTables for Maps on
+      // web); the lab's bun resolves it natively — the same pattern
+      // featureTable.ts established. Aliasing the identifier would
+      // BYPASS Metro's rewrite and throw on device (the blind critic's
+      // P0: the string would reach the runtime unconverted, the catch
+      // would disguise it as the honest cold state, and resume would
+      // be dead code behind a smiling toast).
+      const mod = require('../storage/appTables') as typeof import('../storage/appTables');
+      const tables = await mod.getAppTables();
+      const snapshot = await tables.sessions.get(id);
+      if (!snapshot?.seedTrackIds.length) return null;
+      const want = new Set(snapshot.seedTrackIds);
+      // resolve seeds against the app's OWN local catalog (recents +
+      // playCounts + favorites) — no network needed for the spine
+      const [recents, counts, favs] = await Promise.all([getRecents(), getPlayCounts(), getFavorites()]);
+      const local = [...recents, ...Object.values(counts).map((c) => c.track).filter(Boolean), ...favs];
+      seeds = local.filter((t, i) => want.has(t.id) && local.findIndex((x) => x.id === t.id) === i);
+    } catch {
+      return null;
+    }
+    if (seeds.length < 2) return null; // a snapshot that lost its spine is not a session
+
+    // fresh rows matching the vibe: the snapshot's top artists' catalogs
+    const vibeArtist = seeds[0]?.artist ?? '';
+    let fresh: Track[] = [];
+    try {
+      fresh = await CATALOG.artistTracks(vibeArtist.split(/,|&/)[0].trim(), SESSION_MEMORY.rowsPerArtist);
+    } catch {
+      fresh = [];
+    }
+    fresh = filterClean(reconcileRecordings(fresh));
+    const seedIds = new Set(seeds.map((t) => t.id));
+    const { mix } = mixResumeSession(
+      seeds,
+      fresh.filter((t) => !seedIds.has(t.id)),
+      SESSION_MEMORY.resumeCount,
+    );
+    return mix.map((t, i) => ({ ...t, isRecommended: i >= seeds.length }));
+  }
+
+  /**
+   * MAGNUM OPUS F16 — DECADE RADIO. The deterministic ladder
+   * (decadeQuery) walked through the injected CatalogApi; rows filtered
+   * by their OWN year metadata where present; kill switch → silent [].
+   * A thin year returns fewer rows honestly (the UI says THIN, it does
+   * not pad with unrelated eras).
+   */
+  async decadeRadio(year: number, count: number = DECADE_RADIO.defaultCount): Promise<{ tracks: Track[]; thin: boolean; ladder: ReturnType<typeof decadeQuery> }> {
+    await this.ready();
+    const ladder = decadeQuery(year);
+    if (this.disabled) return { tracks: [], thin: true, ladder }; // kill switch, silent
+    const seen = new Set<string>();
+    let out: Track[] = [];
+    for (const rung of [ladder.exact, ladder.decade, ladder.genre]) {
+      if (out.length >= count) break;
+      let rows: Track[] = [];
+      try {
+        rows = await CATALOG.search(rung, DECADE_RADIO.rowsPerRung);
+      } catch {
+        rows = [];
+      }
+      rows = filterClean(reconcileRecordings(rows));
+      for (const t of rows) {
+        if (out.length >= count) break;
+        if (seen.has(t.id)) continue;
+        if (!inDecade(t, ladder.decadeStart)) continue;
+        seen.add(t.id);
+        out.push({ ...t, isRecommended: true });
+      }
+    }
+    return { tracks: out, thin: out.length < DECADE_RADIO.thinCount, ladder };
   }
 
   /**

@@ -7,8 +7,8 @@
  *   kind 'chart' → JioSaavn playlist, kind 'search' → clean search.
  */
 
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -16,6 +16,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import type { Collection, Track } from '../types';
 import { getAlbumTracks, getArtistCatalog, getCollectionTracks, primaryArtistName, searchSaavnClean } from '../api/saavn';
+import { groupTracksByDecade } from '../ai/artistTimeline';
+import { ARTIST_TIMELINE } from '../ai/core/constants';
 import { lookupArtistPhoto } from '../api/artists';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
@@ -50,6 +52,13 @@ export function CollectionScreen() {
   const [menuTrack, setMenuTrack] = useState<Track | null>(null);
   // artist pages carry the provider's own top-albums (tappable cards)
   const [artistAlbums, setArtistAlbums] = useState<Collection[]>([]);
+  // MAGNUM OPUS F17 — the artist timeline: decades from the top tracks'
+  // REAL year metadata. (The provider's album rows arrive undated, so
+  // groupAlbumsByYear stays a pure-module path exercised by the locks —
+  // the honest axis here reads the tracks that DO carry years.) Pure
+  // grouping, memoized per track list (never per render).
+  const timelineDecades = useMemo(() => groupTracksByDecade((tracks ?? []).slice(0, ARTIST_TIMELINE.maxTracks)), [tracks]);
+  const undatedCount = useMemo(() => (tracks ?? []).filter((t) => typeof t.year !== 'number' || t.year <= 1900).length, [tracks]);
 
   // ── Artist pages carry the artist's PHOTO (v4.0.1 fix) ────────────
   // The route often arrives with artwork: '' (the home rail only resolved
@@ -275,6 +284,49 @@ export function CollectionScreen() {
                 </ScrollView>
               </View>
             ) : null}
+            {/* MAGNUM OPUS F17 — the ARTIST TIMELINE: this page's top tracks
+                carry the provider's real release years, so the axis is a
+                pure grouping (artistTimeline.ts) — decades newest first,
+                thin eras render their honest caption, and tapping a decade
+                plays EXACTLY those rows through the existing queue. */}
+            {isArtist && timelineDecades.size > 0 && !loading ? (
+              <View style={styles.artistAlbumsWrap} testID="artist-timeline">
+                <View style={styles.artistAlbumsHead}>
+                  <MonoText size={9.5} bold color={colors.ink60} style={{ letterSpacing: 2 }}>
+                    TIMELINE
+                  </MonoText>
+                  <View style={styles.artistAlbumsRule} />
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 18, gap: 8 }}
+                >
+                  {[...timelineDecades.entries()].map(([decade, rows]) => (
+                    <Pressable
+                      key={decade}
+                      testID={`timeline-${decade}`}
+                      onPress={() => playQueue(rows, 0)}
+                      style={({ pressed }) => [styles.timelineChip, pressed && { opacity: 0.6 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Play the ${decade}s tracks`}
+                    >
+                      <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 1.4 }}>
+                        {`${decade}s`}
+                      </MonoText>
+                      <MonoText size={8} color={colors.ink40} style={{ letterSpacing: 0.8 }}>
+                        {rows.length >= ARTIST_TIMELINE.thinDecade ? `${rows.length} SONGS` : `${rows.length} — THIN ERA`}
+                      </MonoText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                {undatedCount > 0 ? (
+                  <MonoText size={8} color={colors.ink40} style={{ marginTop: 6, marginHorizontal: 18, letterSpacing: 0.6 }}>
+                    {`${undatedCount} TRACKS CARRY NO YEAR — THEY SIT OFF THE AXIS (HONESTLY)`}
+                  </MonoText>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         }
         renderItem={({ item, index }) => (
@@ -365,6 +417,15 @@ const styles = StyleSheet.create({
   },
   loadingWrap: { alignItems: 'center', gap: 12, paddingVertical: 32 },
   artistAlbumsWrap: { alignSelf: 'stretch', marginTop: 10, gap: 8 },
+  timelineChip: {
+    alignItems: 'center',
+    gap: 2,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
   artistAlbumsHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18 },
   artistAlbumsRule: { flex: 1, height: 1.5, backgroundColor: colors.ink16 },
 });

@@ -39,7 +39,9 @@ import { Brutal, MonoText, OutlineText, PulseDot } from '../components/Brutal';
 import { Artwork } from '../components/Artwork';
 import { colors, fonts } from '../theme';
 import { useStableField } from '../hooks/useStableField';
+import { MOOD_JOURNEY } from '../ai/core/constants';
 import type { RootStackParamList } from './navigation';
+import type { Track } from '../types';
 
 type Stage = 0 | 1 | 2 | 3 | 4 | 5; // 5 = done
 
@@ -76,6 +78,21 @@ export function MindbeatWireScreen() {
   const promptField = useStableField({ onCommit: setPrompt });
   const [stage, setStage] = useState<Stage>(5);
   const [busy, setBusy] = useState(false);
+  // MAGNUM OPUS F14 — the mood journey runner
+  const [journeyBusy, setJourneyBusy] = useState<string | null>(null);
+  const [mindbeatDisabled, setMindbeatDisabled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    mindbeat
+      .isDisabled()
+      .then((v) => {
+        if (live) setMindbeatDisabled(v);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const [result, setResult] = useState<GeneratedPlaylistV2 | null>(null);
   const [variant, setVariant] = useState(0);
   const [sound, setSound] = useState<{ minutes: number; streakDays?: number; skipRate?: number; topArtist?: string; topArtistPlays?: number; streams: number } | null>(null);
@@ -311,6 +328,62 @@ export function MindbeatWireScreen() {
           </Animated.View>
         ) : null}
 
+        {/* ── MAGNUM OPUS F14 — the Mood Journey card ── */}
+        <View style={styles.journeyCard} testID="mood-journey-card">
+          <View style={styles.ysHead}>
+            <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 2 }}>
+              MOOD JOURNEY
+            </MonoText>
+            <MonoText size={9} color={colors.ink40} style={{ letterSpacing: 1 }}>
+              {'A BOUNDED DRIFT · ±15% A SONG'}
+            </MonoText>
+          </View>
+          {MOOD_JOURNEY.canned.map((j) => (
+            <Pressable
+              key={j.label}
+              testID={`journey-${j.label.split(' ')[0].toLowerCase()}`}
+              onPress={() => {
+                setJourneyBusy(j.label);
+                void (async () => {
+                  try {
+                    // the kill switch is checked FRESH at press time (a
+                    // mount-time snapshot goes stale after a Taste toggle)
+                    if (await mindbeat.isDisabled()) {
+                      toast.show({ message: 'THE BRAIN IS SWITCHED OFF — JOURNEYS NEED IT ON', icon: 'information-circle-outline' });
+                      return;
+                    }
+                    const res = await mindbeat.moodJourney(j.from, j.to);
+                    if (!res.tracks.length) {
+                      toast.show({ message: 'THE CATALOG CANNOT FILL THIS JOURNEY YET', icon: 'information-circle-outline' });
+                    } else {
+                      void playQueue(res.tracks, 0);
+                      toast.show({
+                        message: `JOURNEY · ${res.tracks.length} SONGS · ${res.skippedSlots.length ? `${res.skippedSlots.length} SLOTS SKIPPED HONESTLY` : 'ALL SLOTS FILLED'}`,
+                        icon: 'pulse',
+                      });
+                    }
+                  } catch {
+                    toast.show({ message: 'THE JOURNEY FELL THROUGH — TRY AGAIN', icon: 'alert-outline' });
+                  } finally {
+                    setJourneyBusy(null);
+                  }
+                })();
+              }}
+              disabled={journeyBusy != null}
+              style={({ pressed }) => [styles.journeyBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="trending-down-outline" size={13} color={colors.orange} />
+              <MonoText size={9.5} bold color={colors.ink} style={{ letterSpacing: 1.6, flex: 1 }}>
+                {journeyBusy === j.label ? 'PLOTTING THE DRIFT…' : j.label}
+              </MonoText>
+              <Ionicons name="play" size={12} color={colors.ink40} />
+            </Pressable>
+          ))}
+          <MonoText size={8} color={colors.ink40} style={{ marginTop: 8, letterSpacing: 0.6 }}>
+            {'A SLOT THE CATALOG CANNOT FILL IS SKIPPED — NEVER FAKE-FILLED'}
+          </MonoText>
+        </View>
+
         {/* ── Your Sound audit box ── */}
         <Pressable onPress={() => nav.navigate('Stats')} style={styles.yourSound}>
           <View style={styles.ysHead}>
@@ -498,6 +571,25 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     backgroundColor: colors.paper,
     ...{ shadowColor: colors.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 5, height: 5 }, elevation: 5 },
+  },
+  journeyCard: {
+    marginHorizontal: 18,
+    marginTop: 24,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+  },
+  journeyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 10,
   },
   ysHead: {
     flexDirection: 'row',
