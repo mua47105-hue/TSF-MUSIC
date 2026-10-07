@@ -22,6 +22,8 @@ const KEYS = {
   autoplay: 'tsf.autoplay.v1',
   smartShuffle: 'tsf.smartShuffle.v1',
   dataSaver: 'tsf.dataSaver.v1',
+  // ── MAGNUM OPUS wave 3 (F10 haptics) ──
+  reducedHaptics: 'tsf.reducedHaptics.v1',
   // ── THE TEN · wave 1 (playback engine) ──
   smartVolume: 'tsf.smartVolume.v1',
   crossfade: 'tsf.crossfade.v1',
@@ -390,6 +392,16 @@ export async function getDataSaver(): Promise<boolean> {
 
 export async function setDataSaver(on: boolean): Promise<void> {
   await writeJSON(KEYS.dataSaver, on);
+}
+
+/** Reduced haptics (MAGNUM OPUS F10): true = the wrist stays still
+ *  (every hapticEvent nulls). Default false = FULL haptics. */
+export async function getReducedHaptics(): Promise<boolean> {
+  return readJSON<boolean>(KEYS.reducedHaptics, false);
+}
+
+export async function setReducedHaptics(on: boolean): Promise<void> {
+  await writeJSON(KEYS.reducedHaptics, on);
 }
 
 // ── THE TEN · wave 1 (playback engine settings) ────────────────────────

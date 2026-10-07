@@ -19,7 +19,7 @@ import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
 import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR } from './core/constants';
-import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile } from './core/types';
+import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile, TrackFeatures } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
@@ -781,6 +781,18 @@ class Mindbeat {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * MAGNUM OPUS F10/F11 — the track's proxy features (energy/valence/
+   * tempoClass) for the haptic beat-tick and the pseudo-visualizer.
+   * A SYNC passthrough to the pure estimator (tier-0..2, no ledger,
+   * no cold-start impact — the player calls it after paint). The UI
+   * never imports src/ai/core directly (law ②): this facade is the
+   * only door.
+   */
+  featuresForTrack(track: { artist: string; title: string; album?: string }): TrackFeatures {
+    return estimateFeatures({ artist: track.artist, title: track.title, album: track.album });
   }
 
   /**

@@ -51,10 +51,12 @@ import {
   getFavorites,
   getHomeFeedCache,
   getRecents,
+  getReducedHaptics,
   setChartsCache,
   setHomeFeedCache,
 } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
+import { hapticEvent, fireHaptic } from '../player/haptics';
 import { QuickTile, Shelf, ShelfCard, ArtistCard } from '../components/Shelf';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
@@ -104,6 +106,14 @@ export function HomeScreen() {
   const [feedState, setFeedState] = useState<'idle' | 'loading' | 'retry' | 'exhausted'>('idle');
   const pagerRef = useRef<EndlessFeedPager | null>(null);
   const feedSongsRef = useRef<Track[]>([]); // one long queue across batches (F3)
+  // F10 — the crate haptic must not buzz after the screen is gone
+  const loadAliveRef = useRef(true);
+  useEffect(() => {
+    loadAliveRef.current = true;
+    return () => {
+      loadAliveRef.current = false;
+    };
+  }, []);
   const feedBusyRef = useRef(false);
   // CRITIC P2-1 fix: pull-to-refresh epoch — a batch fetched by the OLD
   // pager must never append into the freshly-reset feed.
@@ -233,7 +243,23 @@ export function HomeScreen() {
       mindbeat.onTheRise().then(setOnTheRise).catch(() => undefined);
       mindbeat
         .weeklyCrate()
-        .then(setCrate)
+        .then((c) => {
+          setCrate(c);
+          // MAGNUM OPUS F10 — the crate-generate haptic: a fresh edition
+          // landed. Fires on FORCE refreshes only (a pull-to-refresh that
+          // actually rebuilt the crate), never on the silent cached load,
+          // only when the user's reducedHaptics switch allows it, and
+          // never after this screen unmounted (blind-critic P2).
+          if (c && force) {
+            getReducedHaptics()
+              .then((reduced) => {
+                if (!loadAliveRef.current) return;
+                const decision = hapticEvent('crate-generate', {}, 0, { reducedHaptics: reduced, lastBeatIndex: 0 });
+                if (decision) void fireHaptic(decision.spec);
+              })
+              .catch(() => undefined);
+          }
+        })
         .catch(() => setCrate(null));
       void loadPopularArtists();
       void loadFeed(force);

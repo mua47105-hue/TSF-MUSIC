@@ -1730,3 +1730,54 @@ Stage Summary:
 - The branch now carries the two highest-value audited features, both
   blind-critic-fixed and E2E-walked. NO main push, NO release/tag —
   everything experimental waits on this branch for the user's verdict.
+
+---
+Task ID: 2 (Magnum Opus Wave 2 — emotional features F6–F9)
+Agent: Super Z (main agent)
+
+Task: Build, lock, mutate, critic-fix, commit and push Wave 2 of the
+v5.0.0 Magnum Opus: F6 Song Stories, F7 Audio Bookmarks, F8 Taste
+Radar, F9 Time Machine (ledger sacred-ground laws L1–L5).
+
+Work Log:
+- Resumed the previous session's UNCOMMITTED Wave 2 WIP (643 pass /
+  2 fail). Root-caused the 2 failures: (a) a JS precedence bug IN THE
+  TEST (`await x()?.text` reads .text off the Promise — parens are
+  load-bearing), (b) the no-streamUrl source lock tripping on the
+  file's own COMMENT (rephrased). 645/0 baseline.
+- Wrote the missing lock suites: wave2_bookmarks_locks (13), wave2_
+  radar_locks (11), wave2_historical_locks (18 incl. sacred-law locks:
+  events schema pinned as a BYTE literal, RETENTION bridge, fold-before-
+  delete e2e, idempotent fold, L4 never-touch lock on ledger.test.ts +
+  gauntlet-r2.test.ts).
+- Real bugs found while locking: mergeTracks/mergeArtists ranked by
+  plays (all equal within a pass) reducing a day's own ranking to
+  alphabetical — replaced with a stable index tiebreak preserving the
+  fold's minutes-true order; storage bar could not hold at keyed-JSON
+  verbosity — added a compact columnar disk encoding (arrays-of-arrays)
+  in historical.ts wired through the SQLite adapter, and re-measured:
+  400-day scripted fixture = 59KB (<100KB bar) but 3 realistic years =
+  163KB — documented honestly in constants.ts instead of gaming the
+  fixture.
+- MUTATIONS: 15 (3 F6 / 3 F7 / 3 F8 / 6 F9), each RED then reverted
+  byte-exact (sha256-verified), incl. mutations on the critic fixes
+  themselves. Script: scripts/mutate_wave2.sh.
+- BLIND CRITIC (fresh-context) verdict: BLOCK — caught a REAL P0: the
+  fold read artist names from event payloads, but trackStarted never
+  writes them (production would have shown 'Unknown' for every track
+  and the locks LAUNDERED it with fake fixtures). Fixed via a listens-
+  table join (180d retention always covers 90d-doomed events) + locks
+  rewritten to the REAL producer shape. Also fixed: fold idempotency
+  watermark (crash between fold and delete = double-count forever),
+  contentKeyOf delegating to canonical recordingKey (portable across
+  provider re-listings), bookmark delete radius 4px vs jump 14px,
+  STREAM_MIN_MS + 366 hoisted to constants, stale-response guards,
+  terminate honors bookmark intent, NaN-safe clamp01.
+- Commit 72631da pushed to origin main (0063016..72631da).
+
+Stage Summary:
+- Wave 2 GREEN: tsc 0, 688/0 tests, 48+ wave-2 locks, 15 mutations RED,
+  critic BLOCK → all fixed → 15/15 still RED after fixes, pushed.
+- Cold path: App.tsx diff empty; mindbeat.init() body byte-identical.
+- Next: Wave 3 (F10 haptics, F11 pseudo-visualizer, F12 karaoke, F13
+  queue optimizer).

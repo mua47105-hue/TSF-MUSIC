@@ -438,6 +438,102 @@ export const KINETIC = {
   inactiveOpacity: 0.38,
 } as const;
 
+// ── THE MAGNUM OPUS (v5.0.0 mission) — WAVE 3: intelligent playback ────
+
+/** F10 — Haptic Choreography. Pure spec in src/player/haptics.ts; the
+ *  persisted reducedHaptics switch lives in AsyncStorage (default OFF =
+ *  full haptics). JS THREAD ONLY — expo-haptics is a JS-bridge API and
+ *  the audio service NEVER imports this module (X8 audited). */
+export const HAPTICS = {
+  /** Beat-tick interval per tempoClass — the reference beats: slow ≈
+   *  70 BPM (857ms), mid ≈ 90 BPM (667ms), fast ≈ 120 BPM (500ms).
+   *  A pulse, not a metronome performance: the interval only spaces
+   *  the ticks so the wrist feels the tempo class. */
+  beatIntervalMs: { slow: 857, mid: 667, fast: 500 } as Record<'slow' | 'mid' | 'fast', number>,
+  /** The tick's impact style per class — slow songs feel softer. */
+  beatStyle: { slow: 'soft', mid: 'light', fast: 'light' } as Record<'slow' | 'mid' | 'fast', 'soft' | 'light'>,
+  /** Battery honesty (stated in the commit): ticks fire ONLY while the
+   *  player screen is open AND playing AND haptics are full — and the
+   *  500ms floor (fast) caps the rate at ≤2 vibrations/second BY
+   *  CONSTRUCTION; no additional wall-clock throttle is needed. */
+  floorIntervalMs: 500,
+} as const;
+
+/** F11 — Pseudo-Visualizer: baked-feature-driven equalizer behind the
+ *  player art. NO audio-buffer DSP (no decoding, no analysis — X8-audited
+ *  against the aura's palette pass), NO per-frame JS (all motion runs on
+ *  the native driver as transform/opacity loops started once). */
+export const VISUALIZER = {
+  /** Bar count — JSX structure reads this; 24 bars × 3px ≈ potato-safe. */
+  barCount: 24,
+  /** Amplitude band (px of travel) mapped from baked energy 0→1. */
+  minAmplitude: 14,
+  maxAmplitude: 46,
+  /** Speed scale band mapped from energy (durations divide by it). */
+  minSpeed: 0.8,
+  maxSpeed: 1.6,
+  /** tempoClass fast adds this much speed (the baked table's tempo signal
+   *  is coarser than energy — a nudge, not a second axis). */
+  tempoFastBonus: 0.15,
+  /** No baked features → the CALMEST wash (the honest fallback: the app
+   *  is not pretending to hear the song). */
+  washAmplitude: 6,
+  washSpeed: 0.6,
+  /** The minimum bar scale the interpolation dips to (anchors the
+   *  bottom-compensation math in barTransform()). */
+  minBarScale: 0.35,
+  /** The deterministic breathing wave's period (ms) — amplitude wobbles
+   *  ±10% (breathDepth) around the energy-mapped value at this cadence,
+   *  so a re-configured loop lands on a subtly different but still
+   *  deterministic frame. */
+  wavePeriodMs: 4000,
+  /** How deep the breathing wave digs into the amplitude band (a share
+   *  of the band — 0.2 = the low edge of the lerp moves by 20%). */
+  breathDepth: 0.2,
+  /** The base bar-loop period at speed 1 (ms) — one up/down stroke.
+   *  Divided by the energy-mapped speed scale. */
+  loopBaseMs: 1100,
+  /** Speed never divides by less than this (a division floor — a
+   *  degenerate speed of 0 would freeze the loops). */
+  speedFloor: 0.1,
+  /** The up-stroke's share of the loop (down = 1 - share): a snappier
+   *  attack than release, like a real equalizer's ballistics. */
+  upStrokeShare: 0.42,
+} as const;
+
+/** F12 — Karaoke word-level timing: an honest INTERPOLATION. Real word
+ *  stamps do not exist in LRC; the line's span is distributed across its
+ *  words by character weight. The renderer degrades to the line-level
+ *  look whenever a span cannot be computed (see singalong.ts). */
+export const KARAOKE = {
+  /** The active word's size — grows WITHIN the uniform row height so the
+   *  auto-scroll contract (KINETIC.lineHeight) cannot drift. */
+  activeWordFontSize: 28,
+  /** The sung words dim to this; the not-yet-sung words sit a visible
+   *  step BELOW the sung ones (KINETIC.inactiveOpacity + upcomingLift
+   *  = 0.50 vs sung 0.75 — blind-critic P2: the original 5% delta was
+   *  perceptually invisible, killing the sung/upcoming wave). */
+  sungDim: 0.75,
+  /** How far the not-yet-sung words lift above the plain inactive dim. */
+  upcomingLift: 0.12,
+  /** Last-line span when no duration is known (a line cannot sing
+   *  forever; 6s matches the median lyric-line dwell). */
+  tailMs: 6000,
+} as const;
+
+/** F13 — Smart Queue Reordering ("Shuffle by Vibe"): a user-triggered
+ *  greedy nearest-neighbor walk over the UPCOMING queue's energy. NEVER
+ *  automatic, never on cold start; pinned (explicitly queued) tracks
+ *  never move. */
+export const QUEUE_VIBE = {
+  /** Tracks with no feature row take the neutral mid — the walk must
+   *  never guess an energy the data does not carry. */
+  missingEnergy: 0.5,
+  /** Below this many upcoming tracks, reordering is theatre — the
+   *  button hides and the sheet says why. */
+  minTracks: 4,
+} as const;
+
 /** FEATURE 9 — Aura Visualizer (battery-safe, GPU-cheap: three gradient
  *  layers animating ONLY opacity, native driver, no per-frame JS math;
  *  the layer count is JSX structure, not a runtime tuning number). */

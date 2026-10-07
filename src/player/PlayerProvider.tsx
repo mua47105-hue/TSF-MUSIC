@@ -62,6 +62,8 @@ import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
+import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queueOptimizer';
+import { QUEUE_VIBE } from '../ai/core/constants';
 import { primeImagePrewarm } from './imagePrewarm';
 
 let setupPromise: Promise<void> | null = null;
@@ -158,6 +160,11 @@ interface PlayerState {
   queueVibeShift: (tracks: Track[]) => Promise<number>;
   removeFromQueue: (trackId: string) => Promise<void>;
   refreshQueue: () => Promise<void>;
+  /** MAGNUM OPUS F13 — reorder the UPCOMING queue by energy nearest-
+   *  neighbor. USER-INITIATED ONLY (the queue sheet's button). Returns
+   *  { count, largestStep, honest } — honest=false means the realized
+   *  largest step exceeded the AI-mix bound (the caller toasts it). */
+  optimizeQueueByVibe: () => Promise<{ count: number; largestStep: number; honest: boolean }>;
 }
 
 const PlayerContext = createContext<PlayerState | null>(null);
@@ -168,6 +175,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // INSTANT TAP (Task 29): the row the user last asked to play, planted
   // BEFORE any network work so the mini bar answers the tap immediately.
   const [optimistic, setOptimistic] = useState<Track | null>(null);
+  // F13 — tracks explicitly queued via "play next" are PINNED: the vibe
+  // walk never moves them. Cleared when the walk consumes the arrangement.
+  const pinnedIdsRef = useRef<Set<string>>(new Set());
   // the 8s stale-plant timer (critic IT-3): cleared before every new plant
   const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shuffle, setShuffleState] = useState(false);
@@ -757,6 +767,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       const currentIdx = await TrackPlayer.getActiveTrackIndex();
       await TrackPlayer.add(playable, (currentIdx ?? -1) + 1);
+      pinnedIdsRef.current.add(track.id); // F13: explicitly queued next = pinned, never moves
       await refreshQueue();
       void mindbeat.queueAdded(track, surfaceRef.current);
       toast.show({ message: `Playing next: ${track.title}`, icon: 'play' });
@@ -786,6 +797,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   async function removeFromQueue(trackId: string): Promise<void> {
     try {
+      pinnedIdsRef.current.delete(trackId); // a removed track can't stay pinned (F13)
       const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
       const idx = rntpQueue.findIndex((t) => t.id === trackId);
       if (idx >= 0) {
@@ -819,6 +831,55 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * MAGNUM OPUS F13 — SHUFFLE BY VIBE. Reorders only the UPCOMING tracks
+   * (never restarts the current song, mirrors setShuffle's engine dance)
+   * with the greedy nearest-neighbor walk from queueOptimizer.ts. PINNED
+   * tracks — anything explicitly queued via playNext — never move. The
+   * seed is the PLAYING track's energy so the walk starts where the
+   * wrist already is. NEVER called automatically: the only call site is
+   * the queue sheet's button.
+   */
+  async function optimizeQueueByVibe(): Promise<{ count: number; largestStep: number; honest: boolean }> {
+    try {
+      await ensureSetup();
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      if (currentIdx == null || !rntpQueue.length) return { count: 0, largestStep: 0, honest: true };
+      const current = rntpQueue[currentIdx];
+      const upcoming = rntpQueue.filter((_, i) => i !== currentIdx);
+      if (upcoming.length < QUEUE_VIBE.minTracks) return { count: 0, largestStep: 0, honest: true };
+
+      // energies via the facade (law ②) — the baked row when the table
+      // has it, the estimator when it doesn't; the walk never invents one
+      const features: Record<string, number> = {};
+      for (const t of upcoming) {
+        const f = mindbeat.featuresForTrack(t);
+        features[t.id] = f.energy;
+      }
+      const seedFeats = current ? mindbeat.featuresForTrack(current) : null;
+      const pinned = upcoming.filter((t) => pinnedIdsRef.current.has(t.id)).map((t) => t.id);
+      const { order, largestStep } = optimizeVibeWalk(upcoming, features, pinned, seedFeats?.energy);
+      // the walk consumed the pinned bookkeeping — the new order IS the
+      // user's arrangement now (no stale pins survive the reorder)
+      pinnedIdsRef.current.clear();
+
+      // the setShuffle engine dance: remove upcoming, re-add reordered
+      resetPrewarm();
+      const removeIndices = rntpQueue.map((_, i) => i).filter((i) => i !== currentIdx).sort((a, b) => b - a);
+      if (removeIndices.length) await TrackPlayer.remove(removeIndices);
+      const playable = await buildPlayable(order);
+      if (playable.length) await TrackPlayer.add(playable);
+      // the queue state reflects what the ENGINE actually holds —
+      // unresolvable tracks dropped by buildPlayable are a real (small)
+      // loss and the toast must not claim them (blind-critic P2)
+      setQueue([current, ...playable].filter(Boolean) as Track[]);
+      return { count: playable.length, largestStep, honest: stepWithinBound(largestStep) };
+    } catch {
+      return { count: 0, largestStep: 0, honest: true };
+    }
+  }
+
   const value: PlayerState = useMemo(
     () => ({
       active,
@@ -846,6 +907,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addToQueue,
       removeFromQueue,
       refreshQueue,
+      optimizeQueueByVibe,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [active, optimistic, isPlaying, loading, queue, shuffle, smartShuffle, autoplay, repeat, favorites],

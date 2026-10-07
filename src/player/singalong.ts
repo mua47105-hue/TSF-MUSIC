@@ -20,7 +20,7 @@
  *  - result is sorted by time; equal timestamps keep first-seen order.
  */
 
-import { KINETIC } from '../ai/core/constants';
+import { KINETIC, KARAOKE } from '../ai/core/constants';
 
 export interface LrcLine {
   /** milliseconds from song start */
@@ -117,4 +117,100 @@ export function kineticLineSpec(active: boolean, tint: string | null | undefined
  */
 export function kineticScrollTarget(activeIdx: number, viewH: number): number {
   return Math.max(0, activeIdx * KINETIC.lineHeight + KINETIC.lineHeight / 2 - viewH / 2);
+}
+
+/* ── MAGNUM OPUS · F12 — word-level karaoke (an honest interpolation) ──
+ *
+ * LRC carries NO word stamps; the line's span (start → next line's
+ * start) is distributed across its words by CHARACTER WEIGHT — longer
+ * words hold the microphone proportionally longer. Every number here is
+ * derived, none guessed: when a span cannot be computed (single line,
+ * zero-length span) the words array is EMPTY and the renderer degrades
+ * to the exact line-level look it had before F12 (the degradation is
+ * structural, not a flag).
+ */
+
+export interface WordSpan {
+  word: string;
+  startMs: number;
+  endMs: number;
+}
+
+/** An LrcLine plus its computed span + word timeline (F12). */
+export interface WordLine extends LrcLine {
+  endMs: number;
+  words: WordSpan[];
+}
+
+/**
+ * withWordSpans — attach the interpolated word timeline to each line.
+ * Runs ONCE per song (the caller memoizes the parsed LRC; this rides
+ * the same memo — never per tick). endMs = next line's tMs; the last
+ * line sings for KARAOKE.tailMs or `durationMs`, whichever is shorter.
+ */
+export function withWordSpans(lines: LrcLine[], durationMs?: number): WordLine[] {
+  return lines.map((line, i) => {
+    const next = lines[i + 1];
+    const tail = typeof durationMs === 'number' && durationMs > 0 ? Math.min(durationMs - line.tMs, KARAOKE.tailMs) : KARAOKE.tailMs;
+    const endMs = next ? next.tMs : line.tMs + Math.max(0, tail);
+    return { text: line.text, tMs: line.tMs, endMs, words: wordSpansOf(line.text, line.tMs, endMs) };
+  });
+}
+
+/** Proportional (character-weighted) split of the line's span. */
+function wordSpansOf(text: string, startMs: number, endMs: number): WordSpan[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const span = endMs - startMs;
+  if (words.length < 2 || !(span > 0)) return []; // structural degradation
+  // a span too short to give every word ≥1ms of mic time degrades too —
+  // the Math.max(1,…) floor would otherwise push spans past the line's
+  // end (negative/invalid word spans; blind-critic P2)
+  if (span < words.length) return [];
+  const totalChars = words.reduce((s, w) => s + w.length, 0);
+  const out: WordSpan[] = [];
+  let cursor = startMs;
+  for (const w of words) {
+    const dur = Math.max(1, Math.round((w.length / totalChars) * span));
+    out.push({ word: w, startMs: cursor, endMs: cursor + dur });
+    cursor += dur;
+  }
+  // rounding residue: the last word owns the line's true end
+  out[out.length - 1].endMs = endMs;
+  return out;
+}
+
+/**
+ * activeWord — THE F12 selector (pure). Index of the word being sung at
+ * `positionMs` within `line`; -1 = before the line, past it, or the
+ * line carries no word timeline (the line-level degradation).
+ */
+export function activeWord(line: WordLine, positionMs: number): number {
+  if (!line.words.length) return -1;
+  if (positionMs < line.tMs || positionMs >= line.endMs) return -1;
+  // binary search the word whose span contains the position
+  let lo = 0;
+  let hi = line.words.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (line.words[mid].endMs <= positionMs) {
+      lo = mid + 1;
+    } else if (line.words[mid].startMs > positionMs) {
+      hi = mid - 1;
+    } else {
+      ans = mid;
+      break;
+    }
+  }
+  // position inside the line but between words (rounding gaps): the
+  // word that started most recently is still on the mic
+  if (ans === -1) {
+    let best = -1;
+    for (let i = 0; i < line.words.length; i++) {
+      if (line.words[i].startMs <= positionMs) best = i;
+      else break;
+    }
+    return best;
+  }
+  return ans;
 }

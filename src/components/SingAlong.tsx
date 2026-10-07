@@ -20,11 +20,11 @@
  *  - the dim is a cheap OPACITY — never a real blur (potato phones).
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '../theme';
-import { KINETIC } from '../ai/core/constants';
-import { activeLrcIndex, kineticLineSpec, kineticScrollTarget, type LrcLine } from '../player/singalong';
+import { KINETIC, KARAOKE } from '../ai/core/constants';
+import { activeLrcIndex, kineticLineSpec, kineticScrollTarget, withWordSpans, activeWord, type LrcLine } from '../player/singalong';
 
 // THE SINGLE SOURCE: the scroll math and the row style BOTH read
 // KINETIC.lineHeight — the uniform-height contract cannot drift.
@@ -41,25 +41,33 @@ interface Props {
 }
 
 interface RowProps {
-  line: LrcLine;
+  line: LrcLine & { words?: { word: string; startMs: number; endMs: number }[] };
   active: boolean;
   tint?: string | null;
   onPress: (tMs: number) => void;
   testID?: string;
+  /** MAGNUM OPUS F12 — the word being sung (active row only; -1 = the
+   *  line-level degradation). Inactive rows always get -1, so the memo
+   *  keeps them silent on progress ticks. */
+  wordIndex?: number;
 }
 
-const LrcRow = React.memo(function LrcRow({ line, active, tint, onPress, testID }: RowProps) {
+const LrcRow = React.memo(function LrcRow({ line, active, tint, onPress, testID, wordIndex = -1 }: RowProps) {
   // THE F8 spring: ONE animated value per row, driven only by the
   // active/inactive swap — the 250ms progress tick never touches it.
+  // (Skipped when the word-level look renders — its Animated.Text is
+  // not mounted, so the spring would be dead work. Blind-critic P2.)
   const grow = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const showWords = active && wordIndex >= 0 && !!line.words && line.words.length > 0;
   useEffect(() => {
+    if (showWords) return; // no Animated.Text to drive
     Animated.spring(grow, {
       toValue: active ? 1 : 0,
       useNativeDriver: true,
       friction: 8,
       tension: 60,
     }).start();
-  }, [active, grow]);
+  }, [active, grow, showWords]);
 
   const spec = kineticLineSpec(active, tint);
   // the spring breathes between the inactive and active font sizes
@@ -67,6 +75,32 @@ const LrcRow = React.memo(function LrcRow({ line, active, tint, onPress, testID 
     inputRange: [0, 1],
     outputRange: [KINETIC.inactiveFontSize, spec.fontSize],
   });
+
+  // MAGNUM OPUS F12 — KARAOKE WORDS: only the active row with a computable
+  // word timeline renders the word-level look (see `showWords` above);
+  // everything else (inactive rows, single-word lines, zero-span lines)
+  // renders EXACTLY the pre-F12 line — the degradation is structural,
+  // never a flag.
+
+  const wordContent = (words: NonNullable<RowProps['line']['words']>) =>
+    words.map((w: { word: string; startMs: number; endMs: number }, i: number) => {
+      const sung = i < wordIndex;
+      const isCurrent = i === wordIndex;
+      return (
+        <Text
+          key={`${w.startMs}-${i}`}
+          style={{
+            fontSize: isCurrent ? KARAOKE.activeWordFontSize : spec.fontSize,
+            lineHeight: KINETIC.lineHeight, // the uniform-height contract holds word-by-word
+            color: isCurrent ? (spec.activeTint ?? colors.ink) : colors.ink,
+            opacity: isCurrent ? 1 : sung ? KARAOKE.sungDim : KINETIC.inactiveOpacity + KARAOKE.upcomingLift,
+          }}
+        >
+          {i === 0 ? '' : ' '}
+          {w.word}
+        </Text>
+      );
+    });
 
   return (
     <Pressable
@@ -76,20 +110,30 @@ const LrcRow = React.memo(function LrcRow({ line, active, tint, onPress, testID 
       accessibilityRole="button"
       accessibilityLabel={`Jump to ${line.text}`}
     >
-      <Animated.Text
-        style={[
-          styles.lrc,
-          {
-            fontSize,
-            lineHeight: spec.lineHeight,
-            opacity: spec.opacity,
-            color: spec.activeTint ?? (active ? colors.ink : colors.ink40),
-          },
-        ]}
-        numberOfLines={1}
-      >
-        {line.text}
-      </Animated.Text>
+      {showWords ? (
+        <Text
+          testID={testID ? 'karaoke-active-line' : undefined}
+          style={[styles.lrc, { fontSize: spec.fontSize, lineHeight: KINETIC.lineHeight, opacity: 1, color: colors.ink }]}
+          numberOfLines={1}
+        >
+          {wordContent(line.words!)}
+        </Text>
+      ) : (
+        <Animated.Text
+          style={[
+            styles.lrc,
+            {
+              fontSize,
+              lineHeight: spec.lineHeight,
+              opacity: spec.opacity,
+              color: spec.activeTint ?? (active ? colors.ink : colors.ink40),
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {line.text}
+        </Animated.Text>
+      )}
     </Pressable>
   );
 });
@@ -100,9 +144,16 @@ export function SingAlong({ lines, positionMs, onSeek, tint }: Props) {
   const seekRef = useRef(onSeek);
   seekRef.current = onSeek;
 
+  // MAGNUM OPUS F12 — the word timeline is derived ONCE per song (rides
+  // the same memo as the parsed LRC — never per tick).
+  const wordLines = useMemo(() => withWordSpans(lines), [lines]);
+
   // NO DRIFT: the active line is ALWAYS activeLrcIndex's pick — the same
   // locked binary search the share card and the lab use.
   const activeIdx = activeLrcIndex(lines, positionMs);
+  // the word on the mic right now — ONE binary search per 250ms tick,
+  // only meaningful for the active row (every other row gets -1)
+  const wordIdx = activeIdx >= 0 ? activeWord(wordLines[activeIdx], positionMs) : -1;
 
   // auto-scroll ONLY when the active line changes (not on every tick)
   useEffect(() => {
@@ -124,13 +175,14 @@ export function SingAlong({ lines, positionMs, onSeek, tint }: Props) {
         showsVerticalScrollIndicator={false}
         testID="singalong-scroll"
       >
-        {lines.map((line, i) => (
+        {wordLines.map((line, i) => (
           <LrcRow
             key={`${line.tMs}-${i}`}
             line={line}
             active={i === activeIdx}
             tint={tint}
             onPress={handlePress}
+            wordIndex={i === activeIdx ? wordIdx : -1}
             testID={i === activeIdx ? 'singalong-active' : undefined}
           />
         ))}

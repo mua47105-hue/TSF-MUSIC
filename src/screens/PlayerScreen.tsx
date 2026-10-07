@@ -31,7 +31,8 @@ import { useProgress } from 'react-native-track-player';
 import { getRadio } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
 import { fetchPlainLyrics, fetchSyncedLyrics } from '../api/lrclib';
-import { parseLrc, activeLrcIndex, type LrcLine } from '../player/singalong';
+import { parseLrc, activeLrcIndex, withWordSpans, activeWord, type LrcLine } from '../player/singalong';
+import { getReducedHaptics, setReducedHaptics } from '../storage/store';
 import { SingAlong } from '../components/SingAlong';
 import { ShareCard } from '../share/ShareCard';
 import { shareNowPlaying } from '../share/share';
@@ -54,8 +55,11 @@ import {
 } from '../player/smartVolume';
 import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } from '../player/playbackRate';
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
-import { CROSSFADE, FOCUS, CINEMA, BOOKMARKS } from '../ai/core/constants';
+import { CROSSFADE, FOCUS, CINEMA, BOOKMARKS, QUEUE_VIBE } from '../ai/core/constants';
 import { classifyPress } from '../player/bookmarks';
+import { hapticEvent, fireHaptic } from '../player/haptics';
+import { PseudoVisualizer } from '../player/PseudoVisualizer';
+import type { VisualizerFeatures } from '../player/visualizer';
 import {
   applyMetaOverride,
   getMetaOverridesSync,
@@ -273,12 +277,80 @@ export function PlayerScreen() {
     queueVibeShift,
     removeFromQueue,
     refreshQueue,
+    optimizeQueueByVibe,
   } = usePlayer();
 
   const { position, duration: liveDuration } = useProgress(250);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubValue, setScrubValue] = useState(0);
   const duration = liveDuration > 0 ? liveDuration : active?.duration ?? 0;
+  const trackKey = active?.id ?? 'none';
+
+  // MAGNUM OPUS F10/F11 — the track's proxy features, read via the
+  // mindbeat facade (law ②) AFTER paint (the effect runs post-mount;
+  // the cold path never sees this module). Feeds the beat tick AND the
+  // pseudo-visualizer — one read, two consumers.
+  const [features, setFeatures] = useState<VisualizerFeatures | null>(null);
+  useEffect(() => {
+    // the beat throttle's memory MUST reset with the song — otherwise the
+    // new track's beat index starts below the old track's and the tick
+    // stays silent for minutes (blind-critic P1)
+    lastBeatRef.current = 0;
+    if (!active?.title || !active?.artist) {
+      setFeatures(null);
+      return;
+    }
+    const f = mindbeat.featuresForTrack(active);
+    setFeatures({ energy: f.energy, valence: f.valence, tempoClass: f.tempoClass });
+  }, [trackKey]);
+
+  // F10 — the persisted reducedHaptics switch (default false = FULL)
+  const [reducedHaptics, setReducedHapticsState] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getReducedHaptics()
+      .then((v) => {
+        if (live) setReducedHapticsState(v);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const toggleReducedHaptics = useCallback(() => {
+    setReducedHapticsState((v) => {
+      const next = !v;
+      setReducedHaptics(next).catch(() => undefined);
+      return next;
+    });
+  }, []);
+  const lastBeatRef = useRef(0);
+  const hapticsSettings = useMemo(
+    () => ({ reducedHaptics, lastBeatIndex: lastBeatRef.current }),
+    [reducedHaptics],
+  );
+
+  // F10 — the BEAT TICK: fires only while the player is open AND playing
+  // AND haptics are full. The decision is the pure function's; this
+  // effect is its only caller (JS thread — the audio service never
+  // imports haptics.ts, X8-audited). Battery: ≤2 Hz by the 500ms floor.
+  useEffect(() => {
+    if (!isPlaying || reducedHaptics || !features) return;
+    const decision = hapticEvent('beat-tick', features, position * 1000, {
+      reducedHaptics,
+      lastBeatIndex: lastBeatRef.current,
+    });
+    if (decision?.beatIndex != null) {
+      lastBeatRef.current = decision.beatIndex;
+      void fireHaptic(decision.spec);
+    }
+  }, [position, isPlaying, features, reducedHaptics]);
+
+  /** the heart haptic (like button + double-tap burst share it) */
+  const hapticHeart = useCallback(() => {
+    const decision = hapticEvent('heart-tap', features ?? {}, 0, hapticsSettings);
+    if (decision) void fireHaptic(decision.spec);
+  }, [features, hapticsSettings]);
 
   // MAGNUM OPUS F7 — the track's audio bookmarks (recordingKey-keyed),
   // loaded off the paint path; the bar renders dots + handles gestures.
@@ -310,12 +382,14 @@ export function PlayerScreen() {
         const tables = await getAppTables();
         await tables.bookmarks.add(contentKeyOf(active), sec * 1000, '', Date.now());
         await reloadBookmarks();
+        const saved = hapticEvent('bookmark-save', features ?? {}, 0, hapticsSettings);
+        if (saved) void fireHaptic(saved.spec);
         toast.show({ message: `BOOKMARK · ${fmt(sec)}`, icon: 'bookmarks-outline' });
       } catch {
         toast.show({ message: 'COULD NOT SAVE THE BOOKMARK', icon: 'alert-outline' });
       }
     },
-    [active, reloadBookmarks, toast],
+    [active, reloadBookmarks, toast, features, hapticsSettings],
   );
   const deleteBookmarkAt = useCallback(
     async (sec: number) => {
@@ -332,7 +406,6 @@ export function PlayerScreen() {
     },
     [active, reloadBookmarks, toast],
   );
-
   const [showQueue, setShowQueue] = useState(false);
   const [showSleep, setShowSleep] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -490,7 +563,6 @@ export function PlayerScreen() {
   }, [active?.id, lyricAttempt]);
 
   const isFav = active ? favorites.has(active.id) : false;
-  const trackKey = active?.id ?? 'none';
 
   // MAGNUM OPUS F6 — the Song Story for the playing recording, keyed by
   // recordingKey (portable across sources), rendered as the italic line
@@ -556,6 +628,7 @@ export function PlayerScreen() {
       lastArtTap.current = 0;
       if (!active) return;
       void toggleLike(active);
+      hapticHeart(); // F10 — the wrist feels the double-tap keep
       setBurstFav(isFav); // the state BEFORE the toggle
       setBurstOn(true);
       burstVal.setValue(0);
@@ -749,6 +822,10 @@ export function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Now playing artwork. Double-tap to like or unlike this song."
           >
+            {/* MAGNUM OPUS F11 — the pseudo-visualizer lives BEHIND the art
+                (pointer-events none, mounts with this modal only — zero
+                cold-start; no baked features → the calmest wash). */}
+            <PseudoVisualizer features={features} tint={palette.glow} height={artSize} />
             <Artwork
               uri={shown?.artwork ?? active?.artwork}
               seed={trackKey}
@@ -795,7 +872,11 @@ export function PlayerScreen() {
             haptic
             shadow={0}
             pressOffset={1}
-            onPress={() => active && toggleLike(active)}
+            onPress={() => {
+              if (!active) return;
+              toggleLike(active);
+              hapticHeart(); // F10 — the heart tap lands in the wrist too
+            }}
             style={[styles.likeBtn, isFav && { backgroundColor: colors.orange }]}
           >
             <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={17} color={colors.ink} />
@@ -980,7 +1061,46 @@ export function PlayerScreen() {
                 active={smartVol}
                 onPress={() => void setSmartVolumeActive(!smartVol)}
               />
+              {/* MAGNUM OPUS F10 — the persisted reducedHaptics switch.
+                  ACTIVE = full haptics (the default); OFF = the wrist
+                  stays still (every hapticEvent nulls). */}
+              <QueuePill label="HAPTICS" active={!reducedHaptics} onPress={toggleReducedHaptics} />
             </View>
+
+            {/* MAGNUM OPUS F13 — SHUFFLE BY VIBE. USER-INITIATED ONLY:
+                reorders the UPCOMING queue by energy nearest-neighbor
+                (pinned tracks never move); honest about the step bound. */}
+            {upNext.length >= QUEUE_VIBE.minTracks ? (
+              <Pressable
+                testID="vibe-sort-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Shuffle the queue by vibe"
+                onPress={() => {
+                  void optimizeQueueByVibe().then((res) => {
+                    if (!res.count) {
+                      toast.show({ message: 'NOTHING TO REORDER YET', icon: 'information-circle-outline' });
+                    } else if (res.honest) {
+                      toast.show({ message: `SHUFFLED BY VIBE · ${res.count} TRACKS`, icon: 'pulse' });
+                    } else {
+                      toast.show({
+                        message: `SHUFFLED BY VIBE · CLOSEST MIX · MAX JUMP ${Math.round(res.largestStep * 100)}%`,
+                        icon: 'pulse',
+                      });
+                    }
+                  });
+                }}
+                style={({ pressed }) => [styles.vibeSortBtn, pressed && { opacity: 0.6 }]}
+              >
+                <Ionicons name="pulse" size={14} color={colors.ink} />
+                <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.6 }}>
+                  SHUFFLE BY VIBE
+                </MonoText>
+              </Pressable>
+            ) : (
+              <MonoText size={8} color={colors.ink40} style={styles.vibeSortNote}>
+                {`QUEUE ${upNext.length}/4 — SHUFFLE BY VIBE NEEDS ${QUEUE_VIBE.minTracks} UPCOMING TRACKS`}
+              </MonoText>
+            )}
 
             {/* THE TEN F3 — playback speed (pitch preserved by the engine's
                 time-stretch; 1.0× is always one tap away) */}
@@ -1485,6 +1605,22 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 2,
     borderBottomColor: colors.ink,
+  },
+  vibeSortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 7,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper2,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 12,
+  },
+  vibeSortNote: {
+    letterSpacing: 0.8,
+    marginTop: 12,
   },
   /* vibe strip (Task 28) */
   vibeStrip: {
