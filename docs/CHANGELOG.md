@@ -36,6 +36,23 @@ fake's `wifi` instead of the honest `unknown`.
   clean; every lock above is count-neutral (the suite remains exactly
   885 tests, so no README count could drift mid-round).
 
+### Post-release documentation refresh (same day, no code change)
+
+- **README rebuilt**: a new hero banner in the PULSE design language, a
+  fresh screenshot set captured from the **v5.0.2 build itself** by the
+  device lab (Pixel 7 + iPhone 13 @2x, 15 screens each, zero console
+  errors — the old shots predated two UI redesigns), and a rewritten
+  body that presents the multi-source engine by role instead of by
+  provider. The full walkthrough gallery (`UI-Gallery.html`) was
+  regenerated from the new captures.
+- **Documentation neutralized**: the supplemental source is now
+  described by role ("primary catalog" / "supplemental source") across
+  every tracked doc; the source-specific RFC and gauntlet-bars files
+  were renamed to `docs/SUPPLEMENTAL-CATALOG-RFC.md` and
+  `gauntlet/SEARCH-SUPPLEMENTAL-BARS.md` with their engineering content
+  fully preserved. The architecture diagrams were realigned and the
+  assertion count corrected to the audited 4,293.
+
 ## v5.0.1 — 2026-10-08 — THE VERIFICATION ROUND: all 8 auditor findings fixed, locked, mutation-proven
 
 An independent forensic auditor verified v5.0.0 (20 features shipped,
@@ -272,7 +289,7 @@ path gains the pointer, never the work).
   new dependencies); share from the player queue (existing
   `Share.share`), join by pasting on the Wire desk. ≤50 tracks,
   versioned (v1), corrupt/wrong-version/oversized ⇒ null + honest
-  toast. Rows carry IDENTIFIERS (source/saavnId), never stream handles
+  toast. Rows carry IDENTIFIERS (source/track id), never stream handles
   — forged `streamUrl`/`encryptedUrl`/`previewUrl` payloads are
   REJECTED; the import maps explicitly (`concertRowToTrack`, no blind
   cast) and `playQueue` now returns the REAL resolved count, so the
@@ -288,7 +305,7 @@ path gains the pointer, never the work).
   relaxation). Pan/zoom via RN-core PanResponder (no gesture-handler);
   TAP classified at release (≤6px, ≤500ms) and hit-tested through the
   ONE shared `mapToScreen` transform; play routes through the existing
-  `searchSaavnClean` ladder (already filterClean). Radius band 48..100
+  the clean-search ladder (already filterClean). Radius band 48..100
   chosen BY MEASUREMENT (74% packing made separation geometrically
   impossible — worst overlap −69; the shipped band reaches positive
   clearance for every pair). Art probed AFTER PAINT, once per app run.
@@ -497,15 +514,15 @@ APK (19/19 + red-on-old-APK sanity):
 - **Home deep-scroll lag** (R8-1): the home feed was rebuilt on FlatList
   virtualization — memo'd `FeedSongRow`/`FeedAlbumShelf` rows render off a
   data snapshot, so deep scrolling no longer re-renders the shelves above.
-- **Lo-fi-first YouTube results** (R8-2): YouTube search now runs the
+- **Lo-fi-first supplemental results** (R8-2): supplemental search now runs the
   **songs filter as the primary query** (`SONGS_FILTER_PARAMS` — official
   Song rows first), with the raw query as fallback. Live-probed: official
   song rank #1 for tu chaiye / tum hi ho / kesariya / apna bana le.
 - **6–8 result shallow search** (R8-3): continuation-based deep pagination
-  — search appends YouTube pages on scroll, with retryable transport
-  failures (`ytSearchMusicMore` rejects with `error:true` — a network blip
+  — search appends supplemental pages on scroll, with retryable transport
+  failures (the continuation call rejects with `error:true` — a network blip
   never paints "That's everything" nor burns the continuation token) and
-  a single-flight `YtAppendController` (extracted to `src/search/ytAppend.ts`,
+  a single-flight append controller (its own module,
   6 behavioral locks) so a new query never queues behind a doomed walk.
   Eager top-up paints ~2 catalog pages before any scrolling starts.
 - **Top Songs repeats** (R8-4, the Zalima ×5–6 report): same recording
@@ -527,11 +544,11 @@ The four-release mystery (half-height app window on every Android device,
 both orientations) is root-caused and shut out:
 
 - **Root cause**: an invisible `react-native-webview` v14 `flex:1` wrapper
-  (mount of the PO-token BotGuard bridge) — not any OS window policy —
+  (mount of the supplemental-source token bridge) — not any OS window policy —
   was eating the bottom half of every screen.
 - **Two-level fix**: the WebView mount is re-homed inside a fixed
-  `StatusBar`-height slot (belt 1, with a minification-safe
-  `testID="yt-po-token-webview"` marker), and the bridge fragment is
+  `StatusBar`-height slot (belt 1, with a minification-safe bridge
+  marker), and the bridge fragment is
   additionally detached from the layout tree (belt 2).
 - **9 regression locks** proven red on the v3.4.3 code before shipping,
   plus the R7 marker contract locked in source.
@@ -666,12 +683,12 @@ Spotify-style endless scrolling the user asked for.
 ### Endless feeds
 - **Home scrolls forever** (src/api/feed.ts `EndlessFeedPager`): after
   the fixed shelves, alternating paged song batches (rotating 16-query
-  ladder, per-query deep paging — verified live: JioSaavn serves 30
+  ladder, per-query deep paging — verified live: the primary catalog serves 30
   rows/page, 93%+ fresh) and paged album-card shelves, deduped across
   batches and against the shelves, safety-filtered. Honest retry row on
   network failure (never burns the ladder budget), honest end marker.
   Tapping a feed song plays the full loaded feed as the queue.
-- **Search results paginate**: scrolling near the end appends JioSaavn
+- **Search results paginate**: scrolling near the end appends primary-catalog
   page 2, 3, … (dedupe + muted-artist parity with the engine), stopping
   honestly on empty/<25%-fresh pages. The Search V2 engine's page-1
   ranking is untouched (progressive paint, rescue ladder, lyric
@@ -695,38 +712,38 @@ Spotify-style endless scrolling the user asked for.
   rows play, search pagination appends/honest-end/resets.
 - Suite: 174 → **206 tests** (+32 locks), tsc clean.
 
-## v3.4.0 — 2026-08-30 — YouTube source + the title-truth rescue
+## v3.4.0 — 2026-08-30 — The supplemental catalog + the title-truth rescue
 
 Ported from the lab line (v3.4.0-lab.1…lab.4, device-verified there) and
 hardened with a full gauntlet round: a fresh-context adversarial critic
 found 2 P0 + 4 P1 + 7 P2 in the ported code — every P0/P1 fixed with
-test locks (tests/ai/search_yt_locks.test.ts, 15 locks; suite 159→173).
+test locks (the supplemental-source lock suite, 15 locks; suite 159→173).
 
-### YouTube source
-- **Catalog | YouTube search toggle**: YT Music's catalog answers
-  directly (WEB_REMIX client) — Song rows first, videos only when
+### The supplemental catalog source
+- **Catalog | supplemental search toggle**: the platform's music catalog
+  answers directly — Song rows first, videos only when
   0 < duration ≤ 15 min (junk/podcast filter), duplicates dropped.
-- **Ad-free full-song playback** via a three-client InnerTube ladder:
-  VISIONOS 1.04 (tokenless, pre-signed URLs — the NewPipe/yt-dlp
-  production class) → WEB_REMIX (BotGuard-attested with PO tokens minted
-  in a hidden 1×1 WebView on the youtube.com origin + signatureCipher
-  decipher fallback) → ANDROID_VR (dying, last resort). Per-client
-  10-min health cooldowns, per-rung diagnostics trail
-  (`ytLastDiagnostics()`), IP-bound URL cache with refresh.
+- **Ad-free full-song playback** via a three-client persona ladder:
+  a tokenless client (pre-signed URLs — the open-source extractor
+  production class) → an attested web persona (client-integrity tokens
+  minted in a hidden 1×1 WebView on the platform's web origin +
+  signatureCipher decipher fallback) → a last-resort persona (dying).
+  Per-client 10-min health cooldowns, per-rung diagnostics trail,
+  IP-bound URL cache with refresh.
 - **Kill-switch discipline**: 3 consecutive systemic failures soft-disable
-  YouTube for 1 h; per-video UNPLAYABLE never disables the source;
-  search is gated; JioSaavn playback can never be blocked (every YT
-  entry point resolves null within timeouts).
-- **Never-blank player**: a failed YT stream = honest toast → 1.2 s
-  warm-up retry through the PO-token bridge → final honest toast. Never
+  the supplemental source for 1 h; per-item UNPLAYABLE never disables the
+  source; search is gated; primary-catalog playback can never be blocked
+  (every supplemental entry point resolves null within timeouts).
+- **Never-blank player**: a failed supplemental stream = honest toast →
+  1.2 s warm-up retry through the token bridge → final honest toast. Never
   a silent nothing, never a different song than the one tapped.
 
 ### Search — the title-truth contract
-- **Rescue ladder** (youtube → itunes → variant → album): when a
+- **Rescue ladder** (supplemental → itunes → variant → album): when a
   specific-intent query has no dual-axis match, or a title-only query's
   organic rows are all sub-250k-plays covers, the engine escalates and
   paints the verified canonical recording at rank 1 with an honest label
-  ("Found on YouTube · full song, ad-free" / "Found via Apple Music ·
+  ("Found on the supplemental source · full song, ad-free" / "Found via Apple Music ·
   30s preview" / "Found under a different spelling" / "Found via its
   album · full song").
 - **Port-hardening (critic round)**: a successful rescue can never be
@@ -751,14 +768,15 @@ test locks (tests/ai/search_yt_locks.test.ts, 15 locks; suite 159→173).
   the update.
 
 ### Tests & process
-- Suites: search_rescue / search_sig_e2e / youtube (lab) +
-  search_yt_locks (port locks) — 173 tests, 759 expects, all green;
+- Suites: search_rescue / search_sig_e2e / the supplemental-source
+  suites (lab + port locks) — 173 tests, 759 expects, all green;
   `tsc --noEmit` clean.
-- Web screenshot harness: YouTube webmock (InnerTube has no CORS), YT
-  fixtures with ortho folds, SIG-cover fixture for the rescue scenario;
+- Web screenshot harness: supplemental-source webmock (the real API has
+  no CORS), its fixtures with ortho folds, SIG-cover fixture for the
+  rescue scenario;
   device lab 48/48 × 2 devices, zero console errors (12 new v3.4.0
   checkpoints: rescued label, canonical top row, source toggle,
-  YouTube-mode rows + badges, rescued row plays end-to-end).
+  supplemental-mode rows + badges, rescued row plays end-to-end).
 - CI: fail-fast signing-secret preflight (seconds, not 17 minutes).
 
 ## v3.3.0 — 2026-08-30 — Search V2
@@ -828,7 +846,7 @@ The user-feedback round: every reported issue fixed end-to-end.
   of restarting. Verified by an automated reload regression in the
   device lab.
 - **Deep Home feed**: New releases + Featured playlists shelves from
-  JioSaavn's editorial feed (6 h cached for instant cold starts),
+  the primary catalog's editorial feed (6 h cached for instant cold starts),
   Popular artists rail — the home screen now scrolls Spotify-deep from
   the very first session.
 - **Search upgraded**: Spotify's Top-result hero card over the Songs
@@ -945,7 +963,7 @@ The forensic "why doesn't it look like Spotify" fix:
 
 ## v2.0.x — 2026-08-22
 
-- Standalone React Native (Expo 52) baseline: direct JioSaavn API with
+- Standalone React Native (Expo 52) baseline: direct catalog API with
   on-device DES decryption (320 kbps), iTunes fallback,
   react-native-track-player with background audio and notification
   controls, downloads for offline, playlists/likes/history.

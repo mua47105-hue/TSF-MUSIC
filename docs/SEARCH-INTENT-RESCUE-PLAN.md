@@ -13,13 +13,13 @@
 
 ## 0. Executive summary — what is the issue
 
-You searched **"tu chaiye of atif aslam"** and the app showed you other songs instead. I cloned the repo (now v3.3.0 — the SEARCH V2 engine rebuild), traced the query through every stage of the engine using the app's own code, and live-fired every probe against the real JioSaavn API. The failure has **two independent layers**, and both needed proving:
+You searched **"tu chaiye of atif aslam"** and the app showed you other songs instead. I cloned the repo (now v3.3.0 — the SEARCH V2 engine rebuild), traced the query through every stage of the engine using the app's own code, and live-fired every probe against the primary catalog's real API. The failure has **two independent layers**, and both needed proving:
 
-**Layer A — Catalog truth (the hidden one): "Tu Chahiye" (Atif Aslam, Bajrangi Bhaijaan) no longer exists on JioSaavn at all.**
+**Layer A — Catalog truth (the hidden one): "Tu Chahiye" (Atif Aslam, Bajrangi Bhaijaan) no longer exists in the primary catalog at all.**
 This is the decisive finding. It is NOT primarily a spelling or ranking problem:
 - Song search never returns it for **any** spelling: `tu chahiye`, `tu chaiye`, `tu cahiye`, `tu chahie`, `tuchahiye`, artist-first `atif aslam tu chahiye`, augmented `tu chahiye bajrangi`, `tu chahiye from bajrangi bhaijaan`, `tu chahiye pritam bajrangi` — 30–50 rows each, **zero Atif "Tu Chahiye" rows in all of them** (the top rows are 0-play cover/spam uploads by other artists with exact-name titles).
-- Its own **album is missing it**: the Bajrangi Bhaijaan album on JioSaavn (id 1251872) contains 9 tracks — Selfie Le Le Re, Aaj Ki Party, Bhar Do Jholi Meri ×2, Chicken Kuk-Doo-Koo, Zindagi Kuch Toh Bata, Tu Jo Mila ×3 — **Tu Chahiye is absent**.
-- Compilations, playlists, api_version 4/8/10 — nothing. The track was present historically (iTunes/Apple still lists 6 versions, #1 for `tu chahiye atif aslam`); on JioSaavn it has evidently been **removed for rights**.
+- Its own **album is missing it**: the Bajrangi Bhaijaan album in the primary catalog (id 1251872) contains 9 tracks — Selfie Le Le Re, Aaj Ki Party, Bhar Do Jholi Meri ×2, Chicken Kuk-Doo-Koo, Zindagi Kuch Toh Bata, Tu Jo Mila ×3 — **Tu Chahiye is absent**.
+- Compilations, playlists, api_version 4/8/10 — nothing. The track was present historically (iTunes/Apple still lists 6 versions, #1 for `tu chahiye atif aslam`); in the primary catalog it has evidently been **removed for rights**.
 
 Conclusion: **no amount of on-device spell correction or re-ranking can ever retrieve a song the provider does not have.** The engine must detect this situation and go cross-provider — which is exactly what it fails to do.
 
@@ -68,7 +68,7 @@ All captures in `/home/z/my-project/research/tuchahiye/` (probe scripts + full J
 
 ## 2. Root causes
 
-- **RC1 — Catalog absence (Layer A).** The song is gone from JioSaavn. Unfixable on-provider; requires cross-provider rescue and honest UX.
+- **RC1 — Catalog absence (Layer A).** The song is gone from the primary catalog. Unfixable on-provider; requires cross-provider rescue and honest UX.
 - **RC2 — iTunes rescue is gated on COUNT, not RELEVANCE.** `mergedCount < 8` asks "did we get *enough* rows?" when the right question is "did we get *the row the user asked for*?" 44 junk rows suppress the rescue that had the answer.
 - **RC3 — The disambiguation override backfires when the target is absent.** It demotes title-matching rows below any artist-credited row, promoting O'Meri Laila/Kon Mayate. Plus `titleCoverage` double-counts artist tokens, and artist matching is substring-based ("Atif Aslam BD").
 - **RC4 — S0 gaps.** Connector "of" pollutes the title probe; raw/normalized probes are identical (wasted slot); surname probe cut; no orthographic variant expansion ("chaiye"→"chahiye"); lexicon has no song-title vocabulary at cold start.
@@ -87,7 +87,7 @@ All captures in `/home/z/my-project/research/tuchahiye/` (probe scripts + full J
 |---|---|---|
 | **S-HIT** | A row matching BOTH the artist (boundary-exact) and the title (≥50% distinctive title tokens) exists organically | Current behavior; "Best match for your search" |
 | **S-RESCUED** | Not found organically; found by the rescue ladder (iTunes / album / variant probe) | Top result, labeled "Found via Apple Music — preview" + existing Preview badge; truthful reason line |
-| **S-PARTIAL** | Songs matching the title exist but not by the requested artist (and rescue found nothing) | Header **"Songs matching \"tu chaiye\""**; artist disambiguation chips (A.R. Dixit · SPECRO · Rock Hussain…); honest note "The Atif Aslam version isn't available on JioSaavn right now"; **never** "Best match for your search" |
+| **S-PARTIAL** | Songs matching the title exist but not by the requested artist (and rescue found nothing) | Header **"Songs matching \"tu chaiye\""**; artist disambiguation chips (A.R. Dixit · SPECRO · Rock Hussain…); honest note "The Atif Aslam version isn't available in the catalog right now"; **never** "Best match for your search" |
 | **S-ZERO** | Nothing relevant at all | Existing honest zero + did-you-mean |
 
 **The one iron rule:** a row that matches the artist but ~zero title tokens may never be painted as a match, no matter how thin the pool is. This single rule kills the entire "搜 A 出 B" class.
@@ -118,7 +118,7 @@ After the first rank, evaluate: `sigUnmet = plan.artistTokens.length > 0 && !row
 `searchItunes(title + " " + artist, 10)` → verify each row on BOTH axes (boundary artist match + ≥50% title-token coverage) → map through the existing iTunes mapping (previewUrl, 30 s, previewOnly) → add as pool `rescue` → re-rank. Wall cost ≈300–600 ms; may land **after paint** (upgrade S-PARTIAL → S-RESCUED when it arrives).
 
 **R2 — Album route (full-length, for the "exists but not in song search" class).**
-If any pool row's `clusterKey` equals the title cluster (evidence the title exists in the catalog), or the query carries a recognizable movie token: `search.getAlbumResults(q=artist or movie)` → top ≤3 albums → `content.getAlbumDetails` → filter tracks by clusterKey + boundary artist. Full-length saavn tracks; preferred over iTunes when both hit. (For "Tu Chahiye" R2 finds nothing — the song is truly gone — but R2 rescues the sibling class where the song exists only via its album, like rights-partial catalogs.)
+If any pool row's `clusterKey` equals the title cluster (evidence the title exists in the catalog), or the query carries a recognizable movie token: `search.getAlbumResults(q=artist or movie)` → top ≤3 albums → `content.getAlbumDetails` → filter tracks by clusterKey + boundary artist. Full-length primary-catalog tracks; preferred over iTunes when both hit. (For "Tu Chahiye" R2 finds nothing — the song is truly gone — but R2 rescues the sibling class where the song exists only via its album, like rights-partial catalogs.)
 
 **R3 — Variant re-probe.** Re-issue the M1.3 expanded-spelling probes ("tu chahiye") that the initial fan-out didn't include. Cheap; rescues the misspelling class where the provider actually has the song (e.g. "mashooqa"-class typos it tolerates, "chaahiye" double-vowel variants it doesn't).
 
@@ -127,7 +127,7 @@ If any pool row's `clusterKey` equals the title cluster (evidence the title exis
 ### 3.6 M5 — Presentation (`SearchScreen.tsx`)
 
 - **S-RESCUED**: top result = the found track, subtitle "Found via Apple Music · 30s preview", existing Preview badge; plays/pauses/skips exactly like today's iTunes tracks. If R2 later supplies a full-length row, it replaces the preview row automatically (organic rank wins).
-- **S-PARTIAL**: new header component `intentNote`: "Songs matching \"tu chaiye\"" + horizontally scrollable artist chips (distinct artists from the pool, tapping re-queries `title + artist`) + honest catalog note ("The Atif Aslam version isn't available on JioSaavn right now"). Reason lines on rows stay truthful (PROVIDER_TOP, never MATCHES_SEARCH).
+- **S-PARTIAL**: new header component `intentNote`: "Songs matching \"tu chaiye\"" + horizontally scrollable artist chips (distinct artists from the pool, tapping re-queries `title + artist`) + honest catalog note ("The Atif Aslam version isn't available in the catalog right now"). Reason lines on rows stay truthful (PROVIDER_TOP, never MATCHES_SEARCH).
 - **S-ZERO**: unchanged (existing honest zero + did-you-mean), now also reached from S-PARTIAL when the title-matching set is itself empty.
 - All testIDs additive; device-lab contract untouched (placeholder text, 400 ms debounce, 2200 ms settle, existing testIDs preserved).
 
@@ -162,8 +162,8 @@ If any pool row's `clusterKey` equals the title cluster (evidence the title exis
 ## 6. Pre-mortem
 
 - **iTunes noise** (compilations, karaoke) → dual-axis verification (artist + title tokens), quality sort, cap 10.
-- **Preview disappointment** (user wanted the full song) → the UI tells the truth ("30s preview · full version not on JioSaavn"), and R2 upgrades to full-length when the catalog has it; this is honest scarcity, not silent degradation.
-- **Provider flux** (song may return to JioSaavn) → rescue is additive: organic artist+title rows always outrank rescue rows at equal title match, so the moment the catalog heals, normal ranking wins again with zero code change.
+- **Preview disappointment** (user wanted the full song) → the UI tells the truth ("30s preview · full version not in the catalog"), and R2 upgrades to full-length when the catalog has it; this is honest scarcity, not silent degradation.
+- **Provider flux** (song may return to the primary catalog) → rescue is additive: organic artist+title rows always outrank rescue rows at equal title match, so the moment the catalog heals, normal ranking wins again with zero code change.
 - **Probe-budget creep** → hard caps (≤4 search probes + ≤3 rescue calls) enforced in the perf test with printed actuals.
 - **Rescue correctness** → a rescue row that fails re-verification at rank time is dropped, never shown.
 - **Device lab / webmocks** → additive testIDs only; new rescue mock added so web behaves; metro redirect map extended if any new api file is added.
@@ -173,4 +173,4 @@ If any pool row's `clusterKey` equals the title cluster (evidence the title exis
 - `/home/z/my-project/research/tuchahiye/probes.json` — all 7 query variants + autocomplete captures
 - `/home/z/my-project/research/tuchahiye/probe2.mjs / probe3.mjs` — deep pages, album route, artist endpoint, iTunes, api_version sweep
 - In-app simulation transcript (plan/probes/pools/final top-8) — reproduced in §1
-- Code: `src/search/{plan,retrieve,rank,verify,recover,learn}.ts`, `src/api/{music,saavn,itunes}.ts` @ v3.3.0 (commit 18e23aa)
+- Code: `src/search/{plan,retrieve,rank,verify,recover,learn}.ts`, the api aggregation modules @ v3.3.0 (commit 18e23aa)

@@ -71,7 +71,7 @@ python3 scripts/bake_hindi_lexicon.py  # curated list → assets/hindi_lexicon.j
   metaphor and sarcasm are invisible. The delta is bounded (±0.15 net)
   because words are a hint, never truth. Energy is NEVER touched by
   lyrics.
-- **Similarity** — needs metadata: thin rows (a YouTube-only row with no
+- **Similarity** — needs metadata: thin rows (a supplemental-source-only row with no
   genre/language/year) are ineligible, honestly. Same-artist results are
   capped because "more by them" is not "close to this song". The mood
   dimension inherits every feature-space caveat above.

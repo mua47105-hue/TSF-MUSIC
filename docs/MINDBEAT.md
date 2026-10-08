@@ -204,7 +204,8 @@ Six additions extended the stack without a single new dependency, model
 or server (the standalone contract held):
 
 - **Phase 1 — captured genres.** `Track.genre` (iTunes `primaryGenreName`)
-  feeds genre affinity at half an onboarding pick's weight. JioSaavn's
+  feeds genre affinity at half an onboarding pick's weight. The primary
+  catalog's
   public API exposes NO genre field — its cultural tag is `language`,
   which keeps flowing through its own channel. Old favorite rows are
   backfilled lazily the first time the track plays with a tag.

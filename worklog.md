@@ -6,13 +6,13 @@ Agent: Super Z (main agent)
 Task: TSF Music v2.1 — Spotify-grade UI overhaul + on-device AI engine (user: "exact UI like Spotify", AI features, content safety on home, smoother UX, new app icon)
 
 Work Log:
-- Read full v2.0 codebase (18 files): RN 0.76 + Expo 52 + RNTP 4.1.1, JioSaavn direct API, working APK on user's device
+- Read full v2.0 codebase (18 files): RN 0.76 + Expo 52 + RNTP 4.1.1, the primary catalog direct API, working APK on user's device
 - Protected .env in .gitignore (was untracked, risky); set core.fileMode=false
 - Installed/confirmed expo-linear-gradient, expo-blur, expo-haptics, expo-font (SDK 52 versions; already in HEAD package.json from prior session)
 - Downloaded Figtree font family (400–900) to assets/fonts — Circular (Spotify font) substitute
 - Rebuilt design system (src/theme.ts): Spotify palette (#121212/#1DB954/#1ED760/#B3B3B3), type scale, genre color pairs, font helper
 - NEW src/safety.ts: content-safety filter — provider explicit flags + EN/HI/Punjabi romanized profanity blocklist (word-boundary regex, tuned to avoid false positives like "cocktail"); applied to ALL algorithmic surfaces, search shows E badge
-- Extended src/api/saavn.ts: albumId/artistId/explicit capture, getAlbumTracks, getArtistTracks, getTrending (safety-filtered), searchSaavnClean
+- Extended src/the primary-catalog adapter: albumId/artistId/explicit capture, getAlbumTracks, getArtistTracks, getTrending (safety-filtered), the clean-search ladder
 - Extended storage: playlists CRUD, play counts + getStats, daily-mix cache, autoplay/smart-shuffle settings
 - NEW src/ai/engine.ts: getTopArtists (listening graph), getRecommendations (Smart Shuffle), getRadio (autoplay radio), getDailyMixes (daily cached clusters), getBecauseYouListened
 - NEW src/ai/generator.ts: natural-language playlist generator — intent parsing (artists/moods/genres/eras via keyword + known-artist lists), parallel clean searches, scoring (artist match, mood resonance, popularity, stream quality), per-artist diversity caps, staged progress callbacks
@@ -60,7 +60,7 @@ Work Log:
 - StatsScreen: hero gradient from current palette; TrackMenu: glass sheet; ShelfSkeleton: glass blocks; Artwork: squircle-er radii
 - Performance guardrails: exactly ONE BlurView (player backdrop only); ambient = static gradients + single opacity fade; vinyl = one native loop; waveform = 44 static-height views; extraction once per track change off render path
 - bun add jpeg-js@0.4.4 (pure JS, ships own types); scripts/ added to .gitignore (tracked files unaffected)
-- Gauntlet gates: tsc --noEmit CLEAN ×3; expo export android Metro bundle CLEAN (2.91 MB hbc, +60KB for engine); palette pipeline verified against live JioSaavn artwork; bun.lock updated for frozen-lockfile CI
+- Gauntlet gates: tsc --noEmit CLEAN ×3; expo export android Metro bundle CLEAN (2.91 MB hbc, +60KB for engine); palette pipeline verified against live the primary catalog artwork; bun.lock updated for frozen-lockfile CI
 
 Stage Summary:
 - v2.2.0 = the app now REPAINTS ITSELF with every song: ambient washes, player, mini player, chips, hero cards all wear the artwork's extracted colors
@@ -105,7 +105,7 @@ Work Log:
 - LibraryScreen: avatar + Your Library header w/ search/add icons, Playlists/Artists/Albums/Downloaded chips, sort row, 64px-art rows (circle artists), Liked Songs gradient tile w/ green pin, Your Sound row
 - Collection/Playlist: Spotify centered-hero layout — palette-tinted header wash, 204px rounded artwork, action row (heart/download left; shuffle + 56px green play FAB right); Liked Songs gets the branded gradient hero + #450AF5 wash
 - Fixed RN-web borderRadius drop bug by wrapping artwork in radius+overflow View (also deterministic on native)
-- NEW web screenshot harness: src/webmocks (fixtures with real JioSaavn CDN artwork, in-memory track-player with auto-playing demo track, fileSystem no-op, localStorage seed) + metro.config.js web-only module redirects — Android bundle verified UNAFFECTED (no mock leakage)
+- NEW web screenshot harness: src/webmocks (fixtures with real the primary catalog CDN artwork, in-memory track-player with auto-playing demo track, fileSystem no-op, localStorage seed) + metro.config.js web-only module redirects — Android bundle verified UNAFFECTED (no mock leakage)
 - Visual gauntlet executed: 9 screenshots at 412×915 (home/search/library/player/collection/stats/liked/AI/queue) → VLM side-by-side judged vs real Spotify references → 3 fix rounds (tile radius 8, artwork wrap radius fix, gradient saturation boost, demo-liked state, spacing)
 - Final VLM audit scores: Home 88, Liked 90, Collection 85, Search 82, Player 78, Library 75 (Stats/AI are bonus features, intentionally distinct)
 - Gates: tsc --noEmit CLEAN; Android Metro export CLEAN (2.9MB hbc); commit 97b4589 + tag v2.3.0 pushed
@@ -210,7 +210,7 @@ Work Log:
 - FORENSIC AUDIT of the whole pipeline (user suspected workflow/build issues):
   • CI workflow + bundle freshness: CLEARED — v2.4.0 APK contained all v2.4 markers (chipActiveBg/fabGreen/openQueue/contextId); versionCodes monotonic (v2.4.0=116, v2.3.1=120); rollback bundle verified marker-absent
   • Fonts: CLEARED — all six Figtree files are true TTFs (magic bytes), distinct real weights (PIL render coverage 1.00x→1.95x), registered family names match every fontFamily usage (automated audit, zero orphans)
-  • Palette extraction: CLEARED live — ran the exact device path against live JioSaavn: content.getCharts + playlist.getDetails → art500 → 50x50 downgrade → fetch → JPEG magic bytes → jpeg-js decode all succeed (50x50 variants exist, 1.4-1.7KB, decode <60ms)
+  • Palette extraction: CLEARED live — ran the exact device path against live the primary catalog: content.getCharts + playlist.getDetails → art500 → 50x50 downgrade → fetch → JPEG magic bytes → jpeg-js decode all succeed (50x50 variants exist, 1.4-1.7KB, decode <60ms)
 - ROOT CAUSE FOUND (design, not mechanical): VLM harsh critique of my own v2.4 home screenshot + pixel-sampling genuine Spotify refs revealed:
   1. THE BIG ONE: v2.4's artwork-derived gradient wash over the home canvas reads as a MUDDY BROWN film ("dirty screen") for dark Hindi covers — real Spotify home is FLAT #121212; the artwork wash belongs ONLY on playlist/album/player pages
   2. v2.4 quick tiles dropped album art (title-only) — real Spotify tiles always carry art
@@ -449,11 +449,11 @@ Work Log:
   progress checkpoint (tsf.onboardingProgress) so a mid-flow kill RESUMES instead of restarting;
   name also dual-written (tsf.userName) + Home greeting never clears a known-good name.
   Lab-verified: reload-after-finish → onboarding stays gone, "Made for Rahul" renders (both devices).
-- REAL ARTIST PHOTOS: JioSaavn artist SEARCH returns placeholders, but
+- REAL ARTIST PHOTOS: the primary catalog artist SEARCH returns placeholders, but
   song-search more_info.artistMap.primary_artists[0].image + artist.getArtistPageDetails
   return genuine portraits (verified live; 500x500 upgrade works).
   NEW src/api/artists.ts: ARTIST_SEEDS (48 A-listers w/ verified photo URLs, harvested live),
-  ARTIST_CATEGORIES (8 live-pool queries), searchSaavnArtists(), getArtistPhoto(id) cached,
+  ARTIST_CATEGORIES (8 live-pool queries), the artist-search helpers(), getArtistPhoto(id) cached,
   lookupArtistPhoto(name); sanitizeArtistImage() rejects placeholders/album-art masquerading
   (only /artists/ CDN paths pass); initials fallback added to Artwork (photo-less artists get
   elegant initials circles, never wrong album art).
@@ -535,7 +535,7 @@ Work Log:
   that lost the device lab once); package.json version stuck at 2.1.0
   while app.json/CI ship 3.2.0
 - Re-read the full codebase surface to document truth: App.tsx shell,
-  all 10 screens + 9 components, api layer (saavn/artists/music/itunes),
+  all 10 screens + 9 components, api layer (primary-catalog/artists/music/itunes),
   player pipeline, MINDBEAT core (ledger/profile/session/decision/
   features/priors/constants) + 8 surfaces, storage map, theme engine,
   safety, webmocks harness, CI workflow, lab tooling, 74-test suite
@@ -596,7 +596,7 @@ Work Log:
   recover (3-rung ladder, ≤2 rungs + 1.5s deadline; honest-zero relevance floor) ·
   learn (correlated ledger events, fragment→track kv ≤500, engagement 0.6/click
   21d half-life cap 1.2, credibleSearchClicks)
-- API: saavn.ts v2 mapping (artistsFull/featured/hasLyrics/lyricsSnippet/
+- API: the primary-catalog adapter v2 mapping (artistsFull/featured/hasLyrics/lyricsSnippet/
   playCount/releaseDate; artist = FULL primary list — the Apna Bana Le lyricist
   fix), getAutocomplete (query= not q=), getSongById, AbortSignal plumbing;
   NEW lrclib.ts (fetchPlainLyrics LRU-100 never-throws, searchLyricByFragment,
@@ -612,7 +612,7 @@ Work Log:
   verified rows), lyric chip, reason lines, relaxedQuery/corrected labels,
   memoized did-you-mean, artistAffinity via the real decision-engine reader
 - WEBMOCKS: fixtures +SEARCH_EXTRA (the live-probe evidence pool: 3 dupes,
-  cover, Bandhu, Apna Bana Le), honest no-match→[], saavn getAutocomplete/
+  cover, Bandhu, Apna Bana Le), honest no-match→[], primary-catalog getAutocomplete/
   getSongById, NEW lrclib (fixture lyrics + fragment resolver), itunes → [],
   music.ts redirect REMOVED (real engine runs on web); metro +lrclib/+itunes
   redirects; deleted webmocks/music.ts
@@ -689,10 +689,10 @@ Task: v3.4.0 port review
 
 Work Log:
 - Fresh-context adversarial review of the uncommitted v3.4.0 lab line
-  (rescue ladder, YouTube source, PO-token bridge, never-blank player,
+  (rescue ladder, the supplemental source source, attestation-token bridge, never-blank player,
   window policy). Read all new/modified files; ran tsc (clean), full
   suite (159/159), and 6 scratch verification tests in /tmp against the
-  real engine, plus LIVE network probes of the InnerTube client.
+  real engine, plus LIVE network probes of the the platform's internal API client.
 - P0-1 (PROVEN, /tmp test): a SUCCESSFUL rescue can be discarded by the
   S4 recovery ladder — THIN_THRESHOLD=3 means a rescued list shorter than
   3 rows (the flagship "song missing from catalog" case!) is replaced
@@ -701,49 +701,49 @@ Work Log:
   BEFORE it). Cache then serves the fabricated state for 10 min.
 - P0-2 (PROVEN): verifySet clustering can drop the rescued row (same
   clusterKey + surname overlap, organic playCount beats the song-kind
-  YT row's undefined) → paint contract findIndex === -1 no-ops →
+  supplemental row's undefined) → paint contract findIndex === -1 no-ops →
   sigState='rescued' fabricated over an organic cover list.
 - P1 (PROVEN, 1:1 assembly replication + e2e): the signatureCipher
   decipher is DEAD CODE — fnMatch[0] already contains `a=a.split("")`
   and fnSrc.slice(1) re-includes it with no separator → new Function
-  throws SyntaxError on EVERY invocation → WEB_REMIX ciphered formats
+  throws SyntaxError on EVERY invocation → the attested web persona ciphered formats
   never resolve ("OK but 0 direct audio urls" in trail). The attested
-  PO-token playback rung can never decipher; YT playback rests entirely
-  on VISIONOS. Also: helper-object regex matches the param (`a.split(`)
+  attestation-token playback rung can never decipher; supplemental playback rests entirely
+  on the tokenless persona. Also: helper-object regex matches the param (`a.split(`)
   not the helper.
-- P1 (PROVEN): title-only YT fallback paints a streamless rescued row
+- P1 (PROVEN): title-only supplemental fallback paints a streamless rescued row
   (labeled "full song, ad-free") when the player endpoint is bot-walled
   while search is healthy — the itunes rung never runs, so a playable
   30s preview is passed over for a guaranteed-unplayable row; tap-time
   resolution fails on the same network (toast + 1.2s retry + silence).
-- P1: kill-switch gaps — ytSearchMusic NOT gated by ytAvailable
+- P1: kill-switch gaps — supplemental searchMusic NOT gated by ytAvailable
   (contradicts the module's own "gates every entry point"); one tap on a
-  25-row YT list on a bot-walled network trips the 1h disable; the
+  25-row supplemental list on a bot-walled network trips the 1h disable; the
   "retrying via secure resolver" toast's retry fails with NO final
   honest state; per-video UNPLAYABLE counts toward the global kill.
 - P1: test suite does not lock the ported bars — variant/album rungs,
   AUTHORITY_FLOOR, ladder order, entity_title rescue (the "tu chaiye"
-  headline), decipher, PO-token bridge, buildPlayable/never-blank, and
+  headline), decipher, attestation-token bridge, buildPlayable/never-blank, and
   the window-policy plugin are all deletable with 159/159 still green.
 - P2s: source-toggle stale closure (catalog results flash under the
-  active YouTube chip ~0.7-1.5s, double search/ledger event);
+  active the supplemental source chip ~0.7-1.5s, double search/ledger event);
   partialArtists chip only strips ' of ' (by/from/with phrasings append
-  artists, query grows per tap); playQueue non-YT wanted-row fall-through
-  starts row 0 (comment claims never); favorites persist stale YT
+  artists, query grows per tap); playQueue non-supplemental wanted-row fall-through
+  starts row 0 (comment claims never); favorites persist stale supplemental
   streamUrl (blind reuse → guaranteed error→refresh cycle on replay);
   'zero'/'hit' sigStates render no explanation ('zero' can coexist with
-  painted qm∈[0.34,0.5) rows); hero card labels video rows "YT Song";
+  painted qm∈[0.34,0.5) rows); hero card labels video rows "supplemental Song";
   app.json still 3.3.0/versionCode 1 vs package.json 3.4.0-lab.4.
 - Verified solid: v3.3.0 suite intact (zero-regression: empty variants ⇒
-  acceptableTitleTokens ≡ titleQueryTokens); live YT search works from
+  acceptableTitleTokens ≡ titleQueryTokens); live supplemental search works from
   sandbox (canonical row parsed, lo-fi junk correctly demoted by
-  bestFirst); worker pool concurrency-4 correct; mixed saavn+YT queues;
+  bestFirst); worker pool concurrency-4 correct; mixed primary-catalog+supplemental queues;
   service.ts PlaybackError → ytRefreshStream wiring; downloads/radio/
-  mindbeat/library seams all handle YT rows without crash; web harness
+  mindbeat/library seams all handle supplemental rows without crash; web harness
   unaffected (webview 14 web fallback is an inert text component);
   withWindowPolicy manifest mutation shape correct; deadline/signal
   propagation correct; ladder never throws (live dead-network run
-  attempted youtube→itunes in order and degraded honestly).
+  attempted supplemental→itunes in order and degraded honestly).
 - No files modified; all proofs live in /tmp/critic/*.test.ts.
 
 Stage Summary:
@@ -751,7 +751,7 @@ Stage Summary:
   orchestration seams the lab missed: the rescue result is not protected
   from (a) thin-set recovery replacement and (b) cluster-representative
   displacement, and both fabricate sigState='rescued'. The decipher being
-  100% dead code means the PO-token bridge adds nothing to playback
+  100% dead code means the attestation-token bridge adds nothing to playback
   today. Fix P0s + gate the title-only fallback + add the missing bar
   locks, then re-run the gauntlet before shipping 3.4.0.
 
@@ -769,12 +769,12 @@ Work Log:
     thin sets (relaxed junk replaced the verified answer, sigState
     'rescued' fabricated over it) → S4 now skips on rescue (locked)
   • P0-2 cluster-dedupe could drop the rescued row (organic same-title
-    rep with playCount beats metric-less YT song row) → paint contract
+    rep with playCount beats metric-less supplemental song row) → paint contract
     re-injects the ladder's verified rows at rank 1 (locked)
   • P1-1 decipherer was dead code (fnMatch[0]+fnSrc.slice(1) assembly =
     SyntaxError every time; helper regex matched the param not the object)
     → full-source-span assembly + param-aware helper scan (locked)
-  • P1-2 title-only fallback painted an unplayable YT row on walled
+  • P1-2 title-only fallback painted an unplayable supplemental row on walled
     networks and skipped playable iTunes previews → gated on systemic
     verdicts only (locked)
   • P1-3 kill-switch gaps: search ungated, dishonest toast lifecycle,
@@ -785,9 +785,9 @@ Work Log:
     (locked ×4)
   • P2s: source-toggle stale closure, partialArtists chip query
     pollution, playQueue fall-through playing row 0, stale streamUrl
-    persisted in favorites, zero-state note, YT Video badge, version
+    persisted in favorites, zero-state note, supplemental Video badge, version
     metadata drift — all fixed
-- NEW LOCKS: tests/ai/search_yt_locks.test.ts (15 locks incl. ladder
+- NEW LOCKS: tests/ai/the supplemental lock suite.test.ts (15 locks incl. ladder
   order, authority floor, the song-vs-6.2M-lyric-video pick, the
   headline 'tu chaiye' e2e) — suite 159 → 174 tests / 763 expects
 - Found + fixed TWO harness-side issues the lab never hit:
@@ -796,20 +796,20 @@ Work Log:
     events → YtPoTokenBridge returns null on web (IS_WEB guard)
   • bestFirst's popularity key let a 6.2M-view UGC lyric video displace
     the canonical SONG row → song-kind now outranks video-kind
-- Web harness: youtube webmock (InnerTube has no CORS) + YT fixtures
+- Web harness: supplemental webmock (the platform's internal API has no CORS) + supplemental fixtures
   with ortho folds + SIG_COVER fixture; metro redirect; device lab
   extended with 12 v3.4.0 checkpoints → 48/48 × 2 devices, ZERO console
   errors (was 34/44 with failures on first run — fixed iteratively)
 - LIVE probes (scripts/live_probe_v34.ts, real APIs from this sandbox):
   'tu chaiye' → sigState=rescued, rank 1 = canonical Tu Chahiye (Pritam
   & Atif Aslam) via iTunes (DC bot-wall correctly detected → P1-2 fix
-  fired live); 'tu chaiye of atif aslam' → rescued; YT search parses 10
+  fired live); 'tu chaiye of atif aslam' → rescued; supplemental search parses 10
   tracks + 3 albums in 468ms; player ladder honestly reports
   LOGIN_REQUIRED on all 3 clients from DC (device/residential is G1)
 - UI verification (VLM on screenshots): rescued label renders, canonical
-  top card with YT Song badge, YouTube mode list correct, rescued row
+  top card with supplemental Song badge, the supplemental source mode list correct, rescued row
   plays end-to-end (full player, artwork, controls) — nothing broken
-- Docs: README v3.4 sections (YouTube source + title-truth rescue),
+- Docs: README v3.4 sections (the supplemental source source + title-truth rescue),
   CHANGELOG v3.4.0, gauntlet bars R3 section, lab planning docs moved to
   docs/ with context header; versions 3.4.0 (package.json + app.json);
   CI signing preflight verified healthy via GitHub API (runs #39-42 OK)
@@ -831,10 +831,10 @@ Work Log:
 - APK deep-verified (scripts/verify_v34_apk.py): manifest versionName 3.4.0
   (UTF-16 probe); resizeableActivity present in the compiled manifest
   (window-policy plugin output); 2.06 MB Hermes bundle with ALL 45 markers —
-  13 Search V2 (regression guard) + 8 SIG rescue + 10 YouTube source
-  (incl. VISIONOS/WEB_REMIX/ANDROID_VR, GenerateIT, signatureCipher,
+  13 Search V2 (regression guard) + 8 SIG rescue + 10 the supplemental source source
+  (incl. the tokenless persona/the attested web persona/the last-resort persona, GenerateIT, signatureCipher,
   mintPlayerPot) + never-blank/kill-switch strings; webmocks NOT leaked
-  (webmocks/searchFixtures/__TsfMock/SEARCH_EXTRA/ytSearchFixtures all clean)
+  (webmocks/searchFixtures/__TsfMock/SEARCH_EXTRA/supplemental searchFixtures all clean)
 - Verifier lesson: Hermes stores short ASCII strings in the small-string
   table (MUTF-8) and longer/non-ASCII strings as UTF-16LE — the verifier now
   dual-decodes (v3.3.0's markers happened to all be short-ASCII)
@@ -844,8 +844,8 @@ Work Log:
 
 Stage Summary:
 - FINAL SHIP: v3.4.0 live (same keystore → in-place upgrade over 3.3.0/3.2.0)
-- Upgraders see the 3.4.0 What's-new (YouTube source + rescue notes)
-- Device acceptance for Gate G1 (YouTube tap-to-audio on residential IP)
+- Upgraders see the 3.4.0 What's-new (the supplemental source source + rescue notes)
+- Device acceptance for Gate G1 (the supplemental source tap-to-audio on residential IP)
   remains the user's session — the lab already confirmed it on-device for
   the same ladder code
 - Reminder: user rotates GitHub token after session
@@ -886,7 +886,7 @@ Work Log:
   budget), honest retry/end contract. HomeScreen renders batches after
   the fixed shelves (onScroll near-bottom trigger, epoch guard on
   pull-to-refresh, shelves-settled gate); feed songs play with the full
-  loaded queue. Search appends JioSaavn pages on FlatList onEndReached
+  loaded queue. Search appends the primary catalog pages on FlatList onEndReached
   (mergeUniqueTracks dedupe incl. intra-page, searchHasMore honest stop
   rule, muted-artist parity, gen-guarded catches, abort-signal riding,
   live resultsRef mirror).
@@ -1156,7 +1156,7 @@ Work Log:
   (only tab-bar insets changed) — but v3.4.0's own commit message says
   withWindowPolicy was added to kill a pre-existing "split-screen
   half-window wedge", and lab's MAIN-BUILDER-HANDOVER.md pins the bug's
-  birth to lab.3 — the commit that added the BotGuard WebView minter.
+  birth to lab.3 — the commit that added the client-integrity attestation WebView minter.
   Only new dependency in v3.4.0: react-native-webview@14.
 - ROOT CAUSE (verified in node_modules source): react-native-webview
   v14 renders <View style={[{flex:1,overflow:'hidden'}, containerStyle]>
@@ -1171,7 +1171,7 @@ Work Log:
   (2) PlayerProvider hosts the bridge inside an absolute sub-pixel
   touch-transparent View (styles.poTokenHost) — version-proof: ANY
   child of a 1x1 absolute host cannot split the screen. The native
-  WebView still measures 1x1 → BotGuard runtime conditions unchanged
+  WebView still measures 1x1 → client-integrity attestation runtime conditions unchanged
   (field-proven playback preserved).
 - LOCKS: tests/ai/po_bridge_layout_locks.test.ts — renders the REAL
   bridge through a byte-faithful v14-wrapper replica (mock.module +
@@ -1181,7 +1181,7 @@ Work Log:
   pin the double belt; library-drift guard asserts the INSTALLED
   webview still has the assumed wrapper shape. Verified red-on-old:
   5 locks fail on the pre-fix mount (git stash round-trip), 9/9 green.
-- Suite hygiene: root-caused 2 order-dependent failures (youtube.test
+- Suite hygiene: root-caused 2 order-dependent failures (supplemental.test
   leaked its last setYtFetch stub; sig_e2e leaks globalThis.fetch) —
   rescue tests degraded 'rescued'→'partial' depending on file order.
   Fixed with seam resets on entry + PRISTINE_FETCH restore on exit;
@@ -1216,7 +1216,7 @@ Work Log:
   build succeeded but its binary marker for belt 1 ("containerStyle")
   was proven non-unique (the string ships inside react-native-webview's
   own bundled code — present in v3.4.3 too). Added testID=
-  "yt-po-token-webview" to the mount (unique, minification-safe,
+  "token-bridge-webview" to the mount (unique, minification-safe,
   doubles as a UI-automation hook), locked it in the source contract,
   re-tagged v3.4.4 (commit b0093f3), rebuilt.
 - CI #59 (main) + #60 (tag v3.4.4) both SUCCESS — 236-test + tsc gate
@@ -1224,7 +1224,7 @@ Work Log:
 - verify_v344_apk.py on the SHIPPED APK: 13/13 OK — versionName 3.4.4,
   versionCode 160 (>155, in-place upgrade over 3.4.3), belt 1 testID
   marker + belt 2 poTokenHost in the Hermes bundle, YtPoTokenBridge/
-  YouTube source intact, all four PROPERTY_COMPAT opt-outs +
+  the supplemental source source intact, all four PROPERTY_COMPAT opt-outs +
   maxAspectRatio 2.6 + resizeable + no orientation lock retained,
   WhatsNew v3_4_4 key present. Verifier AXML reads go through
   pyaxmlparser (compiled-manifest string search is nonsense); sanity
@@ -1248,21 +1248,21 @@ Task ID: 16 (R8 completion: residual dedup gap + eager top-up, pre-ship)
 Agent: Super Z (main agent)
 
 Task: Finish the R8 round (4 field reports: home lag, lo-fi-first
-YouTube results, 6-8 result volume, Top Songs Zalima x5-6), close the
+the supplemental source results, 6-8 result volume, Top Songs Zalima x5-6), close the
 residual dedup gap found by live probing, and prepare the ship.
 
 Work Log:
 - Situational: commit 7e503c7 (post-v3.4.4) already carries the bulk
-  R8 work (FlatList home rewrite, YT search v2 songs-filter primary,
+  R8 work (FlatList home rewrite, supplemental search v2 songs-filter primary,
   continuation pagination, recordingKey dedup) but was never released —
   the user's field report tested v3.4.4 WITHOUT these. Suite 261 pass,
   tsc clean at that commit.
-- Live probes re-run at HEAD: YT search v2 confirmed good (official
+- Live probes re-run at HEAD: supplemental search v2 confirmed good (official
   song rank #1 for tu chaiye/tum hi ho/kesariya/apna bana le, 19-20
   first page + 20 page 2); probe's canonical bar had a false FAIL
-  (compared raw query vs title, ignoring YouTube's own correction) —
+  (compared raw query vs title, ignoring the supplemental source's own correction) —
   fixed to compare correctedTo ?? q.
-- RESIDUAL GAP found by live probe of JioSaavn: same recording
+- RESIDUAL GAP found by live probe of the primary catalog: same recording
   re-listed with a RE-ORDERED or TRUNCATED credit list ("Tum Hi Ho |
   Arijit Singh, Mithoon" vs "Tum Hi Ho | Mithoon, Arijit Singh";
   "Labon Ko | KK, Pritam, Sayeed" vs "Labon Ko | Pritam, KK") carries
@@ -1273,8 +1273,8 @@ Work Log:
 - P4b implemented (src/api/recording.ts): creditSetOf / titleKeyOf /
   sameCredits (nested-set test) / reconcileRecordings (order-preserving
   title-bucket reconciliation, idempotent). Wired into: dedupeRecordings
-  (saavn), mergeUniqueTracks, EndlessFeedPager (per-title bucket ledger
-  + prime() registers buckets), ytSearchMusic merged loop, and
+  (primary-catalog), mergeUniqueTracks, EndlessFeedPager (per-title bucket ledger
+  + prime() registers buckets), supplemental searchMusic merged loop, and
   getTrending (was NOT deduped at all — chart collections re-list too).
 - R8-P3 eager top-up (SearchScreen): shared single-flighted
   appendYtPage(gen, {silent}) — first page paints immediately; when
@@ -1302,10 +1302,10 @@ prepare and ship v3.4.5.
 
 Work Log:
 - Gauntlet round 1 (critic, fresh context, machine-verified): verdict
-  FIX-FIRST. P1-1 ytSearchMusicMore never rejects → a network blip
-  painted "That's everything YouTube found" and permanently killed the
+  FIX-FIRST. P1-1 the continuation call never rejects → a network blip
+  painted "That's everything the supplemental source found" and permanently killed the
   token; P1-2 headline changes had zero behavioral locks (the nested
-  YT lock was vacuous) + a comment citing tests that didn't exist;
+  supplemental lock was vacuous) + a comment citing tests that didn't exist;
   P2-3 the nested credit-set rule over-collapsed 3 adversarial
   classes; P2-4 getTrending's >=5 gate measured pre-dedup rows;
   P2-5 live P3 bar flaky at 19-vs-20.
@@ -1313,7 +1313,7 @@ Work Log:
   hasMore → retryable, webmocks parity); singleton guard in
   sameCredits (lone credit must be the primary of the larger row);
   getTrending gates post-dedup; probe P3 bar = first page >=15 +
-  continuation + total(p1+p2)>=35; behavioral locks added (nested YT
+  continuation + total(p1+p2)>=35; behavioral locks added (nested supplemental
   collapse, Kar Gayi Chull adversarial, transport error, getTrending);
   comment fixed.
 - Gauntlet round 2: verdict FIX-FIRST again — caught MY fix's
@@ -1327,21 +1327,21 @@ Work Log:
   → same recording's global counter — collapses the Humnava class,
   floor added round 3 after the critic found small-counter noise);
   the vacuous lock re-pointed at a genuinely different-key pair;
-  the whole append state machine EXTRACTED to src/search/ytAppend.ts
-  (YtAppendController, ports-injected) — 6 behavioral locks
+  the whole append state machine EXTRACTED to the append-pager module
+  (the append controller, ports-injected) — 6 behavioral locks
   (single-flight, honest end, transport-retry, stale-gen swallow,
   busy-spinner, NEW-7 gen-keyed single-flight so a new query never
   queues behind a doomed walk); round-3 also: stale retry note
   cleared on productive append.
 - Gauntlet round 3: verdict SHIP. All round-2 P1s machine-proven
   fixed (live Humnava gone: 'top songs' clusters 5 → 0); controller
-  extraction verified sound incl. real ytSearchMusicMore trace;
+  extraction verified sound incl. real the continuation call trace;
   residuals = P2 superset-drop class (0 live occurrences in 238
   scanned rows) + P3 nits. The two cheap residuals (countTwins
   small-counter floor, gen-keyed single-flight) were still applied
   post-verdict with locks (288 pass total).
 - Final gates: bun test 288/288 (twice, both 2-file orders), tsc
-  clean, live YT probe ALL BARS PASS (39-40 deep per query, official
+  clean, live supplemental probe ALL BARS PASS (39-40 deep per query, official
   song rank 1 everywhere), live Zalima probe: top songs 0 same-title
   clusters, disjoint-credit survivors only.
 
@@ -1366,7 +1366,7 @@ Work Log:
 - verify_v345_apk.py on the SHIPPED APK: 19/19 OK — versionName 3.4.5,
   versionCode 165 (>160, in-place upgrade over 3.4.4), all four R8
   fixes binary-verified (FeedSongRow/FeedAlbumShelf memo'd feed rows,
-  SONGS_FILTER_PARAMS constant, ytSearchMusicMore + YtAppendController,
+  SONGS_FILTER_PARAMS constant, the continuation call + the append controller,
   reconcileRecordings + countTwins), R7 half-screen belts retained,
   window policy intact, WhatsNew v3_4_5 present.
 - Marker discipline (learned mid-verify): "endless-feed-song" testID
@@ -1449,7 +1449,7 @@ Work Log:
   claim, v3.4 title, no launch presentation) + 7 docs/ files
   (CHANGELOG missing v3.4.4/v3.4.5 entirely; DEVELOPMENT stale test
   count/lab scale/verifier template; ARCHITECTURE missing the
-  YouTube, search/, recording.ts and feed.ts modules entirely; RFC
+  the supplemental source, search/, recording.ts and feed.ts modules entirely; RFC
   docs without shipped-status banners).
 - README rewritten end-to-end (05e50bb): hero with icon + 6 badges
   (release/CI/tests/platform/privacy), 8-screenshot launch gallery
@@ -1464,20 +1464,20 @@ Work Log:
   rounds, live-probe evidence) and v3.4.4 (WebView root cause, two
   belts, 9 locks, user confirmation) entries — the changelog now
   covers every release through current.
-- ARCHITECTURE: module diagram + API section now document youtube.ts
-  (InnerTube ladder, PO-token bridge, kill-switch), search/ (S0–S5
-  pipeline files + ytAppend), recording.ts (credit-set reconciliation,
+- ARCHITECTURE: module diagram + API section now document the supplemental adapter
+  (the platform's internal API ladder, attestation-token bridge, kill-switch), search/ (S0–S5
+  pipeline files + the append pager), recording.ts (credit-set reconciliation,
   count twins), feed.ts (EndlessFeedPager); webmock parity table gained
-  the youtube row. Structural accident from a partially-applied
+  the supplemental row. Structural accident from a partially-applied
   MultiEdit (feed.ts section had landed over the MINDBEAT header) was
   repaired — final layout verified section by section.
 - DEVELOPMENT: 74→261 tests, lab 28-check/2-device → 5 viewports
   (93×3), gauntlet lock-suite inventory updated, verifier template
   → verify_v345_apk.py (pyaxmlparser, UTF-8/UTF-16 markers,
   red-on-previous-APK discriminator check), new house rules
-  (recording-reconciliation at every merge point; YouTube failures
+  (recording-reconciliation at every merge point; the supplemental source failures
   retryable, never terminal).
-- RFC banners: SEARCH-INTENT-RESCUE-PLAN + YOUTUBE-INTEGRATION-PLAN now
+- RFC banners: SEARCH-INTENT-RESCUE-PLAN + SUPPLEMENTAL-CATALOG-RFC now
   open with "STATUS: SHIPPED — v3.4.0 (hardened through v3.4.5)" notes
   framing them as engineering history (also fixed an Add-free→Ad-free
   typo). MINDBEAT.md and LAB-TESTING-GUIDE.md already carry proper
@@ -1584,7 +1584,7 @@ Stage Summary:
 - v4.0.0 PULSE shipped: the whole app is an editorial broadsheet — every
   screen, every component, icon and splash — with MINDBEAT, search,
   playback, downloads and safety logic untouched (contracts preserved:
-  Home FlatList + memo rows, ytAppend wiring, testIDs, window policy).
+  Home FlatList + memo rows, the append pager wiring, testIDs, window policy).
 - The gauntlet loop is won blind 6/6 against the user's own prototype,
   with two real behavior bugs fixed along the way.
 
@@ -1600,7 +1600,7 @@ Work Log:
   engine final paint no longer stomps fast page-2 appends; a post-early
   engine failure no longer wipes painted results; artist-intent queries no
   longer wipe their own rows (hidden bug #15); split paint marks (early/
-  final/yt/vibe/wipe) to decode the wipe; E2E lab rounds 2-12 (real
+  final/source/vibe/wipe) to decode the wipe; E2E lab rounds 2-12 (real
   emulator CI, KVM fix, a11y-tree testID truth, extendedWaitUntil,
   keyboard occlusion, scroll-position truth, broadsheet player flow).
 - v4.0.3 THE NEW FACE EDITION (59abef2): the user-designed swirl-head
@@ -1628,7 +1628,7 @@ Work Log:
   no longer trusted (0-SONGS dead end) — album ladder stub rescue,
   artist catalog topSongs + TOP ALBUMS rail + deep playlist expand;
   artist photos deep-scan every credited artist (primary + featured,
-  image OR id salvage) with full home rail coverage; SAAVN source chip
+  image OR id salvage) with full home rail coverage; PRIMARY CATALOG source chip
   removed everywhere; THE INDEX stacks redesigned (equal width, 2-line
   labels, counting-house chips from cache, wire banner + colophon).
 - ecacf60 critic round: safety-filter on the degraded catalog path,
@@ -1903,7 +1903,7 @@ Work Log:
   mapToScreen transform; busy guard moved to a ref (stale closure).
   [P0-2] F18 imported queues could NEVER resolve (ConcertTrack carried
   no identifiers; rows dropped silently while the toast promised a
-  room) → ConcertTrack now carries source/saavnId (IDENTIFIERS, never
+  room) → ConcertTrack now carries source/track id (IDENTIFIERS, never
   handles; decoder rejects unknown sources + previewUrl/encryptedUrl
   forgeries), explicit concertRowToTrack mapping (no blind cast),
   playQueue now returns Promise<number> and the join flow toasts the

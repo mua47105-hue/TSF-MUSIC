@@ -1,5 +1,5 @@
 /**
- * YOUTUBE GAUNTLET (YOUTUBE-INTEGRATION-PLAN §7) — bars YT-A…YT-F.
+ * SUPPLEMENTAL GAUNTLET (docs/SUPPLEMENTAL-CATALOG-RFC.md §7) — bars YT-A…YT-F.
  *
  * All network is stubbed through the module's setYtFetch seam. Fixtures
  * mirror the live InnerTube shapes captured in research/youtube/.

@@ -1,5 +1,5 @@
 /**
- * YOUTUBE SOURCE — minimal on-device InnerTube client (YOUTUBE-INTEGRATION-PLAN).
+ * THE SUPPLEMENTAL SOURCE — minimal on-device client (see docs/SUPPLEMENTAL-CATALOG-RFC.md).
  *
  * Pinned technique from the OSS ecosystem (NewPipe / youtubei.js / FreeTube),
  * built as our own ~300 LOC module so YouTube breakage can never touch the

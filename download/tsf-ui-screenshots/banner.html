@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: 'ArchivoBlack'; src: url('file:///home/z/my-project/TSF-MUSIC/assets/fonts/ArchivoBlack-400.ttf'); }
+  @font-face { font-family: 'Archivo'; src: url('file:///home/z/my-project/TSF-MUSIC/assets/fonts/Archivo-500.ttf'); font-weight: 500; }
+  @font-face { font-family: 'Archivo'; src: url('file:///home/z/my-project/TSF-MUSIC/assets/fonts/Archivo-700.ttf'); font-weight: 700; }
+  @font-face { font-family: 'SpaceMono'; src: url('file:///home/z/my-project/TSF-MUSIC/assets/fonts/SpaceMono-700.ttf'); font-weight: 700; }
+  @font-face { font-family: 'SpaceMono'; src: url('file:///home/z/my-project/TSF-MUSIC/assets/fonts/SpaceMono-400.ttf'); font-weight: 400; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background: #F4F1EA;
+    font-family: 'Archivo', sans-serif;
+    color: #161513;
+    position: relative;
+  }
+  /* paper grain: faint acid + orange plates */
+  .plate { position: absolute; z-index: 0; }
+  .plate.acid { right: -60px; top: -80px; width: 340px; height: 340px; background: #D9FF3D; transform: rotate(12deg); }
+  .plate.orange { left: -70px; bottom: -90px; width: 300px; height: 300px; background: #FF4D00; transform: rotate(-8deg); }
+  .rule-top { position: absolute; left: 48px; right: 48px; top: 46px; border-top: 3px solid #161513; }
+  .rule-bottom { position: absolute; left: 48px; right: 48px; bottom: 52px; border-top: 2px solid #161513; }
+
+  .masthead {
+    position: absolute; left: 48px; top: 66px; z-index: 3; width: 560px;
+  }
+  .kicker {
+    font-family: 'SpaceMono'; font-weight: 700; font-size: 15px;
+    letter-spacing: 4px; color: #FF4D00; margin-bottom: 14px;
+  }
+  .kicker .sq { display: inline-block; width: 11px; height: 11px; background: #FF4D00; margin-right: 12px; }
+  h1 {
+    font-family: 'ArchivoBlack'; font-size: 92px; line-height: 0.94;
+    letter-spacing: -2px; text-transform: uppercase;
+  }
+  h1 .outline {
+    color: transparent; -webkit-text-stroke: 2.5px #161513;
+  }
+  .deck {
+    margin-top: 20px; font-weight: 500; font-size: 21px; line-height: 1.4; max-width: 520px;
+  }
+  .deck b { font-weight: 700; }
+  .ticker {
+    position: absolute; left: 48px; bottom: 72px; z-index: 3;
+    font-family: 'SpaceMono'; font-weight: 400; font-size: 14.5px; letter-spacing: 2px;
+    color: #161513;
+  }
+  .ticker b { background: #161513; color: #D9FF3D; padding: 3px 10px; font-weight: 700; margin-right: 12px; }
+
+  /* device frames */
+  .phones { position: absolute; right: 40px; top: 30px; z-index: 2; width: 640px; height: 580px; }
+  .phone {
+    position: absolute; background: #F4F1EA; border: 3px solid #161513;
+    box-shadow: 10px 10px 0 #161513; overflow: hidden; border-radius: 18px;
+  }
+  .phone img { width: 100%; display: block; }
+  .p1 { width: 250px; left: 0px; top: 60px; transform: rotate(-4deg); z-index: 1; }
+  .p2 { width: 268px; left: 196px; top: 14px; transform: rotate(1.5deg); z-index: 3; }
+  .p3 { width: 250px; left: 408px; top: 74px; transform: rotate(5deg); z-index: 2; }
+  .stamp {
+    position: absolute; z-index: 4; right: 30px; top: 4px;
+    background: #D9FF3D; border: 3px solid #161513; box-shadow: 6px 6px 0 #161513;
+    font-family: 'SpaceMono'; font-weight: 700; font-size: 15px; letter-spacing: 1px;
+    padding: 10px 14px; transform: rotate(6deg); text-align: center; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+  <div class="plate acid"></div>
+  <div class="plate orange"></div>
+  <div class="rule-top"></div>
+  <div class="rule-bottom"></div>
+
+  <div class="masthead">
+    <div class="kicker"><span class="sq"></span>THE EVERYDAY AUDIO BROADSHEET</div>
+    <h1>TSF<br><span class="outline">MUSIC</span></h1>
+    <div class="deck"><b>PULSE — an editorial-brutalist player</b> with an on-device
+    intelligence engine. No account, no server, no tracking.</div>
+  </div>
+
+  <div class="ticker"><b>V5.0.2</b>320 KBPS · ON-DEVICE AI</div>
+
+  <div class="phones">
+    <div class="phone p1"><img src="v502/pixel7/01-home.png"></div>
+    <div class="phone p2"><img src="v502/pixel7/06-player.png"></div>
+    <div class="phone p3"><img src="v502/pixel7/12-ai.png"></div>
+    <div class="stamp">320<br>Kbps</div>
+  </div>
+</body>
+</html>

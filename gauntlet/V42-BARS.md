@@ -54,12 +54,12 @@ source files are the truth.
 8. Potato-phone memory: every new table has a hard cap + eviction; never hold two large datasets at once.
 9. Every new algorithmic surface passes `filterClean()`; every merge point runs `reconcileRecordings()`; persisted Tracks are stripped of streamUrl.
 10. Tests run on bun; after every phase: `bunx tsc --noEmit` (exit 0) + `bun test` (0 fail, 368+ baseline pass); new logic gets replay tests in `tests/ai/` (storeMemory + fixtures).
-11. New exports in `src/api/{saavn,itunes,artists,lrclib,youtube}.ts` must be mirrored in `src/webmocks/`.
+11. New exports in the `src/api/*` adapter modules must be mirrored in `src/webmocks/`.
 12. Kill switch: every new surface respects `intelligenceDisabled` and degrades gracefully to existing behavior when data is missing.
 
 ## Phase acceptance (the 6 phases underneath the bars)
 
-- **P1 genre capture**: Track.genre (itunes `primaryGenreName`; JioSaavn exposes NO genre field — language already captured, documented honestly). Captured genre feeds genreAffinities at `ONBOARDING.genreSeedWeight × 0.5`; listens WITHOUT genre leave the profile byte-identical. Lazy backfill of old favorite rows on play.
+- **P1 genre capture**: Track.genre (itunes `primaryGenreName`; the primary catalog exposes NO genre field — language already captured, documented honestly). Captured genre feeds genreAffinities at `ONBOARDING.genreSeedWeight × 0.5`; listens WITHOUT genre leave the profile byte-identical. Lazy backfill of old favorite rows on play.
 - **P2 baked features**: HF `maharshipandya/spotify-tracks-dataset` (Kaggle banned); normalizeQuery+clusterKey ported VERBATIM into Python; recordingKey + bare titleKey + clusterKey entries; ≤200k rows popularity-sorted; gzip ≤2.5 MB hard fail; `loadFeatureTable()` lazy (never in `init()`), ONE live copy (the Metro-parsed module object IS the table — a Map would be a second live copy, forbidden by law ⑧); priority dataset(0.8) → calibration → priors; miss ⇒ byte-identical behavior.
 - **P3 bandit**: arms {α,β} from {1,1}; GRADE_WEIGHTS-derived updates; Cheng/Joehnk Beta on seeded mulberry32; kv cap 2000 arms (evict lowest α+β); SCORE_WEIGHTS.bandit additive; exploration budget untouched.
 - **P4 markov flow**: DIRECTED session-consecutive transitions (A→B ≠ B→A) in profile; per-node top-8, floor-pruned, ≤3000 edges; coplayEdge half-life; SCORE_WEIGHTS.flowNext; FLOW_NEXT three-way sync.

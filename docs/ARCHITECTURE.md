@@ -6,7 +6,7 @@ flows through the app, and the contracts that keep the standalone promise
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                              App.tsx                                │
+│                              App.tsx                               │
 │  SafeArea → Toast → PlayerProvider → DynamicTheme → Navigation     │
 │         (WhatsNewDialog + Onboarding overlay the stack)            │
 ├──────────────┬──────────────┬──────────────┬───────────────────────┤
@@ -14,23 +14,23 @@ flows through the app, and the contracts that keep the standalone promise
 │              │              │              │   (bottom tabs)       │
 ├──────────────┴──────────────┴──────────────┴───────────────────────┤
 │  Stack screens: Player (modal) · Collection · Playlist · Stats ·   │
-│                 Taste · AI                                          │
+│                 Taste · AI                                         │
 ├────────────────────────────────────────────────────────────────────┤
 │  MiniPlayer (floats above the tab bar) · PlayerProvider            │
 ├────────────────────────────────────────────────────────────────────┤
 │  mindbeat facade  →  src/ai (MINDBEAT intelligence, see            │
 │                      docs/MINDBEAT.md)                             │
 ├────────────────────────────────────────────────────────────────────┤
-│  search/ (Search V2 pipeline) · ytAppend (single-flight pager)     │
+│  search/ (Search V2 pipeline) · the single-flight pager            │
 ├────────────────────────────────────────────────────────────────────┤
-│  api/saavn · api/youtube · api/artists · api/music · api/lrclib ·  │
-│  api/itunes · api/recording (dedup/reconciliation) · api/feed      │
+│  api/* — catalog adapters (primary · supplemental) · artists ·     │
+│  music · lyrics · previews · recording (dedup/reconcile) · feed    │
 ├────────────────────────────────────────────────────────────────────┤
 │  storage/store (AsyncStorage) · storage/downloads (files) ·        │
 │  ai/core/storeSqlite (event ledger)                                │
 ├────────────────────────────────────────────────────────────────────┤
 │  react-native-track-player  ←  background service (service.ts)     │
-│  JioSaavn CDN (320 kbps AAC) · YouTube InnerTube · iTunes preview  │
+│  Catalog CDNs (320 kbps AAC) · supplemental source · iTunes preview│
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -55,12 +55,12 @@ flows through the app, and the contracts that keep the standalone promise
 
 ## Data providers (`src/api/`)
 
-### saavn.ts — the primary catalog
-React Native has no CORS restrictions, so the app calls JioSaavn's public
-web API **directly from the device**:
+### The primary catalog adapter
+React Native has no CORS restrictions, so the app calls the provider's
+public web API **directly from the device**:
 
-- `saavnGet(params)` — JSON helper that tolerates JioSaavn's junk-prefixed
-  response bodies.
+- The JSON helper tolerates the provider's junk-prefixed response
+  bodies.
 - `decryptMediaUrl(encrypted)` — DES-ECB decryption (pure-JS `crypto-js`)
   of `encrypted_media_url` into a playable 320 kbps AAC CDN URL. The key
   is embedded; no secrets are transmitted.
@@ -72,45 +72,46 @@ web API **directly from the device**:
   they represent user intent.
 
 ### artists.ts — real artist photography (v3.2)
-JioSaavn's artist *search* returns placeholder art, but two endpoints
+The provider's artist *search* returns placeholder art, but two endpoints
 carry genuine portraits. This module is the honest layer on top:
 
 - `ARTIST_SEEDS` — 48 A-listers with verified photo URLs (harvested from
   the live API), so onboarding's first screen needs zero round-trips.
 - `ARTIST_CATEGORIES` — 8 live pool queries (Bollywood, Punjabi, Indie…)
   powering the "More …" batches.
-- `searchSaavnArtists()`, `getArtistPhoto(id)`, `lookupArtistPhoto(name)`
-  — all cached.
-- `sanitizeArtistImage()` is the gate: **only `c.saavncdn.com/artists/`
-  URLs pass** (upgraded to 500×500). Album art masquerading as artist
+- `search` / photo / lookup helpers — all cached.
+- `sanitizeArtistImage()` is the gate: **only verified provider-CDN
+  artist-portrait URLs pass** (upgraded to 500×500). Album art masquerading as artist
   art is rejected; callers fall back to an elegant initials circle
   (`Artwork` component) — the app never shows a wrong photo.
 
-### youtube.ts — the second catalog (v3.4)
-The YouTube source module — same culture as the JioSaavn client: a
+### The supplemental catalog adapter (v3.4)
+The supplemental source module — same culture as the primary-catalog
+client: a
 minimal, isolated, direct-API implementation with zero dependencies on
 any third-party extraction library:
 
-- **Search**: YT Music `WEB_REMIX` InnerTube queries. The primary call
-  runs the songs filter (`SONGS_FILTER_PARAMS` — official Song rows
-  first, the lo-fi/cover-displacement fix), the raw query rides as
+- **Search**: music-catalog queries against the platform's internal web
+  API. The primary call
+  runs the songs filter — official Song rows
+  first, the lo-fi/cover-displacement fix; the raw query rides as
   fallback. Videos are admitted only at 0 < duration ≤ 15 min (junk /
-  podcast filter). Continuations (`ytSearchMusicMore`) power deep,
+  podcast filter). Continuations power deep,
   resumable pagination: transport failures reject with `error:true` so
   the caller keeps the token and can retry — a network blip never
   paints a terminal "end of results".
-- **Playback**: a three-client InnerTube ladder — VISIONOS (tokenless,
-  pre-signed URLs) → WEB_REMIX (BotGuard-attested with **PO tokens
-  minted in a hidden 1×1 WebView** on the youtube.com origin,
-  `testID="yt-po-token-webview"`) → ANDROID_VR (last resort). Per-client
-  health cooldowns, per-rung diagnostics (`ytLastDiagnostics()`),
+- **Playback**: a three-client persona ladder — a tokenless client
+  (pre-signed URLs) → an attested web persona (**client-integrity
+  tokens minted in a hidden 1×1 WebView** on the platform's web origin)
+  → a last-resort persona. Per-client
+  health cooldowns, per-rung diagnostics,
   IP-bound URL cache with refresh.
 - **Kill-switch discipline**: 3 consecutive systemic failures soft-disable
-  the source for 1 h; per-video UNPLAYABLE never disables it; every
-  entry point resolves null within timeouts — JioSaavn playback can
-  never be blocked by YouTube breakage.
+  the source for 1 h; per-item UNPLAYABLE never disables it; every
+  entry point resolves null within timeouts — primary-catalog playback
+  can never be blocked by supplemental-source breakage.
 
-Design RFC: [docs/YOUTUBE-INTEGRATION-PLAN.md](YOUTUBE-INTEGRATION-PLAN.md).
+Design RFC: [docs/SUPPLEMENTAL-CATALOG-RFC.md](SUPPLEMENTAL-CATALOG-RFC.md).
 
 ### search/ — the Search V2 pipeline (v3.3)
 Six stages behind one orchestrator (`api/music.ts` → `searchMusicV2`):
@@ -126,11 +127,11 @@ Six stages behind one orchestrator (`api/music.ts` → `searchMusicV2`):
   reconciliation (via `api/recording.ts`), lyric verification V1/V2
 - `rank.ts` (S3) — deterministic scorer with the disambiguation
   override and truthful reason lines
-- `recover.ts` (S4) — the relaxation + rescue ladder (YouTube → iTunes
-  → variant spellings → album) with honest zero-states
+- `recover.ts` (S4) — the relaxation + rescue ladder (supplemental
+  source → iTunes → variant spellings → album) with honest zero-states
 - `learn.ts` (S5) — correlated query→click evidence, fragment→track
   memory, engagement re-ranking, sourceTrust feeding
-- `ytAppend.ts` — the single-flight continuation pager behind search's
+- the single-flight continuation pager behind search's
   endless scroll (gen-keyed: a new query never queues behind a doomed
   page walk; stale generations are swallowed)
 
@@ -143,8 +144,9 @@ naive key-dedup lets both through (the Zalima ×5 field report).
 `creditSetOf` / `sameCredits` (nested-set test with a singleton guard) /
 `reconcileRecordings` (order-preserving title-bucket reconciliation,
 idempotent) plus play-count-twin collapsing (global counters within
-1,000 = re-list) run at **every** merge point: saavn dedup, cross-source
-merge, feed pager buckets, YouTube page appends, trending.
+1,000 = re-list) run at **every** merge point: primary-catalog dedup,
+cross-source merge, feed pager buckets, supplemental page appends,
+trending.
 
 ### feed.ts — the endless home feed (v3.4.1)
 `EndlessFeedPager` keeps Home loading forever after the fixed shelves:
@@ -154,10 +156,11 @@ and against the shelves (per-title bucket ledger), safety-filtered,
 with an honest retry row on network failure and an honest end marker.
 
 ### music.ts + itunes.ts — aggregation & fallback
-`searchMusic()` queries JioSaavn first; if results are thin (< 8) or the
-request fails, it tops up with iTunes 30-second previews (badged via
-`Track.previewOnly`). Dedup is by normalized title+artist. The user
-always gets results, even when Saavn is unreachable in their region.
+`searchMusic()` queries the primary catalog first; if results are thin
+(< 8) or the request fails, it tops up with iTunes 30-second previews
+(badged via `Track.previewOnly`). Dedup is by normalized title+artist.
+The user always gets results, even when the primary catalog is
+unreachable in their region.
 
 ## Playback pipeline (`src/player/`)
 
@@ -260,9 +263,9 @@ modules — **web platform only**:
 |---|---|
 | `react-native-track-player` | in-memory player with `window.__TsfMock` control plane |
 | `expo-file-system` | no-op |
-| `src/api/saavn.ts` | fixture catalog (real JioSaavn CDN artwork) |
+| primary catalog adapter | fixture catalog (real catalog CDN artwork) |
 | `src/api/music.ts`, `artists.ts` | fixture aggregations |
-| `src/api/youtube.ts` | fixture InnerTube responses (the real API has no CORS) |
+| supplemental source adapter | fixture supplemental responses (the real API has no CORS) |
 | `src/ai/core/storeSqlite.ts` | `storeMemory.ts` (same interface) |
 
 Every redirect is gated on `platform === 'web'`; Android bundles are

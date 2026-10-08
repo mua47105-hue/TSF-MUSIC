@@ -81,7 +81,7 @@ python3 scripts/package_ui_shots.py
 - `react-native-track-player` → in-memory mock (with a
   `window.__TsfMock` control plane for seek/force/snapshot)
 - `expo-file-system` → no-op
-- `src/api/saavn.ts|music.ts|artists.ts` → fixture catalog
+- the catalog adapters (`music.ts`, `artists.ts`, primary) → fixture catalog
 - `src/ai/core/storeSqlite.ts` → `storeMemory.ts` (same interface)
 
 The Android bundle is unaffected by construction, and every release is
@@ -185,7 +185,7 @@ These keep the app fast, honest and standalone:
   `src/api/recording.ts` (`reconcileRecordings` / `sameCredits` /
   count-twin collapse) — a re-credited or re-ordered re-listing of the
   same recording must never render twice (the Zalima ×5 lesson).
-- **YouTube failures are retryable, never terminal**: transport errors
+- **Supplemental-source failures are retryable, never terminal**: transport errors
   reject with `error:true` (caller keeps the token + `hasMore`);
   systemic-failure kill-switch accounting is class-aware.
 - **Artist images must pass `sanitizeArtistImage()`** — never render
