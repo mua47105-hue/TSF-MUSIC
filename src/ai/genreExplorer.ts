@@ -115,3 +115,22 @@ export function mapToScreen(
   const top = (bubble.y - bubble.radius) * zoom * (viewport / GENRE_EXPLORER.space) + panY;
   return { left, top, size };
 }
+
+/**
+ * FIX-D3 — THE ART PROBE CACHE CONTRACT (pure). The screen resolves each
+ * genre's artwork once per app run; the auditor caught the NEGATIVE
+ * case: a failed / no-art probe was never recorded, so every revisit
+ * re-probed the network. A miss is now cached for the same lifetime as
+ * a hit — `''` IS the honest "known no art" result, rendered as the ink
+ * label the screen already carries.
+ */
+export function cachedGenreArt(cache: Map<string, string>, genre: string): { uri: string; needsProbe: boolean } {
+  if (!cache.has(genre)) return { uri: '', needsProbe: true };
+  return { uri: cache.get(genre) ?? '', needsProbe: false };
+}
+
+/** Record a probe outcome: the URI on success, '' on a miss (the cached
+ * negative). Both live for the module's lifetime — no re-probe. */
+export function storeGenreArt(cache: Map<string, string>, genre: string, probe: string | null): void {
+  cache.set(genre, probe ?? '');
+}

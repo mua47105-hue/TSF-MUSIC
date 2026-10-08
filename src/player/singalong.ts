@@ -157,25 +157,51 @@ export function withWordSpans(lines: LrcLine[], durationMs?: number): WordLine[]
   });
 }
 
-/** Proportional (character-weighted) split of the line's span. */
+/** Proportional (character-weighted) split of the line's span.
+ *
+ * v5.0.1 FIX-D2: every emitted word now has endMs > startMs, guaranteed
+ * by INTEGER allocation that sums EXACTLY to the line's duration. The
+ * old per-word `max(1, round(share))` could overshoot the span (a
+ * 100:1-char split of a 2 ms line gave the first word 2 ms and the
+ * last word a ZERO-duration span after the end snap-back). The
+ * allocation: a 1 ms floor per word (the span ≥ word-count guard makes
+ * it affordable), character-weighted floors, then the remainder
+ * distributed by largest fractional share (index tiebreak — law X4).
+ */
 function wordSpansOf(text: string, startMs: number, endMs: number): WordSpan[] {
   const words = text.split(/\s+/).filter(Boolean);
   const span = endMs - startMs;
   if (words.length < 2 || !(span > 0)) return []; // structural degradation
   // a span too short to give every word ≥1ms of mic time degrades too —
-  // the Math.max(1,…) floor would otherwise push spans past the line's
-  // end (negative/invalid word spans; blind-critic P2)
+  // negative/invalid word spans; blind-critic P2 (and FIX-D2's floor)
   if (span < words.length) return [];
   const totalChars = words.reduce((s, w) => s + w.length, 0);
+  // INTEGER ALLOCATION: durs[i] ≥ 1, Σ durs = span exactly.
+  const durs = words.map((w) => Math.max(1, Math.floor((w.length / totalChars) * span)));
+  let diff = span - durs.reduce((s, d) => s + d, 0);
+  const order = words.map((_, i) => i);
+  if (diff > 0) {
+    // give the surplus to the largest fractional shares first
+    order.sort((a, b) => (words[b].length / totalChars) - (words[a].length / totalChars) || a - b);
+    for (let k = 0; diff > 0; k++, diff--) durs[order[k % order.length]] += 1;
+  } else if (diff < 0) {
+    // trim the largest allocations first, never below the 1 ms floor
+    order.sort((a, b) => durs[b] - durs[a] || a - b);
+    for (let k = 0; diff < 0; k++) {
+      const i = order[k % order.length];
+      if (durs[i] > 1) {
+        durs[i] -= 1;
+        diff += 1;
+      }
+    }
+  }
   const out: WordSpan[] = [];
   let cursor = startMs;
-  for (const w of words) {
-    const dur = Math.max(1, Math.round((w.length / totalChars) * span));
-    out.push({ word: w, startMs: cursor, endMs: cursor + dur });
-    cursor += dur;
+  for (let i = 0; i < words.length; i++) {
+    out.push({ word: words[i], startMs: cursor, endMs: cursor + durs[i] });
+    cursor += durs[i];
   }
-  // rounding residue: the last word owns the line's true end
-  out[out.length - 1].endMs = endMs;
+  // cursor lands exactly on endMs (Σ durs = span) — asserted by the locks
   return out;
 }
 

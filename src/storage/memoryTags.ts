@@ -118,7 +118,10 @@ export function createMemoryTags(store: MemoryTagsStore): MemoryTagsService {
             excess -= 1;
           }
         }
-        return tag;
+        // v5.0.1 FIX-D4: return the STORED row — the persisted `at` (an
+        // update keeps the ORIGINAL moment) is what the caller must see,
+        // never the freshly-built row whose `at` differs on a re-tag.
+        return (await store.get(tag.id)) ?? tag;
       });
     },
 

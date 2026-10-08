@@ -41,7 +41,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { genreMapLayout, mulberry32, mapToScreen, type GenreBubble } from '../ai/genreExplorer';
+import { genreMapLayout, mulberry32, mapToScreen, cachedGenreArt, storeGenreArt, type GenreBubble } from '../ai/genreExplorer';
 import { GENRE_EXPLORER } from '../ai/core/constants';
 import { searchSaavnClean, getArtistCatalog } from '../api/saavn';
 import { usePlayer } from '../player/PlayerProvider';
@@ -251,15 +251,19 @@ export function GenreExplorer() {
 }
 
 /** The genre's first row artwork — resolved AFTER PAINT, once per app
- *  run, seeded deterministically (never a render-body network call). */
+ *  run, seeded deterministically (never a render-body network call).
+ *  v5.0.1 FIX-D3: a MISSED probe is cached too ('' = known no art) —
+ *  revisiting the map never re-probes a genre the catalog already
+ *  failed once. */
 function GenreArtwork({ genre, size }: { genre: string; size: number }) {
-  const [uri, setUri] = useState(() => artCache.get(genre) ?? '');
+  const [uri, setUri] = useState(() => cachedGenreArt(artCache, genre).uri);
   const tooSmall = size < GENRE_EXPLORER.artMinSize;
   useEffect(() => {
-    if (tooSmall || uri || artCache.has(genre)) return undefined;
+    if (tooSmall || !cachedGenreArt(artCache, genre).needsProbe) return undefined;
     let cancelled = false;
     const task = InteractionManager.runAfterInteractions(() => {
       void (async () => {
+        let art = '';
         try {
           // a deterministic probe row per genre (seeded — same every run)
           const rand = mulberry32(genre.length * GENRE_EXPLORER.artProbeSeed);
@@ -267,17 +271,21 @@ function GenreArtwork({ genre, size }: { genre: string; size: number }) {
             `${genre} songs`,
             GENRE_EXPLORER.artProbeRowsMin + Math.floor(rand() * GENRE_EXPLORER.artProbeRowsJitter),
           );
-          let art = rows[0]?.artwork ?? '';
+          art = rows[0]?.artwork ?? '';
           if (!art) {
             const artist = await getArtistCatalog(genre, 1).catch(() => null);
             art = artist?.tracks[0]?.artwork ?? '';
           }
-          if (!cancelled && art) {
-            artCache.set(genre, art);
-            setUri(art);
-          }
         } catch {
           /* no art — the ink label carries the bubble, honestly */
+        }
+        if (!cancelled) {
+          // v5.0.1 critic P2-2: a COMPLETED probe is the genre's truth —
+          // the store is UNCONDITIONAL (a cancelled component's result is
+          // still real, genre-keyed data: remounting must not re-probe);
+          // only the state write is gated on liveness.
+          storeGenreArt(artCache, genre, art); // FIX-D3: '' is cached too — the negative result
+          if (art && !cancelled) setUri(art);
         }
       })();
     });
