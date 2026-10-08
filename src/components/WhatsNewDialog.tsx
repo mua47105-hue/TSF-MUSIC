@@ -11,20 +11,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v5_0_1';
+const SEEN_KEY = 'tsf.whatsNew.v5_0_2';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── v5.0.1 — the independent verification fix round ──
-  'THE VERIFICATION ROUND — an independent auditor reproduced 2 ship-blockers and 6 broken promises in v5.0.0; all eight are fixed, locked, and mutation-proven. Every claim below is now enforced, not advertised.',
-  'TIME MACHINE — a failing summary write can no longer delete your raw history (the fold now commits atomically: summary first, watermark last, deletion only on commit; a failed fold retries and retains the raw events).',
-  'SESSION MEMORY — the resume claim is honest now: ≥70% your session\u2019s queued spine, ≤30% freshly added rows (the old \u201cunheard\u201d wording claimed a listening proof the queue cannot make).',
-  'SHUFFLE BY VIBE — the ±25% step bound is enforced during the walk (not just reported), and the honest flag now sees the first transition from the playing track too.',
-  'CONCERT MODE — real size caps: oversized rooms are refused loudly (never silently truncated), a 262k-char title can no longer produce a monster code, and the receiver refuses over-cap codes on sight. A second join cancels the first armed start.',
-  'ARTWORK PREWARM — your REAL network type (WiFi/cellular) now gates the prefetch, and a queue change under the same song re-warms the new art. One new dependency ships with this round: expo-network.',
-  'PLAYBACK TOASTS — every \u201cN SONGS\u201d toast reports the songs that ACTUALLY started; when nothing resolves, it says so instead of toasting a count that never plays.',
-  'KARAOKE WORDS + MAPS + MEMORIES — zero-duration word spans are impossible, the genre map stops re-probing art it already failed to find, and re-tagging a moment returns the stored one. Docs (artist timeline, README numbers) now match what shipped.',
+  // ── v5.0.2 — the stability patch ──
+  'THE STABILITY PATCH — a test-isolation bug (the v5.0.1 network-mock leak) held the v5.0.1 release in CI red; it is fixed and the full suite is green again. No app behavior changed in this patch: expo-network gained its web mock (lab parity) and the README numbers now match what ships.',
   'As always: all of it runs 100% on-device — zero servers, zero accounts, zero telemetry.',
 ];
 

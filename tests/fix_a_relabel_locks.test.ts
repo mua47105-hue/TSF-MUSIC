@@ -17,9 +17,11 @@ import { mixResumeSession } from '../src/ai/sessionMemory';
 import { SESSION_MEMORY } from '../src/ai/core/constants';
 
 describe('FIX-A2 · the copy says "freshly added", never "unheard"', () => {
-  test('the What\u2019s-New bulletin relabels the claim', () => {
+  test('the What\u2019s-New bulletin never carries the dishonest claim (the shipped bulletin is the v5.0.2 patch note)', () => {
     const src = readFileSync('src/components/WhatsNewDialog.tsx', 'utf8');
-    expect(src).toContain('≤30% freshly added rows');
+    // The v5.0.2 patch bulletin replaced the v5.0.1 relabel prose (the
+    // relabel's permanent home is the changelog, pinned below). What
+    // must hold for EVERY bulletin: the dishonest wording never ships.
     expect(src).not.toContain('≤30% unheard');
   });
 

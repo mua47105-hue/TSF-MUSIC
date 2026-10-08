@@ -175,11 +175,11 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v5.0.1** (THE VERIFICATION ROUND — the independent auditor's 2 ship-blockers + 6 broken promises fixed, locked, mutation-proven: atomic Time-Machine folds, honest session-memory labels, enforced vibe bound, real concert caps, real network-gated artwork prewarm, resolved-count playback toasts, clock-proof caps, edge-case hardening; ships on top of v5.0.0's 20 features. In-place upgrades, same keystore since v2.0) |
+| Latest release | **v5.0.2** (THE STABILITY PATCH — the test-isolation bug that held v5.0.1 in CI red is closed: the B3 network mock is scoped to its own file, expo-network ships its webmock (house rule 15), and the README test-count badge tells the truth again; zero app-behavior change on top of v5.0.1's verification round. In-place upgrades, same keystore since v2.0) |
 | Audio | 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | JioSaavn (full) + YouTube (music, ad-free) + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 885 replay tests · 4,281 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 885 replay tests · 4,294 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -272,7 +272,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, playback pipeline, theming, persistence, CI topology |
 | [MINDBEAT.md](docs/MINDBEAT.md) | The six-layer intelligence stack: surfaces, reason codes, tuning, privacy |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setup, workflow, device lab, gauntlet methodology, release process, conventions |
-| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v5.0.1, root-caused and verified |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v5.0.2, root-caused and verified |
 | [SEARCH-INTENT-RESCUE-PLAN.md](docs/SEARCH-INTENT-RESCUE-PLAN.md) | Engineering RFC: the specific-intent guarantee (shipped in v3.4.0) |
 | [YOUTUBE-INTEGRATION-PLAN.md](docs/YOUTUBE-INTEGRATION-PLAN.md) | Engineering RFC: the YouTube source design (shipped in v3.4.0) |
 | [LAB-TESTING-GUIDE.md](docs/LAB-TESTING-GUIDE.md) | The staging-repo workflow that device-verified the v3.4.0 line |
@@ -281,6 +281,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v5.0.2** | **THE STABILITY PATCH** — the test-isolation ship-blocker closed (the B3 network-mock leak that held v5.0.1 in CI red), expo-network webmock parity (house rule 15), README test-count truth; zero app-behavior change, suite 885/0 |
 | **v5.0.1** | **THE VERIFICATION ROUND** — the independent auditor's 2 P1 ship-blockers + 6 P2 broken promises fixed with mutation-proven locks: atomic Time-Machine folds (no more data loss on a failing write), the honest session-memory relabel (≤30% *freshly added*, not *unheard*), the vibe-shuffle bound enforced during the walk, real Concert-Mode size caps (no silent truncation, the 4:3 dead band closed), real network-kind artwork prewarm (expo-network) + queue-fingerprint invalidation, resolved-count playback toasts on five surfaces, clock-proof stories/bookmarks caps, haptic hydration gate, karaoke integer word-spans, negative art cache, and docs that match what shipped |
 | **v5.0.0** | **THE MAGNUM OPUS** — 20 features in 5 gauntleted waves: Prewarm/Prefetch, Image Prewarm + Cinema Flight, Song Stories, Audio Bookmarks, Taste Radar, Time Machine, Haptic Choreography, Pseudo-Visualizer, Karaoke Words, Shuffle by Vibe, Mood Journey, Session Memory, Decade Radio, Artist Timeline, Concert Mode, Genre Explorer, Memory Tags |
 | **v4.3.1** | Final paperwork — the auditor's 4 P1s squashed (behavioral safety locks, the volume-bus fix, blend determinism, the lost doc), the v4 line backfilled into the changelog, the v4.3 APK verifier, dead reason code removed |

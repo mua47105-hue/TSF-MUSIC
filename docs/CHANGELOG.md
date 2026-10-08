@@ -3,6 +3,39 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v5.0.2 — 2026-10-08 — THE STABILITY PATCH: the test-isolation ship-blocker, closed
+
+The v5.0.1 tag could not ship: `bun test` stood at 884 pass / 1 fail and
+CI ran red — no APK, no release. Root cause: **test isolation**. Bun's
+`mock.module` is process-global, and the B3 network-mapping locks
+registered a WIFI fake for expo-network that leaked (alphabetical file
+order, one process) into the sibling prewarm suite — whose
+"degrades honestly when the native module is absent" test read the
+fake's `wifi` instead of the honest `unknown`.
+
+- **FIX 1 · the leak** (`tests/fix_b3_network_mapping_locks.test.ts`):
+  scoped via `afterAll` re-registration — probe-proven on bun 1.3.14
+  that `mock.restore()` does NOT unwind module mocks (the cached fake
+  survives it) while a fresh `mock.module()` replaces the live one. The
+  cleanup re-registers the honest-unknown surface (`{type:'unknown'}` —
+  the same default the web build resolves). Mutations: delete the
+  cleanup / restore a WIFI lie / the literal restore-only — all RED,
+  all reverted byte-exact.
+- **FIX 2 · webmock parity, house rule 15** (`src/webmocks/network.ts`,
+  `metro.config.js`): expo-network shipped in v5.0.1 without its web
+  mirror. The deterministic surface (default honest `unknown`) + the
+  `__setMockNetworkState` / `__resetMockNetworkState` seams and the
+  web-only metro alias are now locked. Mutations: delete the webmock /
+  remove the alias / strip a seam — all RED, all reverted byte-exact.
+- **FIX 3 · README truth** (`README.md`): the badge and the quick-start
+  comment said 807 tests — stale for the entire v5.0.1 line (885).
+  Locked: the badge string, the comment string, and a README-wide
+  "no 807 anywhere" bar. Mutations: badge / comment reverts — all RED.
+- No app behavior changed in this patch; the What's-New bulletin states
+  exactly that. The suite stands at 885 pass / 0 fail; `tsc --noEmit`
+  clean; every lock above is count-neutral (the suite remains exactly
+  885 tests, so no README count could drift mid-round).
+
 ## v5.0.1 — 2026-10-08 — THE VERIFICATION ROUND: all 8 auditor findings fixed, locked, mutation-proven
 
 An independent forensic auditor verified v5.0.0 (20 features shipped,

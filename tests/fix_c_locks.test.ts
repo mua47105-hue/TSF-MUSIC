@@ -47,11 +47,15 @@ describe('FIX-C1 · the F17 docs describe the shipped decade timeline', () => {
     expect(readme).not.toContain('807'); // the stale count is gone everywhere
   });
 
-  test('the v5.0.1 bulletin carries the round\u2019s honest headline (and still no year-axis claim)', () => {
+  test('the v5.0.2 bulletin carries the patch headline (and still no year-axis claim)', () => {
     const src = readFileSync('src/components/WhatsNewDialog.tsx', 'utf8');
-    expect(src).toContain('TSF MUSIC 5.0.1 — THE VERIFICATION ROUND');
-    expect(src).toContain('tsf.whatsNew.v5_0_1');
+    expect(src).toContain('THE STABILITY PATCH');
+    expect(src).toContain('tsf.whatsNew.v5_0_2');
     expect(src).not.toContain('year axis');
+    // v5.0.2 FIX 4 — the changelog entry exists and names the real root cause.
+    const changelog = readFileSync('docs/CHANGELOG.md', 'utf8');
+    expect(changelog).toContain('## v5.0.2');
+    expect(changelog).toContain('test-isolation');
   });
 });
 
