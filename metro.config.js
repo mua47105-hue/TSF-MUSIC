@@ -15,6 +15,11 @@ const projectRoot = __dirname;
 const WEB_MODULE_ALIASES = {
   'react-native-track-player': path.join(projectRoot, 'src/webmocks/trackPlayer.ts'),
   'expo-file-system': path.join(projectRoot, 'src/webmocks/fileSystem.ts'),
+  // v5.0.2 FIX 2 (house rule 15 parity): expo-network ships a webmock —
+  // the web lab gets a deterministic network surface instead of the
+  // native-only package (whose navigator.onLine answer is not
+  // reproducible in the harness).
+  'expo-network': path.join(projectRoot, 'src/webmocks/network.ts'),
 };
 
 const WEB_PATH_REDIRECTS = [

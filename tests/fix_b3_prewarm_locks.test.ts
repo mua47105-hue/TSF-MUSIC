@@ -114,6 +114,22 @@ describe('FIX-B3 · the network kind is real (injectable production source)', ()
     // either way the kind must land 'unknown', never a fabricated wifi.
     await refreshNetworkKind(true);
     expect(currentNetworkKind()).toBe('unknown');
+
+    // v5.0.2 FIX 2 — webmock parity (house rule 15): on web, the module
+    // behind require('expo-network') is src/webmocks/network.ts. Its
+    // surface, its deterministic seams and its metro alias are pinned
+    // here so the parity cannot silently rot again.
+    const webmock = await import('../src/webmocks/network.ts');
+    expect(typeof webmock.getNetworkStateAsync).toBe('function');
+    expect(typeof webmock.__setMockNetworkState).toBe('function');
+    expect(typeof webmock.__resetMockNetworkState).toBe('function');
+    webmock.__setMockNetworkState({ type: 'wifi', isConnected: true, isInternetReachable: true });
+    expect((await webmock.getNetworkStateAsync()).type).toBe('wifi'); // the seam moves the answer
+    webmock.__resetMockNetworkState();
+    expect((await webmock.getNetworkStateAsync()).type).toBe('unknown'); // and resets it
+    const metro = require('node:fs').readFileSync('metro.config.js', 'utf8');
+    expect(metro).toContain("'expo-network': path.join(projectRoot, 'src/webmocks/network.ts')");
+    expect(metro).toContain("platform === 'web'"); // the alias rides the web-only gate
   });
 });
 
