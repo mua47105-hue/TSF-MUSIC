@@ -33,7 +33,7 @@ const CHANGES = [
   'MOOD JOURNEY — "take me from anxious to calm": a 12-slot queue that drifts toward the target, bounded ±15% a step; empty slots are skipped, never faked.',
   'SESSION MEMORY — the last 3 listening sessions snapshot in the background; RESUME A SESSION rebuilds the vibe with ≤30% freshly added rows (the spine is your session\u2019s queue, honestly labeled).',
   'DECADE RADIO — "play the sound of 1994": a deterministic query ladder + year-filtered candidates, with an honest toast when a year is thin.',
-  'ARTIST TIMELINE — an artist’s albums on a horizontal year axis; tap a decade chip to play that era; no albums = the top-tracks timeline instead.',
+  'ARTIST TIMELINE — an artist’s top tracks grouped by DECADE (the provider’s album rows arrive undated — the tracks carry the real years); tap a decade chip to play that era.',
   // ── WAVE 5 — social & exploration ──
   'CONCERT MODE — share the queue + a synchronized start as ONE code; your friend pastes it and the room starts together. No server — the code IS the room; each phone starts on its own clock (±500ms is real).',
   'GENRE EXPLORER — a zoomable map of 26 genre bubbles (same seed, same map for everyone); tap a bubble to play its rows through the existing search ladder.',

@@ -56,7 +56,7 @@ import {
   setHomeFeedCache,
 } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
-import { hapticEvent, fireHaptic } from '../player/haptics';
+import { hapticEvent, markHapticsHydrated, fireHaptic } from '../player/haptics';
 import { QuickTile, Shelf, ShelfCard, ArtistCard } from '../components/Shelf';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
@@ -254,6 +254,12 @@ export function HomeScreen() {
             getReducedHaptics()
               .then((reduced) => {
                 if (!loadAliveRef.current) return;
+                // v5.0.1 FIX-C3 (critic P1): this surface reads the setting
+                // FRESH right here — the race the gate targets cannot exist
+                // on this path, so this read's settle opens the gate too.
+                // Without it, the crate haptic stayed dead until the player
+                // (the only other gate opener) was first opened.
+                markHapticsHydrated();
                 const decision = hapticEvent('crate-generate', {}, 0, { reducedHaptics: reduced, lastBeatIndex: 0 });
                 if (decision) void fireHaptic(decision.spec);
               })

@@ -97,11 +97,14 @@ path gains the pointer, never the work).
   year-filtered where metadata exists; kill-switch-gated; a thin year
   says so in the toast (undated rows disclosed). CANNOT: date rows the
   catalog leaves undated.
-- **F17 Artist Timeline**: albums on a horizontal year axis
-  (`groupAlbumsByYear` pure); decade chips play through the existing
-  radio/shuffle surfaces (filterClean); 0-album artists fall back to
-  the top-tracks timeline, honestly. CANNOT: show albums the provider
-  never returned.
+- **F17 Artist Timeline**: the artist page's TOP TRACKS grouped by
+  DECADE (`groupTracksByDecade` pure — relabeled in v5.0.1: the
+  changelog said "albums on a year axis", but the provider's album
+  rows arrive undated, so the shipped screen rides the tracks' real
+  year metadata and groups by decade); decade chips play through the
+  existing radio/shuffle surfaces (filterClean); 0-album artists fall
+  back to the top-tracks timeline, honestly. CANNOT: show albums the
+  provider never returned, or date rows the catalog leaves undated.
 
 ### Wave 5 — social & exploration (a1ae714)
 

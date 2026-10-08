@@ -51,14 +51,43 @@ export interface HapticDecision {
 
 /**
  * THE ONE DECISION TABLE (pure). Returns null = "the wrist stays still":
- * the reduced path, or a beat whose index was already fired.
+ * the reduced path, a beat whose index was already fired, or a call
+ * that arrived before the module was HYDRATED.
+ *
+ * v5.0.1 FIX-C3 — THE HYDRATION GATE: the persisted reducedHaptics
+ * setting loads ASYNC at player boot; before it lands, callers held the
+ * default (false = full haptics), so a beat tick in that window fired
+ * for a user who had chosen reduced. `hydrated` starts false and flips
+ * ONLY when markHapticsHydrated() is called (the boot read's settle
+ * hook) — until then EVERY event is silently null. The default-open
+ * behavior is gone: silence before evidence is the honest default.
  */
+let hydrated = false;
+
+/** The boot read's settle hook: call once the persisted setting has
+ *  landed (value OR honest default after a failed read). Sticky — a
+ *  later call never re-closes the gate. */
+export function markHapticsHydrated(): void {
+  hydrated = true;
+}
+
+/** Test/inspection hook: whether the gate is open. */
+export function isHapticsHydrated(): boolean {
+  return hydrated;
+}
+
+/** Test hook: re-arm the un-hydrated state (the locks prove both sides). */
+export function resetHapticsHydrationForTests(): void {
+  hydrated = false;
+}
+
 export function hapticEvent(
   action: HapticAction,
   track: HapticTrackInput,
   elapsedMs: number,
   settings: HapticsSettings,
 ): HapticDecision | null {
+  if (!hydrated) return null; // FIX-C3: no persisted evidence yet — the wrist stays still
   if (settings.reducedHaptics) return null; // the switch is law
   switch (action) {
     case 'beat-tick': {

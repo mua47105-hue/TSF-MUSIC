@@ -10,11 +10,16 @@
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { hapticEvent, type HapticsSettings, type HapticTrackInput } from '../src/player/haptics';
+import { hapticEvent, markHapticsHydrated, type HapticsSettings, type HapticTrackInput } from '../src/player/haptics';
 import { HAPTICS } from '../src/ai/core/constants';
 
 const FULL: HapticsSettings = { reducedHaptics: false, lastBeatIndex: 0 };
 const REDUCED: HapticsSettings = { reducedHaptics: true, lastBeatIndex: 0 };
+
+// v5.0.1 FIX-C3 (hydration gate): these locks exercise the DECISION
+// TABLE — the persisted setting has "landed" by the time they run.
+// The pre-hydration silence is locked in tests/fix_c_locks.test.ts.
+markHapticsHydrated();
 
 describe('F10 · hapticEvent — the decision table', () => {
   test('every non-beat event returns its spec (literal styles)', () => {

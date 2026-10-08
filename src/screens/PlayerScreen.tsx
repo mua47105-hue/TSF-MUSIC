@@ -59,7 +59,7 @@ import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } fr
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
 import { CROSSFADE, FOCUS, CINEMA, BOOKMARKS, QUEUE_VIBE } from '../ai/core/constants';
 import { classifyPress } from '../player/bookmarks';
-import { hapticEvent, fireHaptic } from '../player/haptics';
+import { hapticEvent, markHapticsHydrated, fireHaptic } from '../player/haptics';
 import { PseudoVisualizer } from '../player/PseudoVisualizer';
 import type { VisualizerFeatures } from '../player/visualizer';
 import { encodeConcert } from '../ai/concert';
@@ -325,7 +325,14 @@ export function PlayerScreen() {
       .then((v) => {
         if (live) setReducedHapticsState(v);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        // v5.0.1 FIX-C3: the haptics gate opens ONLY now — the persisted
+        // setting has landed (or its honest default after a failed read).
+        // Beat ticks before this point are silently null, never fired on
+        // the stale default.
+        markHapticsHydrated();
+      });
     return () => {
       live = false;
     };
