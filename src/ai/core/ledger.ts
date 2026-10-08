@@ -189,7 +189,14 @@ export class EventLedger {
    *  (a NEW table — the events table, its ids and the 90-day behavior
    *  stay byte-identical) and the summary's own 3-year retention runs in
    *  the SAME pass. When the store predates F9 (no historical methods)
-   *  the fold is skipped and deletion behaves exactly as before. */
+   *  the fold is skipped and deletion behaves exactly as before.
+   *
+   *  v5.0.1 FIX-A1 (the independent auditor's P1): the fold now GATES
+   *  the deletion. The old code advanced the fold watermark BEFORE the
+   *  summary upserts and deleted the raw events unconditionally — a
+   *  failing upsert meant empty history, gone raw events, advanced
+   *  watermark: permanent data loss. Now a failed fold RETAINS the raw
+   *  events and the next compaction retries. */
   async maybeCompact(): Promise<void> {
     const today = new Date(this.now()).toDateString();
     if (today === this.lastCompactionDay) return;
@@ -197,15 +204,20 @@ export class EventLedger {
     try {
       const now = this.now();
       const cutoff = now - RETENTION.rawEventDays * 86400_000;
-      await this.foldDoomedEventsIntoHistory(cutoff); // L2: BEFORE delete, same pass
-      await this.store.deleteEventsBefore(cutoff);
+      // FIX-A1: fold-then-delete is now ATOMIC at the protocol level —
+      // the raw events are deleted only when the fold committed (every
+      // summary row persisted AND the watermark advanced). A failed fold
+      // retains the events; the next compaction retries (L2: fold is
+      // still strictly BEFORE delete in the success path).
+      if (await this.foldDoomedEventsIntoHistory(cutoff)) {
+        await this.store.deleteEventsBefore(cutoff);
+      }
       const count = await this.store.countEvents();
       if (count > RETENTION.maxRawEvents) {
         // Hard cap: keep the newest (max - compactBatch) events.
         const events = await this.store.getEvents();
         const keepFrom = events[Math.max(0, events.length - (RETENTION.maxRawEvents - RETENTION.compactBatch))];
-        if (keepFrom) {
-          await this.foldDoomedEventsIntoHistory(keepFrom.ts); // hard-cap eviction folds too
+        if (keepFrom && (await this.foldDoomedEventsIntoHistory(keepFrom.ts))) {
           await this.store.deleteEventsBefore(keepFrom.ts);
         }
       }
@@ -222,28 +234,44 @@ export class EventLedger {
 
   /**
    * F9 — fold the events about to be deleted (ts < cutoffTs) into
-   * historical_summary. Additive + best-effort: a fold failure NEVER
-   * blocks deletion (compaction must always proceed).
+   * historical_summary. Returns TRUE when the caller may delete the raw
+   * events (nothing to fold, or EVERY summary row persisted AND the
+   * watermark committed); FALSE when the fold failed — the caller MUST
+   * then retain the raw events and let the next compaction retry.
    *
-   * IDEMPOTENCY (blind-critic P1): a persisted KV watermark marks how
-   * far the fold has processed, written BEFORE the fold itself. A crash
-   * after the watermark can therefore LOSE those days from the summary
-   * (honest absence — "not enough history yet") but can never fold them
-   * TWICE (fabricated minutes — the anti-hallucination trade, law ⑰:
-   * never fabricate). Without it, a crash between fold and delete would
-   * double-count the same events on the next pass.
+   * THE ATOMICITY LAW (v5.0.1 FIX-A1, the auditor's P1): watermark
+   * advancement, summary writes and raw-event deletion commit together
+   * or not at all. The watermark is the LAST write of the fold — only
+   * after every summary row for this fold is durable does
+   * `foldedThroughTs` move. The old protocol wrote it FIRST ("declare
+   * intent") and let deletion proceed regardless: a store that threw on
+   * upsert permanently emptied the Time Machine.
+   *
+   * IDEMPOTENCY (kept from the blind-critic P1 design): the watermark
+   * still fences already-folded events — a crash AFTER the commit but
+   * BEFORE the delete leaves folded events in the raw table that no
+   * later pass re-folds (ts > watermark excludes them), so minutes are
+   * never counted twice on a clean retry.
+   *
+   * HONEST TRADE (documented, not hidden): the store interface has no
+   * cross-table transaction, so a fold that fails MID-upsert can leave
+   * some day rows persisted while the events survive. The retry re-folds
+   * the same events and the cross-pass merge sums — those days can
+   * over-count REAL minutes (nothing fabricated, nothing lost). The old
+   * trade lost the days entirely; this one at worst inflates a day when
+   * a store fails mid-fold. Raw evidence is the irreplaceable copy —
+   * retention must never outrun the summary again.
    */
-  private async foldDoomedEventsIntoHistory(cutoffTs: number): Promise<void> {
+  private async foldDoomedEventsIntoHistory(cutoffTs: number): Promise<boolean> {
+    if (!this.store.upsertHistoricalDay || !this.store.getHistoricalDays) return true; // pre-F9 store: deletion proceeds exactly as before (L1/L4)
+    const WATERMARK = 'historical.foldedThroughTs';
     try {
-      if (!this.store.upsertHistoricalDay || !this.store.getHistoricalDays) return; // pre-F9 store
-      const WATERMARK = 'historical.foldedThroughTs';
       const prevWatermark = (await this.store.getKV<number>(WATERMARK)) ?? 0;
       const doomed = (await this.store.getEvents()).filter((e) => e.ts < cutoffTs && e.ts > prevWatermark);
-      if (!doomed.length) return;
-      // declare intent BEFORE folding (monotonic raise — the hard-cap
-      // pass can run after the 90-day pass in the same compaction)
+      if (!doomed.length) return true; // nothing to fold — deletion may proceed
+      // monotonic raise (the hard-cap pass can run after the 90-day
+      // pass in the same compaction) — COMMITTED only after the upserts
       const newWatermark = Math.max(prevWatermark, cutoffTs - 1);
-      await this.store.setKV(WATERMARK, newWatermark);
       // P0 (blind critic): the event stream carries artistId, never the
       // artist NAME — resolve names from the listens table (retained
       // 180d, so listens for 90d-doomed events always exist here).
@@ -269,13 +297,26 @@ export class EventLedger {
         }
       }
       const folded = foldEventsIntoDays(doomed, existingByDay, HISTORY.topN, meta);
+      // FIX-A1: EVERY summary row for this fold must persist BEFORE the
+      // watermark moves. A failed upsert is counted, never swallowed
+      // into a committed state.
+      let upsertFailures = 0;
       for (const day of folded.values()) {
         if (existingByDay.has(day.dayKey) || day.streams > 0) {
-          await this.store.upsertHistoricalDay(day);
+          try {
+            await this.store.upsertHistoricalDay(day);
+          } catch {
+            upsertFailures += 1;
+          }
         }
       }
+      if (upsertFailures > 0) return false; // raw events retained, watermark unchanged — retry on the next compaction
+      // THE COMMIT — the watermark is the fold's LAST write, not its
+      // first: only a fully-persisted fold may move it.
+      await this.store.setKV(WATERMARK, newWatermark);
+      return true;
     } catch {
-      /* the fold never blocks compaction */
+      return false; // any fold-setup failure retains the raw events too
     }
   }
 

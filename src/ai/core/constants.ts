@@ -574,7 +574,9 @@ export const SESSION_MEMORY = {
    *  snapshots its first 25 — the spine, not the whale). */
   maxSeedTracks: 25,
   /** Fresh catalog rows may fill at most this share of a resumed
-   *  playlist (≤30% unheard — the rest is YOUR session coming back). */
+   *  playlist (≤30% freshly added — the rest is YOUR session coming
+   *  back; FIX-A2 relabel: the spine is the session's queued queue,
+   *  never claimed as proof of listening). */
   freshShare: 0.3,
   /** The resume playlist's length. */
   resumeCount: 12,

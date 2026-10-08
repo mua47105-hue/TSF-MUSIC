@@ -13,9 +13,9 @@
  *    session worth remembering).
  *  - Max SESSION_MEMORY.maxSnapshots (3), FIFO by endedAt — the oldest
  *    memory makes room, never the newest.
- *  - resumeSession mixes ≥70% HEARD seeds with ≤30% fresh catalog rows
- *    matching the vibe (mixResumeSession) — a resume that replaces your
- *    session with strangers is not a resume.
+ *  - resumeSession mixes ≥70% of the session's QUEUED spine with ≤30%
+ *    fresh catalog rows matching the vibe (mixResumeSession) — a resume
+ *    that replaces your session with strangers is not a resume.
  *  - Factual user data: the kill switch does not gate the snapshots
  *    (same posture as stories/bookmarks).
  */
@@ -97,14 +97,17 @@ export function createSessionSnapshots(store: SessionSnapshotsStore): SessionSna
 }
 
 /**
- * mixResumeSession (PURE): the seeds are the session's spine (heard by
- * definition — they were playing); fresh catalog rows matching the vibe
- * may fill at most SESSION_MEMORY.freshShare (≤30%) of the final list.
+ * mixResumeSession (PURE): the seeds are the session's spine (the
+ * queue that was playing — v5.0.1 FIX-A2 relabel: they are the
+ * session's QUEUED tracks, not proof of listening, so the honest claim
+ * is "your session's spine", never "heard"); fresh catalog rows
+ * matching the vibe may fill at most SESSION_MEMORY.freshShare (≤30%)
+ * of the final list.
  * The fresh cap is a share of the ACTUAL mix, not an absolute — a short
  * spine drags the fresh cap down with it (floor(seeds × 3/7)), so
- * "≤30% unheard" holds for EVERY session size, not just full spines
- * (the blind critic's P1: an absolute cap made a 4-seed resume 43%
- * strangers). Output = seeds first (order preserved), fresh after —
+ * "≤30% freshly added" holds for EVERY session size, not just full
+ * spines (the blind critic's P1: an absolute cap made a 4-seed resume
+ * 43% strangers). Output = seeds first (order preserved), fresh after —
  * a resume that LEADS with what you were doing.
  */
 export function mixResumeSession<T extends { id: string }>(

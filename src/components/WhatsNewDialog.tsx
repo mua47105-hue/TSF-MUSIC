@@ -31,7 +31,7 @@ const CHANGES = [
   'SHUFFLE BY VIBE — one button re-orders the queue into an energy-smooth set (greedy nearest-neighbour, ±25% steps); your dragged pins never move.',
   // ── WAVE 4 — deep intelligence ──
   'MOOD JOURNEY — "take me from anxious to calm": a 12-slot queue that drifts toward the target, bounded ±15% a step; empty slots are skipped, never faked.',
-  'SESSION MEMORY — the last 3 listening sessions snapshot in the background; RESUME A SESSION rebuilds the vibe with ≤30% unheard rows.',
+  'SESSION MEMORY — the last 3 listening sessions snapshot in the background; RESUME A SESSION rebuilds the vibe with ≤30% freshly added rows (the spine is your session\u2019s queue, honestly labeled).',
   'DECADE RADIO — "play the sound of 1994": a deterministic query ladder + year-filtered candidates, with an honest toast when a year is thin.',
   'ARTIST TIMELINE — an artist’s albums on a horizontal year axis; tap a decade chip to play that era; no albums = the top-tracks timeline instead.',
   // ── WAVE 5 — social & exploration ──

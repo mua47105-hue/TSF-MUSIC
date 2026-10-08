@@ -849,10 +849,12 @@ class Mindbeat {
   }
 
   /**
-   * MAGNUM OPUS F15 — RESUME SESSION. The snapshot's seed spine (heard,
-   * ≥70% of the result) plus at most 30% fresh catalog rows matching
-   * the vibe. NULL = the snapshot is gone (FIFO) or its seeds cannot be
-   * resolved — the honest cold state, never a fabricated session.
+   * MAGNUM OPUS F15 — RESUME SESSION. The snapshot's seed spine (the
+   * session's queued queue, ≥70% of the result — v5.0.1 FIX-A2: the
+   * honest claim is "your session's spine", not "heard") plus at most
+   * 30% fresh catalog rows matching the vibe. NULL = the snapshot is
+   * gone (FIFO) or its seeds cannot be resolved — the honest cold
+   * state, never a fabricated session.
    */
   async resumeSession(id: string): Promise<Track[] | null> {
     await this.ready();

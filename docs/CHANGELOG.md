@@ -86,7 +86,10 @@ path gains the pointer, never the work).
 - **F15 Session Memory** (`session_snapshots`, max 3 FIFO): snapshot on
   app background ONLY when the session has ≥3 tracks (pure
   `shouldSnapshot` is the only gate); `mindbeat.resumeSession(id)`
-  rebuilds the vibe with ≤30% unheard rows (share of the actual mix);
+  rebuilds the vibe with ≤30% freshly added rows (share of the actual
+  mix — relabeled in v5.0.1: the ≥70% spine is your session's QUEUED
+  queue, and the changelog now says so instead of "unheard", which
+  claimed listening the queue cannot prove);
   mutes honored via filterClean. CANNOT: snapshot mid-song — the
   moment is the background event, not the track.
 - **F16 Decade Radio**: `mindbeat.decadeRadio(year, count)` —

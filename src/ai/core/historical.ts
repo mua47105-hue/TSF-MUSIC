@@ -88,8 +88,13 @@ const STREAM_MIN_MS = RADAR.minStreamMs; // the ONE 30-second rule (its home + r
  *    growing elapsedMs; TRACK_END/SKIP carries the final value) — never
  *    the sum, which would double-count a scrubbed-back track.
  *  - Minutes = Σ (max ms ≥ 30s ? ms : 0). Streams = #tracks with ≥30s.
- *  - Compaction passes over the same day see DISJOINT event sets (events
- *    are deleted the moment they are folded), so cross-pass merging sums.
+ *  - Compaction passes over the same day see DISJOINT event sets on
+ *    the success path (events are deleted only after their fold
+ *    commits — v5.0.1 FIX-A1), so cross-pass merging sums. HONEST
+ *    TRADE: a fold that fails MID-upsert leaves the events in place
+ *    and the retry re-folds them — the affected days can over-count
+ *    REAL minutes (never fabricate, never lose; documented in
+ *    ledger.ts).
  *  - HONEST LIMIT: a track played across midnight credits its max
  *    elapsed to BOTH days (heartbeat day + end day) — per-day totals
  *    are true; the sum across days can exceed the track's length.

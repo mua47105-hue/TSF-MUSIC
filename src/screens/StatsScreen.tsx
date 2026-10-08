@@ -334,7 +334,9 @@ export function StatsScreen() {
           </View>
 
           {/* MAGNUM OPUS F15 — SESSION MEMORY: the last sessions, one tap
-              to resume (≥70% your spine, ≤30% fresh catalog rows). */}
+              to resume (≥70% your session's queued spine, ≤30% freshly
+              added rows — FIX-A2: the honest claim, the spine is the
+              session's queue, never claimed as proof of listening). */}
           {sessions.length > 0 ? (
             <View style={styles.tmCard} testID="session-memory-card">
               <View style={styles.tmHead}>
@@ -357,7 +359,7 @@ export function StatsScreen() {
                           toast.show({ message: 'THAT SESSION LOST ITS SPINE — CANNOT RESUME HONESTLY', icon: 'information-circle-outline' });
                         } else {
                           playQueue(mix, 0);
-                          toast.show({ message: `RESUMED · ${mix.length} SONGS · MOSTLY YOURS`, icon: 'play' });
+                          toast.show({ message: `RESUMED · ${mix.length} SONGS · MOSTLY YOUR SESSION`, icon: 'play' });
                         }
                       })
                       .catch(() => toast.show({ message: 'COULD NOT RESUME — TRY AGAIN', icon: 'alert-outline' }))
