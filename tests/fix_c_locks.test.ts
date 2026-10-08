@@ -35,9 +35,16 @@ describe('FIX-C1 · the F17 docs describe the shipped decade timeline', () => {
     expect(f17).not.toContain('horizontal year axis'); // the CLAIM is gone (a quoted mention in the relabel note is honest history)
   });
 
-  test('no "year axis" claim survives anywhere in the repo docs or the bulletin', () => {
+  test('the docs carry no stale claim (no "year axis"; the README counts say 885, not 807)', () => {
     expect(readFileSync('src/components/WhatsNewDialog.tsx', 'utf8')).not.toContain('year axis');
-    expect(readFileSync('README.md', 'utf8')).not.toContain('year axis');
+    const readme = readFileSync('README.md', 'utf8');
+    expect(readme).not.toContain('year axis');
+    // v5.0.2 FIX 3 — the test-count badge tells the truth. The 807 badge
+    // survived TWO releases stale (the suite hit 885 at v5.0.1); these
+    // pins bite the moment the README and the shipped suite diverge.
+    expect(readme).toContain('replay_tests-885_passing'); // the badge
+    expect(readme).toContain('# 885 replay tests incl. latency budgets'); // the quick-start comment
+    expect(readme).not.toContain('807'); // the stale count is gone everywhere
   });
 
   test('the v5.0.1 bulletin carries the round\u2019s honest headline (and still no year-axis claim)', () => {

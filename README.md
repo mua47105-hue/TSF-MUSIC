@@ -10,7 +10,7 @@ No server · No account · No tracking · Install and it works
 
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=1ED760&label=release)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
-[![Tests](https://img.shields.io/badge/replay_tests-807_passing-1ED760?labelColor=121212)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/replay_tests-885_passing-1ED760?labelColor=121212)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-3E3E3E?labelColor=121212)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-1ED760?labelColor=121212)](#privacy)
 
@@ -226,7 +226,7 @@ Full module map, data flow and contracts: **[docs/ARCHITECTURE.md](docs/ARCHITEC
 ```bash
 bun install
 bun run typecheck        # tsc --noEmit (strict) — must be clean
-bun test                 # 807 replay tests incl. latency budgets
+bun test                 # 885 replay tests incl. latency budgets
 bunx expo start          # Metro dev server
 bunx expo run:android    # native debug build
 ```
