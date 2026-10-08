@@ -40,9 +40,11 @@ describe('FIX-C1 · the F17 docs describe the shipped decade timeline', () => {
     expect(readFileSync('README.md', 'utf8')).not.toContain('year axis');
   });
 
-  test('the bulletin says the tracks carry the real years (the honest why)', () => {
+  test('the v5.0.1 bulletin carries the round\u2019s honest headline (and still no year-axis claim)', () => {
     const src = readFileSync('src/components/WhatsNewDialog.tsx', 'utf8');
-    expect(src).toContain('top tracks grouped by DECADE');
+    expect(src).toContain('TSF MUSIC 5.0.1 — THE VERIFICATION ROUND');
+    expect(src).toContain('tsf.whatsNew.v5_0_1');
+    expect(src).not.toContain('year axis');
   });
 });
 

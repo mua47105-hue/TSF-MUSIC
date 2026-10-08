@@ -1,29 +1,28 @@
-node_modules/
-skills/
-.env
-.env.*
-android/
-ios/
-.expo/
+
+# (the old blanket scripts/ ignore is what lost the device lab once)
+# bake-time datasets (re-downloadable; never commit 20MB CSVs)
+# device lab artifacts (regenerate with: bash scripts/lab.sh)
+# one-off script artifacts — the tooling itself IS tracked
 *.log
 .DS_Store
-upload/
-agent-ctx/
-tool-results/
-
-# one-off script artifacts — the tooling itself IS tracked
-# (the old blanket scripts/ ignore is what lost the device lab once)
-scripts/*.apk
-scripts/apk*/
-scripts/icon_variants/
-scripts/artist_seeds.ts.txt
-
-# device lab artifacts (regenerate with: bash scripts/lab.sh)
-screenshots/
+.env
+.env.*
+.evolve/
+.expo/
 .fixture-cache/
+agent-ctx/
+android/
 download/*.apk
 download/_apk_audit/
-.evolve/
-
-# bake-time datasets (re-downloadable; never commit 20MB CSVs)
+ios/
+node_modules/
+screenshots/
+scripts/*.apk
+scripts/__pycache__/
+scripts/apk*/
+scripts/artist_seeds.ts.txt
 scripts/bake_data/
+scripts/icon_variants/
+skills/
+tool-results/
+upload/

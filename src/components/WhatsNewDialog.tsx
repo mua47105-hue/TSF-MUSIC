@@ -11,34 +11,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v5_0_0';
+const SEEN_KEY = 'tsf.whatsNew.v5_0_1';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── WAVE 1 — performance & polish (prewarm, prefetch, images, cinema, hermes) ──
-  'PREWARM + PREFETCH — the next song’s stream and your search results resolve before you ask; taps land on warm URLs.',
-  'IMAGE PREWARM + CINEMA FLIGHT — artwork lands pre-fetched, and a row tap flies its cover to the player on a transform-only flight.',
-  // ── WAVE 2 — emotional features ──
-  'SONG STORIES — pin a note to a song: "this was playing when we met." It renders as an italic line under the lyrics, on this device only.',
-  'AUDIO BOOKMARKS — long-press the progress bar to save a moment (with a note), tap the dot to jump back; scrubbing is untouched.',
-  'TASTE RADAR — a six-axis hexagon of your listening (energy, valence, diversity, discovery, loyalty, era spread) on the Stats desk, shareable offline.',
-  'TIME MACHINE — "this day last year" reopens your own history: top-5 tracks and artists per day, kept 3 years, folded from your ledger on-device.',
-  // ── WAVE 3 — intelligent playback ──
-  'HAPTIC CHOREOGRAPHY — beat ticks, heart taps, crate spins and bookmark saves as pure haptic specs; a reduced-haptics switch ships too.',
-  'PSEUDO-VISUALIZER — amplitude bars behind the art, driven by each song’s BAKED energy (no audio DSP), native-driver only, frozen under reduce-motion.',
-  'KARAOKE WORDS — word-level timing inside synced lyrics: the current word grows and glows; no word timings = the same line-level mode as before.',
-  'SHUFFLE BY VIBE — one button re-orders the queue into an energy-smooth set (greedy nearest-neighbour, ±25% steps); your dragged pins never move.',
-  // ── WAVE 4 — deep intelligence ──
-  'MOOD JOURNEY — "take me from anxious to calm": a 12-slot queue that drifts toward the target, bounded ±15% a step; empty slots are skipped, never faked.',
-  'SESSION MEMORY — the last 3 listening sessions snapshot in the background; RESUME A SESSION rebuilds the vibe with ≤30% freshly added rows (the spine is your session\u2019s queue, honestly labeled).',
-  'DECADE RADIO — "play the sound of 1994": a deterministic query ladder + year-filtered candidates, with an honest toast when a year is thin.',
-  'ARTIST TIMELINE — an artist’s top tracks grouped by DECADE (the provider’s album rows arrive undated — the tracks carry the real years); tap a decade chip to play that era.',
-  // ── WAVE 5 — social & exploration ──
-  'CONCERT MODE — share the queue + a synchronized start as ONE code; your friend pastes it and the room starts together. No server — the code IS the room; each phone starts on its own clock (±500ms is real).',
-  'GENRE EXPLORER — a zoomable map of 26 genre bubbles (same seed, same map for everyone); tap a bubble to play its rows through the existing search ladder.',
-  'MEMORY TAGS — "tag this moment" stamps a timestamp + note onto the playing song (a Memories chip appears when it plays). LITE edition: timestamp + note only — location and photos were left out rather than ship unverified native permissions.',
-  'As always: all twenty run 100% on-device — zero servers, zero accounts, zero telemetry.',
+  // ── v5.0.1 — the independent verification fix round ──
+  'THE VERIFICATION ROUND — an independent auditor reproduced 2 ship-blockers and 6 broken promises in v5.0.0; all eight are fixed, locked, and mutation-proven. Every claim below is now enforced, not advertised.',
+  'TIME MACHINE — a failing summary write can no longer delete your raw history (the fold now commits atomically: summary first, watermark last, deletion only on commit; a failed fold retries and retains the raw events).',
+  'SESSION MEMORY — the resume claim is honest now: ≥70% your session\u2019s queued spine, ≤30% freshly added rows (the old \u201cunheard\u201d wording claimed a listening proof the queue cannot make).',
+  'SHUFFLE BY VIBE — the ±25% step bound is enforced during the walk (not just reported), and the honest flag now sees the first transition from the playing track too.',
+  'CONCERT MODE — real size caps: oversized rooms are refused loudly (never silently truncated), a 262k-char title can no longer produce a monster code, and the receiver refuses over-cap codes on sight. A second join cancels the first armed start.',
+  'ARTWORK PREWARM — your REAL network type (WiFi/cellular) now gates the prefetch, and a queue change under the same song re-warms the new art. One new dependency ships with this round: expo-network.',
+  'PLAYBACK TOASTS — every \u201cN SONGS\u201d toast reports the songs that ACTUALLY started; when nothing resolves, it says so instead of toasting a count that never plays.',
+  'KARAOKE WORDS + MAPS + MEMORIES — zero-duration word spans are impossible, the genre map stops re-probing art it already failed to find, and re-tagging a moment returns the stored one. Docs (artist timeline, README numbers) now match what shipped.',
+  'As always: all of it runs 100% on-device — zero servers, zero accounts, zero telemetry.',
 ];
 
 export function WhatsNewDialog() {
@@ -81,7 +68,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 5.0.0 — THE MAGNUM OPUS
+            TSF MUSIC 5.0.1 — THE VERIFICATION ROUND
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

@@ -3,6 +3,132 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v5.0.1 — 2026-10-08 — THE VERIFICATION ROUND: all 8 auditor findings fixed, locked, mutation-proven
+
+An independent forensic auditor verified v5.0.0 (20 features shipped,
+807 tests passing) and reproduced **2 P1 ship-blockers and 6 P2 broken
+promises**. This release fixes exactly those findings — no feature
+rewrites — each with behavioral locks that go RED on regression, ≥2
+mutations per fix (all RED, all reverted byte-exact), and a blind-critic
+round per wave. The 807-test baseline held every step; it now stands at
+885.
+
+### Wave A — the P1 ship-blockers
+
+- **FIX-A1 · F9 Time Machine data loss (P1)** (`src/ai/core/ledger.ts`):
+  the fold watermark advanced BEFORE the summary upserts and the raw
+  events were deleted unconditionally — a failing `upsertHistoricalDay`
+  permanently emptied the Time Machine. The fold now commits
+  atomically at the protocol level: EVERY summary row persists first,
+  the watermark is the fold's LAST write, and `maybeCompact` deletes
+  raw events only on commit (a failed fold retains + retries).
+  HONEST TRADE (documented in code): a store that fails MID-fold can
+  leave partial day rows; the retry's merge can over-count REAL
+  minutes (never fabricate, never lose) — raw evidence is the
+  irreplaceable copy. The sacred tests (`ledger.test.ts`,
+  `gauntlet-r2.test.ts`, `wave2_historical_locks.test.ts`) pass
+  UNMODIFIED; the pre-F9 store path is byte-identical.
+- **FIX-A2 · F15 Session Memory misleading claim (P1)** (relabel, no
+  logic change): the "≤30% unheard" promise was unprovable — the
+  mixer caps FRESHLY-ADDED catalog rows and the ≥70% spine is the
+  session's QUEUED queue. Relabeled everywhere it ships (What's-New
+  bulletin, changelog, resume toast "MOSTLY YOUR SESSION", module
+  docstrings); the 30% mixer cap is unchanged and re-locked.
+
+### Wave B — the broken promises
+
+- **FIX-B1 · F13 vibe bound (P2)** (`queueOptimizer.ts`): the 0.25
+  cadence bound is enforced DURING selection (over-bound candidates
+  skipped; best-fit fallback only when nothing fits) and the seed→first
+  transition counts toward the honest flag. DISCLOSED: for a pure
+  nearest-neighbour walk the skip is output-equivalent (the critic
+  fuzz-proved 20k cases, 0 mismatches) — the locks pin the honest
+  report and the mechanism.
+- **FIX-B2 · F18 concert caps (P2)** (`concert.ts`): encode refuses
+  >50 input rows (no silent truncation; unnamed rows can't smuggle
+  past) and a finished CODE past 65,536 chars; decode refuses >65,536
+  on sight and over-cap fields (title 500 / artist 300 / id 200 /
+  artwork 1000 — no album field exists in the payload, disclosed).
+  The blind critic's P1 closed in-round: gating the JSON left a 4:3
+  DEAD BAND (JSON 49,152..65,536 ⇒ codes of ~87k the receiver refused
+  on sight — sender shares, receiver bounces); one gate, on the code,
+  both sides. A second join cancels the first armed start timer.
+- **FIX-B3 · F3 image prewarm (P2)** (`imagePrewarm.ts`): the REAL
+  network kind now gates the prefetch — expo-network ~7.0.5, the ONE
+  new dependency of this round (pinned by the SDK's
+  bundledNativeModules.json; lazy-required, memoized module-failure,
+  transient errors retry, 30s throttle, wired at provider boot). A
+  queue fingerprint (FNV-1a over ids in order) invalidates the warmed
+  set when the queue changes under the same active track.
+- **FIX-B4 · resolved counts (P2)**: five playback surfaces (resume,
+  decade radio, mood journey, genre tap, start radio) `await
+  playQueue()` and toast the RESOLVED count; zero-resolved says "could
+  not start" honestly.
+- **FIX-B5 · caps under a backwards clock (P2)** (`songStories.ts`,
+  `bookmarks.ts`): cap eviction counts real deletions (a skip ≠ a
+  delete) — a rollback wall clock can no longer rest at cap+1.
+
+### Wave C — documentation honesty
+
+- **FIX-C1 · F17 (P2)**: the changelog/bulletin said "albums on a year
+  axis"; the shipped screen groups the artist's TOP TRACKS BY DECADE
+  (the provider's album rows arrive undated). Docs relabeled; the
+  behavior was already useful and shipped.
+- **FIX-C2 · README (P2)**: the stale 571-test count, 3,948 assertion
+  count and v4.3.1-era release history now match reality (this
+  release's numbers, v5.0.0 + v5.0.1 rows).
+- **FIX-C3 · F10 hydration gate (P2)** (`haptics.ts`): haptics were
+  live on the stale default before the persisted reducedHaptics
+  setting loaded. `hapticEvent` is now silent until
+  `markHapticsHydrated()` — called at each reader's settle (the
+  Player boot read AND the crate's own fresh read; the blind critic
+  caught the crate surface being hostage to the player route, fixed
+  in-round).
+
+### Wave D — edge cases
+
+- **FIX-D1**: a disjoint-batch fold fixture (production never replays
+  earlier events) — weekly batches fold to the single-pass ground
+  truth, a day split across batches merges by SUM, and two-pass
+  compaction commits a monotonic watermark with exactly-once folds.
+  Disclosed: a SAME-track split day sums per-pass maxima (real
+  minutes, over-counted — the pre-existing trade).
+- **FIX-D2** (`singalong.ts`): word spans are INTEGER allocations
+  summing exactly to the line's duration — the auditor's 2 ms / 2-word
+  case can no longer emit a zero-duration final word. Normal lines may
+  shift interior boundaries ≤1ms; the wave3 pins hold.
+- **FIX-D3** (`genreExplorer.ts`): the art probe cache records MISSES
+  too ('' = known no art, module lifetime) — revisiting the map never
+  re-probes; a COMPLETED probe is stored even if its component
+  unmounted (the critic's catch).
+- **FIX-D4** (`memoryTags.ts`): `attach` returns the STORED row — a
+  same-second re-tag keeps the original persisted moment.
+
+### Verification evidence
+
+- **Locks**: 78 new behavioral/copy tests across 8 files
+  (`tests/fix_a_ledger_atomicity.test.ts`, `fix_a_relabel_locks`,
+  `fix_b1_b2_locks`, `fix_b3_prewarm_locks`,
+  `fix_b3_network_mapping_locks`, `fix_b4_b5_locks`, `fix_c_locks`,
+  `fix_d_locks`, `fix_d1_fold_fixture`) — every assertion a literal or
+  an order-sensitive fixture.
+- **Mutations**: 21 self-run + 20 critic-run + 6 fix-first re-proofs
+  = **47 probes, all RED** (the 4 BLUEs each exposed a lock gap that
+  was closed and re-proven RED in the same wave). One existing lock
+  updated (`wave5_concert_locks` oversized-rooms: it pinned the silent
+  truncation; now pins the honest refusal — a strengthening); one
+  setup line added (`wave3_haptics_locks`: the decision-table locks
+  need the hydration gate open — disclosed).
+- **Blind critics**: 4 fresh-context adversarial rounds, one per wave.
+  Wave A: SIGN-OFF. Wave B: 1 P1 (the 4:3 dead band) + 5 P2s — all
+  fixed same-wave. Wave C: FAIL on 1 P1 (crate haptic hostage to the
+  player route) — fixed same-wave. Wave D: SIGN-OFF WITH CONDITIONS —
+  3 P2s fixed same-wave.
+- **Dependency diff**: expo-network ~7.0.5 (FIX-B3 — the round's one
+  new dependency, version pinned by this SDK's bundledNativeModules
+  manifest; lazy-required so bun tests and the cold path never load
+  it; not api-adjacent — no webmock required).
+
 ## v5.0.0 — 2026-10-08 — THE MAGNUM OPUS: 20 features in 5 gauntleted waves
 
 The Magnum Opus upgrade ships fifteen new features on top of Wave 1's
