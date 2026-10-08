@@ -354,12 +354,19 @@ export function StatsScreen() {
                     setResumeBusyId(s.id);
                     void mindbeat
                       .resumeSession(s.id)
-                      .then((mix) => {
+                      .then(async (mix) => {
                         if (!mix) {
                           toast.show({ message: 'THAT SESSION LOST ITS SPINE — CANNOT RESUME HONESTLY', icon: 'information-circle-outline' });
                         } else {
-                          playQueue(mix, 0);
-                          toast.show({ message: `RESUMED · ${mix.length} SONGS · MOSTLY YOUR SESSION`, icon: 'play' });
+                          // v5.0.1 FIX-B4: the toast reports the RESOLVED
+                          // count (rows that actually entered the engine),
+                          // never the candidate count.
+                          const queued = await playQueue(mix, 0);
+                          if (!queued) {
+                            toast.show({ message: 'COULD NOT START PLAYBACK — THE SESSION DID NOT RESOLVE', icon: 'alert-outline' });
+                          } else {
+                            toast.show({ message: `RESUMED · ${queued} SONGS · MOSTLY YOUR SESSION`, icon: 'play' });
+                          }
                         }
                       })
                       .catch(() => toast.show({ message: 'COULD NOT RESUME — TRY AGAIN', icon: 'alert-outline' }))
@@ -424,12 +431,19 @@ export function StatsScreen() {
                           if (!res.tracks.length) {
                             toast.show({ message: `NO RADIO SURVIVED FROM ${res.ladder.exact.toUpperCase()} — TOO THIN`, icon: 'information-circle-outline' });
                           } else {
-                            playQueue(res.tracks, 0);
+                            // v5.0.1 FIX-B4: the REAL resolved count, never
+                            // the candidate count; zero-resolved is an
+                            // honest "could not start", not a fake room.
+                            const queued = await playQueue(res.tracks, 0);
+                            if (!queued) {
+                              toast.show({ message: 'COULD NOT START PLAYBACK — THE DECADE DID NOT RESOLVE', icon: 'alert-outline' });
+                              return;
+                            }
                             const undated = res.tracks.filter((t) => typeof t.year !== 'number' || t.year <= 0).length;
                             toast.show({
                               message: res.thin
-                                ? `THE SOUND OF ${res.ladder.decadeStart}s · THIN CATALOG · ${res.tracks.length} SONGS${undated ? ` · ${undated} UNDATED` : ''}`
-                                : `THE SOUND OF ${res.ladder.decadeStart}s · ${res.tracks.length} SONGS${undated ? ` · ${undated} UNDATED` : ''}`,
+                                ? `THE SOUND OF ${res.ladder.decadeStart}s · THIN CATALOG · ${queued} SONGS${undated ? ` · ${undated} UNDATED` : ''}`
+                                : `THE SOUND OF ${res.ladder.decadeStart}s · ${queued} SONGS${undated ? ` · ${undated} UNDATED` : ''}`,
                               icon: 'disc',
                             });
                           }

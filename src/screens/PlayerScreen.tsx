@@ -726,8 +726,15 @@ export function PlayerScreen() {
     try {
       const radio = await getRadio(active, 12);
       if (radio.length) {
-        await playQueue([active, ...radio], 0);
-        toast.show({ message: `RADIO STARTED · ${radio.length + 1} SONGS`, icon: 'radio' });
+        // v5.0.1 FIX-B4 (critic P2e): the toast reports the RESOLVED
+        // count — the rows that actually entered the engine — and a
+        // zero-resolved radio says so instead of toasting a fake room.
+        const queued = await playQueue([active, ...radio], 0);
+        if (!queued) {
+          toast.show({ message: 'COULD NOT START PLAYBACK — THE RADIO DID NOT RESOLVE', icon: 'alert-outline' });
+        } else {
+          toast.show({ message: `RADIO STARTED · ${queued} SONGS`, icon: 'radio' });
+        }
       } else {
         toast.show({
           message: 'NOT ENOUGH SONGS FOR A RADIO',
@@ -1282,7 +1289,19 @@ export function PlayerScreen() {
                   try {
                     const code = encodeConcert(queue, Date.now() + CONCERT.shareLeadInMs, Date.now());
                     if (!code) {
-                      toast.show({ message: 'NOTHING TO SHARE YET — QUEUE SOME SONGS', icon: 'information-circle-outline' });
+                      // v5.0.1 FIX-B2: null is now an honest refusal with a
+                      // REASON — an empty queue, a room over 50 rows, or a
+                      // code past the size cap (critic P2c: a size-refused
+                      // ≤50 queue must not be told "nothing to share").
+                      toast.show({
+                        message:
+                          queue.length === 0
+                            ? 'NOTHING TO SHARE YET — QUEUE SOME SONGS'
+                            : queue.length > CONCERT.maxTracks
+                              ? `THE ROOM IS FULL — CONCERT CODES CARRY ${CONCERT.maxTracks} SONGS`
+                              : 'THE CODE WOULD BE TOO BIG — SHARE A SMALLER QUEUE',
+                        icon: 'information-circle-outline',
+                      });
                       return;
                     }
                     await Share.share({

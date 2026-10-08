@@ -66,7 +66,7 @@ import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queu
 import { QUEUE_VIBE, SESSION_MEMORY } from '../ai/core/constants';
 import { shouldSnapshot } from '../ai/sessionMemory';
 import { getAppTables } from '../storage/appTables';
-import { primeImagePrewarm } from './imagePrewarm';
+import { primeImagePrewarm, refreshNetworkKind } from './imagePrewarm';
 
 let setupPromise: Promise<void> | null = null;
 let notifAsked = false;
@@ -227,6 +227,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     getSmartShuffleSetting().then(setSmartShuffleState);
     getAutoplay().then(setAutoplayState);
     initDataSaver(); // sync bridge for the stream resolver (Task 28)
+    void refreshNetworkKind(true); // FIX-B3: the real network kind, fetched once at setup (lazy expo-network)
     initMetaOverrides(); // THE TEN F5 — sync cache for render-time corrections
     // THE TEN wave 1 — playback-engine settings load once, fire-and-forget
     // (the audioQuality pattern: nothing here blocks play or first paint).

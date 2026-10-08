@@ -55,7 +55,12 @@ export interface ConcertPayload {
  *  unrepresentable, and the locks assert the encoder's output too).
  *  Identifiers (source/saavnId) ride along deliberately: without them
  *  the receiver could never RESOLVE a row (blind-critic P0-2) — a code
- *  that plays nothing is a fake room. */
+ *  that plays nothing is a fake room.
+ *
+ *  v5.0.1 FIX-B2: per-field caps — a 262,144-char title once produced a
+ *  349,684-char code that decoded fine (the auditor's repro). Fields
+ *  are SLICED to their caps here (the encoder normalizes); decode
+ *  REJECTS over-cap fields (a forged payload is not normalized). */
 const CONCERT_SOURCES = ['saavn', 'itunes', 'youtube'] as const;
 
 export function pickConcertTrack(t: {
@@ -72,13 +77,15 @@ export function pickConcertTrack(t: {
     ? (t.source as ConcertTrack['source'])
     : undefined;
   return {
-    id: t.id,
-    title: t.title,
-    artist: t.artist,
-    ...(t.artwork ? { artwork: t.artwork } : {}),
+    id: t.id.slice(0, CONCERT.maxIdChars),
+    title: t.title.slice(0, CONCERT.maxTitleChars),
+    artist: t.artist.slice(0, CONCERT.maxArtistChars),
+    ...(t.artwork ? { artwork: t.artwork.slice(0, CONCERT.maxArtworkChars) } : {}),
     ...(typeof t.duration === 'number' && t.duration > 0 ? { duration: Math.round(t.duration) } : {}),
     ...(source ? { source } : {}),
-    ...(source === 'saavn' && typeof t.saavnId === 'string' && t.saavnId ? { saavnId: t.saavnId } : {}),
+    ...(source === 'saavn' && typeof t.saavnId === 'string' && t.saavnId
+      ? { saavnId: t.saavnId.slice(0, CONCERT.maxIdChars) }
+      : {}),
   };
 }
 
@@ -102,26 +109,44 @@ export function concertRowToTrack(t: ConcertTrack): Track {
   };
 }
 
-/** THE ENCODER (pure): first maxTracks rows, stripped, versioned. */
+/** THE ENCODER (pure): the rows are stripped and field-capped; a room
+ *  larger than CONCERT.maxTracks is a REFUSAL, not a silent truncation
+ *  (v5.0.1 FIX-B2 — the old encoder quietly dropped row 51+ and the
+ *  shared room was smaller than the sender's queue; the count is the
+ *  INPUT's rows — an unnamed row cannot be smuggled past the refusal
+ *  either, critic P2b). The size gate runs on the FINISHED base64url
+ *  code — the blind-critic round proved that gating the JSON instead
+ *  leaves a dead band: base64url inflates ×4/3, so a JSON inside
+ *  [49,152, 65,536] chars encoded fine and was then refused ON SIGHT
+ *  by the receiver's code-length gate. One gate, on the code, both
+ *  sides. null = "this cannot be a code", never a fabricated,
+ *  quietly-trimmed, or unjoinable room. */
 export function encodeConcert(
   playlist: Array<Parameters<typeof pickConcertTrack>[0]>,
   startAt: number,
   now: number = new Date().setHours(0, 0, 0, 0),
 ): string | null {
+  if (playlist.length > CONCERT.maxTracks) return null; // oversized INPUT — refuse loudly, count it all (critic P2b)
   const tracks: ConcertTrack[] = [];
   for (const t of playlist) {
-    if (tracks.length >= CONCERT.maxTracks) break;
     const picked = pickConcertTrack(t);
     if (picked) tracks.push(picked);
   }
   if (!tracks.length) return null; // an empty room is not a concert
-  const payload: ConcertPayload = { v: CONCERT.version, startAt, at: now, tracks };
-  return bytesToB64url(utf8Bytes(JSON.stringify(payload)));
+  const json = JSON.stringify({ v: CONCERT.version, startAt, at: now, tracks } satisfies ConcertPayload);
+  const code = bytesToB64url(utf8Bytes(json));
+  if (code.length > CONCERT.maxCodeChars) return null; // THE size cap — measured on the code, decode-symmetric
+  return code;
 }
 
-/** THE DECODER (pure, tolerant): any corruption ⇒ null. */
+/** THE DECODER (pure, tolerant): any corruption ⇒ null. v5.0.1 FIX-B2:
+ *  the size gate runs BEFORE base64 decode / JSON parse — a 100k-char
+ *  string is refused on sight (defense in depth: the encoder caps, but
+ *  a FORGED code does not have to have come from it). Field caps are
+ *  re-checked per row: a small code carrying one huge field is refused. */
 export function decodeConcert(code: string | null | undefined): ConcertPayload | null {
   if (!code || typeof code !== 'string') return null;
+  if (code.length > CONCERT.maxCodeChars) return null; // oversized on sight — before any decode
   try {
     const json = bytesToUtf8(b64urlToBytes(code));
     const p = JSON.parse(json) as ConcertPayload;
@@ -134,10 +159,14 @@ export function decodeConcert(code: string | null | undefined): ConcertPayload |
       if (!t || typeof t.id !== 'string' || !t.id) return null;
       if (typeof t.title !== 'string' || !t.title) return null;
       if (typeof t.artist !== 'string' || !t.artist) return null;
+      if (t.title.length > CONCERT.maxTitleChars) return null; // forged over-cap field
+      if (t.artist.length > CONCERT.maxArtistChars) return null;
+      if (t.id.length > CONCERT.maxIdChars) return null;
+      if (t.artwork !== undefined && (typeof t.artwork !== 'string' || t.artwork.length > CONCERT.maxArtworkChars)) return null;
       if ('streamUrl' in t) return null; // a forged handle-poisoned payload is REJECTED
       if ('encryptedUrl' in t || 'previewUrl' in t) return null; // no handle under any name
       if (t.source !== undefined && !CONCERT_SOURCES.includes(t.source)) return null;
-      if (t.saavnId !== undefined && typeof t.saavnId !== 'string') return null;
+      if (t.saavnId !== undefined && (typeof t.saavnId !== 'string' || t.saavnId.length > CONCERT.maxIdChars)) return null;
       tracks.push(pickConcertTrack(t)!);
     }
     return { v: p.v, startAt: p.startAt, at: typeof p.at === 'number' ? p.at : 0, tracks };

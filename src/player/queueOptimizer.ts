@@ -50,6 +50,15 @@ export function energyOf(trackId: string, features: Record<string, number>): num
  * track's energy; callers without one pass the first slot's energy).
  * Pinned rows keep their indices; every free slot greedily takes the
  * nearest-energy remaining track (tie → original index).
+ *
+ * v5.0.1 FIX-B1 (the auditor's P2): the 0.25 cadence bound is now
+ * ENFORCED DURING SELECTION, not merely reported afterwards. The walk
+ * skips any candidate whose energy would step more than
+ * CADENCE.aiMaxEnergyStep from the previous pick and tries the next in
+ * the pool; only when NO remaining candidate fits does it take the
+ * best-fit anyway and let `largestStep` report the honest failure (the
+ * bound is a preference the pool can deny — a fabricated fit is worse
+ * than an admitted miss).
  */
 export function optimizeQueueByVibe<T extends { id: string }>(
   tracks: T[],
@@ -84,20 +93,39 @@ export function optimizeQueueByVibe<T extends { id: string }>(
     // is in original order and `<` keeps the first seen)
     let bestIdx = 0;
     let bestDist = Number.POSITIVE_INFINITY;
+    let bestWithinBoundIdx = -1;
+    let bestWithinBoundDist = Number.POSITIVE_INFINITY;
     for (let j = 0; j < remaining.length; j++) {
       const d = Math.abs(energyOf(remaining[j].id, features) - current);
       if (d < bestDist) {
         bestDist = d;
         bestIdx = j;
       }
+      // FIX-B1: a candidate is only ELIGIBLE while the step stays
+      // within the cadence bound; the best eligible one wins.
+      if (d <= CADENCE.aiMaxEnergyStep + 1e-9 && d < bestWithinBoundDist) {
+        bestWithinBoundDist = d;
+        bestWithinBoundIdx = j;
+      }
     }
-    const picked = remaining.splice(bestIdx, 1)[0];
+    // no candidate fits the bound → take the best-fit anyway (the pool
+    // is simply too far); `largestStep` reports the honest miss.
+    const picked = remaining.splice(bestWithinBoundIdx >= 0 ? bestWithinBoundIdx : bestIdx, 1)[0];
     result[i] = picked;
     current = energyOf(picked.id, features);
   }
 
   const order = result.filter((t): t is T => t !== null);
-  return { order, largestStep: largestEnergyStep(order, features), pinnedKept };
+  const walkMax = largestEnergyStep(order, features);
+  // v5.0.1 critic P2a: the seed→first-row transition is a REAL step the
+  // listener hears — the honest flag must see it. (Without a seed the
+  // walk starts from the pool's mean, which is not a transition.) The
+  // standalone largestEnergyStep stays order-internal (its own locks).
+  const seedStep =
+    typeof seedEnergy === 'number' && Number.isFinite(seedEnergy) && order.length
+      ? Math.abs(energyOf(order[0].id, features) - Math.max(0, Math.min(1, seedEnergy)))
+      : 0;
+  return { order, largestStep: Math.round(Math.max(walkMax, seedStep) * 1000) / 1000, pinnedKept };
 }
 
 /** The largest consecutive |Δenergy| across an ordered list. */

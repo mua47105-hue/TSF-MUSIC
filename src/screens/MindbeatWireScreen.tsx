@@ -389,6 +389,10 @@ export function MindbeatWireScreen() {
                   };
                   if (plan.delayMs > CONCERT.joinScheduleThresholdMs) {
                     toast.show({ message: `THE ROOM STARTS IN ${Math.ceil(plan.delayMs / 1000)}S — KEEP THE APP OPEN`, icon: 'radio-outline' });
+                    // v5.0.1 FIX-B2 (documented limitation, now fixed): a
+                    // second join while one is armed must CANCEL the first
+                    // — two armed timers would start the room twice.
+                    if (concertTimerRef.current) clearTimeout(concertTimerRef.current);
                     concertTimerRef.current = setTimeout(start, plan.delayMs);
                     setConcertCode(''); // consumed — the timer owns the start now
                   } else {
@@ -445,11 +449,19 @@ export function MindbeatWireScreen() {
                     if (!res.tracks.length) {
                       toast.show({ message: 'THE CATALOG CANNOT FILL THIS JOURNEY YET', icon: 'information-circle-outline' });
                     } else {
-                      void playQueue(res.tracks, 0);
-                      toast.show({
-                        message: `JOURNEY · ${res.tracks.length} SONGS · ${res.skippedSlots.length ? `${res.skippedSlots.length} SLOTS SKIPPED HONESTLY` : 'ALL SLOTS FILLED'}`,
-                        icon: 'pulse',
-                      });
+                      // v5.0.1 FIX-B4: the toast reports the RESOLVED count
+                      // (rows that actually entered the engine); a
+                      // zero-resolved journey says so instead of toasting a
+                      // count that never plays.
+                      const queued = await playQueue(res.tracks, 0);
+                      if (!queued) {
+                        toast.show({ message: 'COULD NOT START PLAYBACK — THE JOURNEY DID NOT RESOLVE', icon: 'alert-outline' });
+                      } else {
+                        toast.show({
+                          message: `JOURNEY · ${queued} SONGS · ${res.skippedSlots.length ? `${res.skippedSlots.length} SLOTS SKIPPED HONESTLY` : 'ALL SLOTS FILLED'}`,
+                          icon: 'pulse',
+                        });
+                      }
                     }
                   } catch {
                     toast.show({ message: 'THE JOURNEY FELL THROUGH — TRY AGAIN', icon: 'alert-outline' });

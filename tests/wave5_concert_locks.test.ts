@@ -108,10 +108,15 @@ describe('F18 · the decoder is tolerant, never fabricating', () => {
   });
 
   test('oversized rooms (>50 rows), empty rooms, and unnamed rows ⇒ null', () => {
+    // v5.0.1 FIX-B2 (auditor P2): the encoder NO LONGER truncates
+    // silently — an oversized room is REFUSED (null), the same refusal
+    // the forged-payload path always had. The old lock pinned the
+    // truncation; this one pins the honest refusal.
     const big = Array.from({ length: 51 }, (_, i) => ({ id: `t${i}`, title: `s${i}`, artist: 'a' }));
-    expect(encodeConcert(big, START, NOW)).not.toBeNull(); // the ENCODER caps silently at 50
-    const encoded50 = encodeConcert(big, START, NOW)!;
-    expect(decodeConcert(encoded50)!.tracks.length).toBe(50); // the literal cap
+    expect(encodeConcert(big, START, NOW)).toBeNull(); // 51 rows ⇒ refused loudly
+    // exactly 50 still encodes, and the room arrives whole
+    const exact50 = encodeConcert(big.slice(0, 50), START, NOW);
+    expect(decodeConcert(exact50!)!.tracks.length).toBe(50); // the literal cap
     // but a FORGED 51-row payload is rejected
     const forged = Buffer.from(JSON.stringify({ v: 1, startAt: START, at: NOW, tracks: big }), 'utf8');
     const b64url = forged.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

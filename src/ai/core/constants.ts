@@ -633,6 +633,25 @@ export const CONCERT = {
   /** A scheduled start shorter than this fires immediately (a wait the
    *  user cannot perceive is not worth a second toast). */
   joinScheduleThresholdMs: 1_500,
+  /** v5.0.1 FIX-B2 — THE REAL SIZE CAP (the auditor's P2: a 262,144-char
+   *  title once encoded into a 349,684-char code that decoded fine).
+   *  Symmetric on BOTH sides and measured on THE CODE: encode refuses a
+   *  finished base64url code past this many chars; decode refuses any
+   *  input string past it BEFORE base64/JSON work. (Gating the JSON was
+   *  a dead band — base64url inflates ×4/3, so JSON up to 65,536 can
+   *  produce an 87k-char code the receiver would refuse on sight; the
+   *  blind-critic round caught it. One gate, on the code, both sides.)
+   *  65,536 chars fits a 50-row room with max-length fields (title ≤ 500
+   *  + artist ≤ 300 per row ≈ a 58k code) with margin. */
+  maxCodeChars: 65_536,
+  /** Per-field caps (FIX-B2): the encoder SLICES to these; decode
+   *  REJECTS rows past them (a forged payload is not normalized). The
+   *  auditor named an album cap; the payload carries NO album field —
+   *  the fields that exist are the ones capped here. */
+  maxTitleChars: 500,
+  maxArtistChars: 300,
+  maxIdChars: 200,
+  maxArtworkChars: 1_000,
 } as const;
 
 /** F19 — Genre Explorer: a seeded, deterministic bubble map of the
@@ -793,6 +812,10 @@ export const IMAGE_PREWARM = {
   /** A warmed URI is not re-warmed inside this window (RN's image cache
    *  is opaque; this only bounds OUR re-issue rate). */
   ttlMs: 10 * 60_000,
+  /** v5.0.1 FIX-B3 — how often the runtime may re-ask expo-network for
+   *  the real network kind (a native bridge hop per prime would be
+   *  waste; the kind changes on the order of minutes, not seconds). */
+  netRefreshMs: 30_000,
 } as const;
 
 /** F4 — Cinema transition: tapping a row flies its art to the player's

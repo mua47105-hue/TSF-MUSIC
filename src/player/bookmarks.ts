@@ -101,20 +101,29 @@ export function createBookmarks(store: BookmarksStore): BookmarksService {
         await store.put(bm);
 
         // Per-track cap: oldest-created first (FIFO), the row just saved
-        // is never its own victim.
+        // is never its own victim. v5.0.1 FIX-B5: deletions are COUNTED
+        // (the memoryTags pattern) — under a backwards wall clock the
+        // fresh row sorts among the oldest, and the old loop's skip
+        // consumed an iteration without a deletion, resting at cap+1.
         const mine = (await store.forTrack(recordingKey)).sort((a, b) => a.createdAt - b.createdAt);
         if (mine.length > BOOKMARKS.perTrackCap) {
-          const excess = mine.length - BOOKMARKS.perTrackCap;
-          for (let i = 0; i < excess; i++) {
-            if (mine[i].id !== id) await store.del(mine[i].id);
+          let excess = mine.length - BOOKMARKS.perTrackCap;
+          for (let i = 0; excess > 0 && i < mine.length; i++) {
+            if (mine[i].id !== id) {
+              await store.del(mine[i].id);
+              excess -= 1; // a skip is not a deletion — only a real one counts
+            }
           }
         }
         // Global cap: oldest-created first across all recordings.
         const all = (await store.all()).sort((a, b) => a.createdAt - b.createdAt);
         if (all.length > BOOKMARKS.totalCap) {
-          const excess = all.length - BOOKMARKS.totalCap;
-          for (let i = 0; i < excess; i++) {
-            if (all[i].id !== id) await store.del(all[i].id);
+          let excess = all.length - BOOKMARKS.totalCap;
+          for (let i = 0; excess > 0 && i < all.length; i++) {
+            if (all[i].id !== id) {
+              await store.del(all[i].id);
+              excess -= 1;
+            }
           }
         }
         return bm;

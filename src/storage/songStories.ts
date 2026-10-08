@@ -95,15 +95,21 @@ export function createSongStories(store: SongStoriesStore): SongStoriesService {
         };
         await store.upsertStory(story);
         // LRU (by updatedAt): evict the oldest-touched rows beyond cap.
+        // v5.0.1 FIX-B5: the eviction loop now CONSUMES a deletion per
+        // non-inserted victim (the memoryTags counted-deletion pattern).
+        // The old loop iterated `excess` times and merely SKIPPED the
+        // just-saved row — under a backwards wall clock the fresh row
+        // sorts among the oldest, the skip consumed an iteration without
+        // a deletion, and the cap could rest at cap+1.
         const all = await store.allStories();
         if (all.length > STORIES.cap) {
           const ordered = [...all].sort((a, b) => a.updatedAt - b.updatedAt);
-          const excess = all.length - STORIES.cap;
-          for (let i = 0; i < excess; i++) {
+          let excess = all.length - STORIES.cap;
+          for (let i = 0; excess > 0 && i < ordered.length; i++) {
             const victim = ordered[i];
-            if (victim && victim.recordingKey !== recordingKey) {
-              await store.deleteStory(victim.recordingKey);
-            }
+            if (!victim || victim.recordingKey === recordingKey) continue; // never the row just written
+            await store.deleteStory(victim.recordingKey);
+            excess -= 1; // a skip is not a deletion — only a real one counts
           }
         }
         return story;

@@ -164,8 +164,14 @@ export function GenreExplorer() {
         toast.show({ message: `NO ${bubble.genre.toUpperCase()} ROWS IN THE CATALOG YET`, icon: 'information-circle-outline' });
         return;
       }
-      playQueue(rows, 0);
-      toast.show({ message: `${bubble.genre.toUpperCase()} · ${rows.length} SONGS`, icon: 'pulse' });
+      // v5.0.1 FIX-B4: the toast reports the RESOLVED count (rows that
+      // actually entered the engine), never the candidate count.
+      const queued = await playQueue(rows, 0);
+      if (!queued) {
+        toast.show({ message: `COULD NOT START ${bubble.genre.toUpperCase()} — NOTHING RESOLVED`, icon: 'alert-outline' });
+        return;
+      }
+      toast.show({ message: `${bubble.genre.toUpperCase()} · ${queued} SONGS`, icon: 'pulse' });
     } catch {
       toast.show({ message: 'THE MAP IS QUIET RIGHT NOW — TRY AGAIN', icon: 'alert-outline' });
     } finally {
