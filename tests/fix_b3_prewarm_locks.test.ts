@@ -107,8 +107,11 @@ describe('FIX-B3 · the network kind is real (injectable production source)', ()
 
   test('refreshNetworkKind degrades honestly when the native module is absent (never throws, kind stays unknown)', async () => {
     setNetworkKindForTests(null); // exercise the production source path
-    // no expo-network mock is registered in this file → the lazy require
-    // fails → memoized honest degradation.
+    // This file registers no expo-network mock of its own. ALONE, the
+    // lazy require fails (the real package is native-only under bun) →
+    // the honest-degradation branch. After the sibling mapping suite
+    // runs, its v5.0.2 cleanup leaves the honest-unknown surface —
+    // either way the kind must land 'unknown', never a fabricated wifi.
     await refreshNetworkKind(true);
     expect(currentNetworkKind()).toBe('unknown');
   });
