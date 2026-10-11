@@ -6,6 +6,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { HapticGenreMode } from '../player/haptics';
 import type { Collection, DailyMix, ListeningStats, PlayCountEntry, Playlist, Track, WeeklyCrate } from '../types';
 
 const KEYS = {
@@ -24,6 +25,8 @@ const KEYS = {
   dataSaver: 'tsf.dataSaver.v1',
   // ── MAGNUM OPUS wave 3 (F10 haptics) ──
   reducedHaptics: 'tsf.reducedHaptics.v1',
+  // ── WAVE B B2 (genre-aware haptics) ──
+  hapticGenreMode: 'tsf.hapticGenreMode.v1',
   // ── THE TEN · wave 1 (playback engine) ──
   smartVolume: 'tsf.smartVolume.v1',
   crossfade: 'tsf.crossfade.v1',
@@ -402,6 +405,19 @@ export async function getReducedHaptics(): Promise<boolean> {
 
 export async function setReducedHaptics(on: boolean): Promise<void> {
   await writeJSON(KEYS.reducedHaptics, on);
+}
+
+/** WAVE B B2 — the genre-aware haptics mode. Default 'auto' (the beat
+ *  pattern follows the track's genre); anything unreadable maps back to
+ *  the documented default (a corrupted value can never disable or
+ *  silence haptics on its own). */
+export async function getHapticGenreModeSetting(): Promise<HapticGenreMode> {
+  const v = await readJSON<HapticGenreMode>(KEYS.hapticGenreMode, 'auto');
+  return v === 'uniform' || v === 'off' ? v : 'auto';
+}
+
+export async function setHapticGenreMode(mode: HapticGenreMode): Promise<void> {
+  await writeJSON(KEYS.hapticGenreMode, mode);
 }
 
 // ── THE TEN · wave 1 (playback engine settings) ────────────────────────

@@ -34,7 +34,7 @@ import { getRadio } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
 import { fetchPlainLyrics, fetchSyncedLyrics } from '../api/lrclib';
 import { parseLrc, activeLrcIndex, withWordSpans, activeWord, type LrcLine } from '../player/singalong';
-import { getReducedHaptics, setReducedHaptics } from '../storage/store';
+import { getReducedHaptics, getHapticGenreModeSetting, setReducedHaptics, setHapticGenreMode } from '../storage/store';
 import { SingAlong } from '../components/SingAlong';
 import { ShareCard } from '../share/ShareCard';
 import { shareNowPlaying } from '../share/share';
@@ -59,7 +59,7 @@ import { currentRate, setPlaybackRate, subscribePlaybackRate, ALLOWED_RATES } fr
 import { clampCrossfadeSeconds, crossfadeSeconds, setCrossfadeSeconds } from '../player/crossfade';
 import { CROSSFADE, FOCUS, CINEMA, BOOKMARKS, QUEUE_VIBE } from '../ai/core/constants';
 import { classifyPress } from '../player/bookmarks';
-import { hapticEvent, markHapticsHydrated, fireHaptic } from '../player/haptics';
+import { hapticEvent, markHapticsHydrated, fireHaptic, type HapticGenreMode } from '../player/haptics';
 import { PseudoVisualizer } from '../player/PseudoVisualizer';
 import type { VisualizerFeatures } from '../player/visualizer';
 import { encodeConcert } from '../ai/concert';
@@ -319,11 +319,18 @@ export function PlayerScreen() {
 
   // F10 — the persisted reducedHaptics switch (default false = FULL)
   const [reducedHaptics, setReducedHapticsState] = useState(false);
+  // WAVE B B2 — the persisted genre mode (default 'auto')
+  const [hapticGenreMode, setGenreModeState] = useState<HapticGenreMode>('auto');
   useEffect(() => {
     let live = true;
-    getReducedHaptics()
-      .then((v) => {
-        if (live) setReducedHapticsState(v);
+    // both haptics settings land BEFORE the gate opens — one hydration
+    // moment, no partially-hydrated window
+    Promise.all([getReducedHaptics(), getHapticGenreModeSetting()])
+      .then(([v, m]) => {
+        if (live) {
+          setReducedHapticsState(v);
+          setGenreModeState(m);
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -344,10 +351,24 @@ export function PlayerScreen() {
       return next;
     });
   }, []);
+  // WAVE B B2 — the genre mode cycle: auto → uniform → off → auto
+  // (auto = genre patterns; uniform = the legacy tempo tick for every
+  // track — also the lofi/ambient override; off = the wrist stays still).
+  const toggleGenreHaptics = useCallback(() => {
+    setGenreModeState((m) => {
+      const next: HapticGenreMode = m === 'auto' ? 'uniform' : m === 'uniform' ? 'off' : 'auto';
+      setHapticGenreMode(next).catch(() => undefined);
+      toast.show({
+        message: `GENRE HAPTICS · ${next.toUpperCase()}`,
+        icon: 'pulse',
+      });
+      return next;
+    });
+  }, [toast]);
   const lastBeatRef = useRef(0);
   const hapticsSettings = useMemo(
-    () => ({ reducedHaptics, lastBeatIndex: lastBeatRef.current }),
-    [reducedHaptics],
+    () => ({ reducedHaptics, lastBeatIndex: lastBeatRef.current, genreMode: hapticGenreMode }),
+    [reducedHaptics, hapticGenreMode],
   );
 
   // F10 — the BEAT TICK: fires only while the player is open AND playing
@@ -356,15 +377,19 @@ export function PlayerScreen() {
   // imports haptics.ts, X8-audited). Battery: ≤2 Hz by the 500ms floor.
   useEffect(() => {
     if (!isPlaying || reducedHaptics || !features) return;
-    const decision = hapticEvent('beat-tick', features, position * 1000, {
+    // WAVE B B2 — the genre rides WITH the features: the pattern engine
+    // reads the track's catalog genre (Track.genre) next to its tempo.
+    const trackInput = { tempoClass: features.tempoClass, genre: active?.genre };
+    const decision = hapticEvent('beat-tick', trackInput, position * 1000, {
       reducedHaptics,
       lastBeatIndex: lastBeatRef.current,
+      genreMode: hapticGenreMode,
     });
     if (decision?.beatIndex != null) {
       lastBeatRef.current = decision.beatIndex;
       void fireHaptic(decision.spec);
     }
-  }, [position, isPlaying, features, reducedHaptics]);
+  }, [position, isPlaying, features, reducedHaptics, hapticGenreMode, active?.genre]);
 
   /** the heart haptic (like button + double-tap burst share it) */
   const hapticHeart = useCallback(() => {
@@ -1246,6 +1271,14 @@ export function PlayerScreen() {
                   ACTIVE = full haptics (the default); OFF = the wrist
                   stays still (every hapticEvent nulls). */}
               <QueuePill label="HAPTICS" active={!reducedHaptics} onPress={toggleReducedHaptics} />
+              {/* WAVE B B2 — the genre-aware beat pattern mode. ACTIVE =
+                  beat ticks exist (auto follows the track's genre,
+                  uniform is the legacy tempo tick); OFF = silent. */}
+              <QueuePill
+                label={`GENRE ${hapticGenreMode.toUpperCase()}`}
+                active={hapticGenreMode !== 'off'}
+                onPress={toggleGenreHaptics}
+              />
             </View>
 
             {/* MAGNUM OPUS F13 — SHUFFLE BY VIBE. USER-INITIATED ONLY:
