@@ -2109,3 +2109,119 @@ Stage Summary:
   (+32 locks, 4,495 → 4,598 expects); tsc 0 throughout; zero
   regressions in the wave1 volume locks and the wave3 haptics laws.
 - Commits: 03fe605 (B1), 8126981 (B2) on origin/main.
+
+---
+Task ID: WAVE C (search & discovery)
+Agent: Super Z (main agent)
+Task: Wave C of the improvement arc — C1 Hindi sentiment lexicon
+expansion (IITB HSWN), C2 FTS5 full-text search over personal notes
+(Song Stories + Memory Tags) in SearchScreen, C3 the "Surprise Me"
+filter-bubble breaker. GAUNTLET per feature: BUILD → LOCK → MUTATE
+(≥2, all RED, byte-exact reverts, porcelain proof) → COMMIT → PUSH.
+
+Work Log:
+- GATE: "Do not start until Wave B is pushed" — verified via git
+  fetch: origin/main = aca4b8a carries Wave B (B1 03fe605, B2 8126981)
+  atop Wave A (A1–A4) + v5.1.0. Local ff-pulled 51cf33e → aca4b8a,
+  tree clean. Gate SATISFIED.
+- BASELINE: tsc 0; bun test 1000/0 (4,598 expects, 80 files) — the
+  exact Wave B exit state.
+- C1 BUILD: the brief's URL (millefolium/hindi-sentiment-lexicon) is
+  404; the real IITB resource is the Hindi SentiWordNet (HSWN, Joshi
+  et al.) — vendored from an MIT-licensed mirror into
+  scripts/data/ (source + license). scripts/bake_hindi_lexicon.py:
+  score = POS − NEG ∈ [−1,1], the brief's literal |score| >= 0.3
+  filter, Devanagari → romanized via a virama-cluster syllable model
+  (word-final vowel folds, right-to-left medial schwa deletion with
+  coda-validity blocks: glides/h can't be codas, geminate onsets
+  block, nukta folded manually — NFC never composes it, word-final
+  क़ keeps the iconic "ishq" q). Output: 1,816 romanized words, 30.7KB
+  raw / 7.9KB gzipped. DATA HONESTY: the brief hoped ≥3,000 strong
+  words — the resource's actual strong band is 1,816 (6,802 of the
+  9,805 total words sit in the weak <0.3 band the brief's own filter
+  excludes); shipped the honest number + a ≥1,800 floor lock, did NOT
+  lower the filter or fabricate variants. Only 8 words overlap the
+  hand table (union 2,079 — highly complementary: the hand table
+  carries the lyric vocabulary at 1.0, HSWN adds the formal band).
+  Runtime: src/ai/core/hindiLexicon.ts (lazy require, post-paint via
+  mindbeat.warmHeavyTables — never cold-start); tokenScore became a
+  3-tier reader: hand-curated 1.0 → IITB ×0.6 → VADER /4. 1,805 words
+  that hit NO lexicon before now score.
+- C1 LOCK: tests/wavec_c1_hindi_lexicon_locks.test.ts — 13 locks (the
+  lazy contract incl. the pre-load null, the honest ≥1,800 floor, the
+  ≤50KB gz budget, baked×0.6 weight math to 10dp, hand-table 1.0
+  survival on the 8 overlaps, IITB-only words score, THE BAR ±0.25
+  delta on IITB lyrics, the strong-filter runtime audit, the 0.6
+  constant). Suite → 1013/0, tsc 0.
+- C1 MUTATIONS (byte-exact reverts, cmp-proven): M-C1-1 IITB merge
+  removed → 5 fail; M-C1-2 weight 0.6→1.0 → 6 fail.
+- C1 COMMIT 2a0bda0, pushed.
+- C2 BUILD: src/storage/noteIndex.ts (pure) — NotesIndex interface
+  (native FTS5 / memory web-twin), the store DECORATORS
+  (createIndexedStories/createIndexedMemoryTags) that keep the index
+  in sync on EVERY write path including the services' LRU evictions,
+  ftsQueryFor (quoted-prefix FTS5 sanitizing), snippetFor, the
+  ≥3-char gate, THE BAR's content law: note text AND recording
+  identity searchable. appTables.ts: personal_notes_fts (the brief's
+  sketch duplicated recording_key — invalid SQL; the working schema
+  documents the fix: recording_key/note_text/source searchable +
+  UNINDEXED entry_key for exact row targeting), one-time backfill
+  migration (stories + non-blank tags), honest LIKE fallback if FTS5
+  is ever absent (expo-sqlite ships -DSQLITE_ENABLE_FTS5=1 by
+  default). webmock parity: the SAME decorators over
+  createMemoryNotesIndex (house rule ⑮). SearchScreen: the
+  "📝 YOUR NOTES" section (badged STORY/TAG rows) above results AND
+  in the zero state, queried in parallel under the shared generation
+  guard; tap → searchMusicV2 resolve → playQueue → Player + the full
+  note toast.
+- C2 LOCK: tests/wavec_c2_fts_notes_locks.test.ts — 18 locks (sync
+  law both directions, Goa/heartbreak THE BAR literals, same-second
+  re-tag re-index, blank-note refusal, LRU-eviction sync, the gate,
+  multi-token AND, the identity law, the limit, 1000-note <10ms X6,
+  FTS5 DDL + migration + wiring source-law, dual-platform parity).
+  Suite → 1031/0, tsc 0.
+- C2 MUTATIONS (byte-exact reverts, cmp-proven): M-C2-1 story upsert
+  not indexed → 2 fail; M-C2-2 story delete not indexed → 2 fail.
+- C2 COMMIT b426875, pushed.
+- C3 BUILD: src/ai/surfaces/surpriseMe.ts (PURE) — pickSurprise with
+  four locked constraints: energy within ±0.1 of sessionEnergyOf
+  (tighter than Smart Shuffle's ±0.2), artistAffinity < 0.1, genre
+  outside the top-5 profile genres (unknown refused when the profile
+  has genres; genre-less profile passes vacuously), filterClean.
+  Determinism: mulberry32 seeded via an xmur3 hash of
+  `${session.id}:${now}` — never Math.random. mindbeat.surprisePick():
+  kill-switch honored, pool probes AWAY from the top genres + a fixed
+  discovery ladder, dead probes swallowed. PlayerScreen: the
+  "✨ SURPRISE ME" button in the queue sheet, hidden under the kill
+  switch (read on sheet open), busy-guarded, injects at current
+  index + 1 via playNext + the honest toast.
+- C3 LOCK: tests/wavec_c3_surprise_me_locks.test.ts — 11 locks (the
+  relational four-constraint bar, explicit + queue-exclusion
+  refusals, top-genre + familiar-artist bait refusals, honest nulls,
+  determinism incl. the literal seed math, the genre boundary, the
+  vacuous genre-less pass). Suite → 1042/0, tsc 0.
+- C3 MUTATIONS (byte-exact reverts, cmp-proven): M-C3-1 genre
+  constraint removed → 2 fail; M-C3-2 affinity removed → 1 fail
+  (FIRST ATTEMPT ESCAPED: the bait artist's prior energy sat outside
+  the ±0.1 band so energy masked the affinity mutation — the gauntlet
+  caught a weak test and the fixture was repaired to an in-band
+  familiar artist, 'sonu nigam' 0.45); M-C3-3 energy band removed →
+  4 fail. BONUS third mutation per the brief's ≥2 floor.
+- C3 COMMIT b937159, pushed.
+- X3: zero new runtime dependencies (the lexicon is a static asset;
+  FTS5 is SQLite built-in; the webmock is in-memory). X4/X5: no
+  volume code touched, no Math.random introduced (seeded PRNG only).
+  X6: the FTS5 path is an index (bm25 rank) with a 1000-note <10ms
+  memory-backend lock; the lexicon lookup is an O(1) property read.
+
+Stage Summary:
+- Wave C SHIPPED: C1 the IITB HSWN expansion (1,816 strong words at
+  weight 0.6, honestly below the brief's 3,000 hope — the resource's
+  real shape, documented), C2 FTS5 over personal notes (sync-on-every-
+  write decorators, THE BAR literals locked, LIKE fallback),
+  C3 Surprise Me (four constraints, seeded determinism, kill-switch
+  hiding).
+- 7 mutations, all RED, all byte-exact reverts (cmp-proven); suite
+  1000 → 1042/0 (+42 locks, 4,598 → 4,710 expects); tsc 0
+  throughout; zero new dependencies; zero regressions.
+- Commits: 2a0bda0 (C1), b426875 (C2), b937159 (C3) on origin/main.
