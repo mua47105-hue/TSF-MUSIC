@@ -1031,6 +1031,21 @@ class Mindbeat {
     return hit ? hit.e : null;
   }
 
+  /**
+   * WAVE B B1 — the track's RAW baked loudness (LUFS) for ReplayGain.
+   * null = no baked row, OR the row predates the `l` column ⇒ the
+   * caller no-ops (gain 0 dB, factor exactly 1.0 — byte-identical to
+   * the pre-B1 app until a bake carries loudness). Same lazy-table
+   * contract as bakedEnergyFor(): call after warmHeavyTables(); an
+   * early call simply returns null and the next track picks it up
+   * (an honest no-op, never a blocker). O(1) Map access — the
+   * potato budget is one lookup per track CHANGE, never per frame.
+   */
+  bakedLoudnessFor(track: { title?: string; artist?: string }): number | null {
+    const hit = lookupBakedFeatures({ title: track.title, artist: track.artist });
+    return hit && typeof hit.l === 'number' ? hit.l : null;
+  }
+
   // ── Phase 6 — SOUND ALIKE (the tag-overlap similarity engine) ────────
 
   /**

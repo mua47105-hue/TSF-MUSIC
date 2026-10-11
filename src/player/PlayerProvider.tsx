@@ -59,6 +59,7 @@ import { perfMark } from '../perf/perf';
 import { initDataSaver } from './audioQuality';
 import { initMetaOverrides } from '../storage/metaOverrides';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
+import { applyReplayGainForTrack } from './replayGain';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
@@ -344,6 +345,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // off/unknown ⇒ 1.0). Runs BEFORE the foreground gate so background
     // transitions (service-owned) get the smoothing too.
     applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: active.title, artist: active.artist }));
+    // WAVE B B1 — ReplayGain: the track's baked LUFS sets the PERSISTENT
+    // gain factor through the same bus (composes ×, never races; missing
+    // column/row ⇒ factor exactly 1.0 — the honest no-op until a bake
+    // carries loudness). Runs BEFORE the foreground gate so background
+    // transitions get the same normalization contract.
+    applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: active.title, artist: active.artist }));
     perfMark('track-active', String(active.id));
     // SINGLE-OWNER RULE (mirror of the service gate): the provider owns
     // track transitions only while FOREGROUNDED; the background service

@@ -10,10 +10,15 @@
  * 0.85 = 0.425, not a race"). Every volume-affecting feature reports its
  * factor HERE; the bus multiplies and writes ONCE.
  *
- * Model:
- *   effective = smartVolumeMultiplier × activeFadeFactor
+ * Model (WAVE B B1 — three factors now):
+ *   effective = smartVolumeMultiplier × replayGainFactor × activeFadeFactor
  *   - The multiplier is the Smart Volume curve output (1.0 when off or
  *     the track has no baked energy).
+ *   - The gain factor is ReplayGain's PERSISTENT per-track loudness
+ *     normalization (1.0 when the track has no baked loudness) — it is
+ *     NOT a fade: it never competes for the single-owner slot, it just
+ *     multiplies alongside everything else until the next track change
+ *     rewrites it.
  *   - At most ONE fade owner is honored at a time, by
  *     VOLUME_FADE_PRECEDENCE (sleep > focus > crossfade) — FEATURE 10's
  *     single-owner rule. A lower-priority engine's factor is STORED (so
@@ -31,7 +36,7 @@
  */
 
 import TrackPlayer from 'react-native-track-player';
-import { SMART_VOLUME, VOLUME_FADE_PRECEDENCE } from '../ai/core/constants';
+import { REPLAY_GAIN, SMART_VOLUME, VOLUME_FADE_PRECEDENCE } from '../ai/core/constants';
 
 export type FadeOwner = (typeof VOLUME_FADE_PRECEDENCE)[number];
 
@@ -43,16 +48,31 @@ export type FadeOwner = (typeof VOLUME_FADE_PRECEDENCE)[number];
  * the auditor's BAR 2 mutation proved no test watched the write). The
  * lift is now REAL up to the curve's own documented ceiling. The fade
  * factor stays [0,1]: a fade can only attenuate, never boost.
+ *
+ * WAVE B B1 — the optional third factor (ReplayGain, default 1.0 so
+ * every existing two-argument call and lock is untouched): clamped to
+ * [REPLAY_GAIN.minFactor, REPLAY_GAIN.maxFactor] (the ±6 dB band as a
+ * linear multiplier). The final ceiling widens to
+ * SMART_VOLUME.max × REPLAY_GAIN.maxFactor — the honest theoretical
+ * maximum — so a real +4 dB quiet-track boost SURVIVES the bus instead
+ * of being eaten by the old 1.05 write ceiling (the v4.3.1 lie, not
+ * repeated for the gain axis).
  */
-export function composeVolume(multiplier: number, fadeFactor: number): number {
+export function composeVolume(
+  multiplier: number,
+  fadeFactor: number,
+  gainFactor: number = 1.0,
+): number {
   const m = Math.max(0, Math.min(SMART_VOLUME.max, multiplier));
+  const g = Math.max(REPLAY_GAIN.minFactor, Math.min(REPLAY_GAIN.maxFactor, gainFactor));
   const f = Math.max(0, Math.min(1, fadeFactor));
-  const v = m * f;
-  return Math.max(0, Math.min(SMART_VOLUME.max, v));
+  const v = m * g * f;
+  return Math.max(0, Math.min(SMART_VOLUME.max * REPLAY_GAIN.maxFactor, v));
 }
 
 const factors = new Map<FadeOwner, number>();
 let multiplier = 1.0;
+let rgFactor = 1.0; // WAVE B B1 — the persistent ReplayGain factor (1.0 = untouched)
 let lastWritten = 1.0;
 
 function clamp01(v: number): number {
@@ -69,7 +89,7 @@ export function activeFadeFactor(): number {
 }
 
 function recompute(): void {
-  const v = composeVolume(multiplier, activeFadeFactor());
+  const v = composeVolume(multiplier, activeFadeFactor(), rgFactor);
   if (v === lastWritten) return;
   lastWritten = v;
   void TrackPlayer.setVolume(v).catch(() => undefined);
@@ -80,6 +100,19 @@ function recompute(): void {
  *  is real and must survive this gate (see composeVolume, v4.3.1). */
 export function setSmartVolumeMultiplier(m: number): void {
   multiplier = Math.max(0, Math.min(SMART_VOLUME.max, m));
+  recompute();
+}
+
+/** WAVE B B1 — ReplayGain reports the new track's persistent linear
+ *  gain factor (1.0 when the track has no baked loudness). Clamped to
+ *  the ±6 dB band; NaN/garbage degrades to exactly 1.0 (a broken gain
+ *  must never poison the write the way it would if the clamp let NaN
+ *  through). Persistent by design: nothing here fades or decays. */
+export function setReplayGainFactor(factor: number): void {
+  rgFactor =
+    typeof factor === 'number' && Number.isFinite(factor)
+      ? Math.max(REPLAY_GAIN.minFactor, Math.min(REPLAY_GAIN.maxFactor, factor))
+      : 1.0;
   recompute();
 }
 
@@ -117,5 +150,6 @@ export function activeFadeOwner(): FadeOwner | null {
 export function resetVolumeBusForTests(): void {
   factors.clear();
   multiplier = 1.0;
+  rgFactor = 1.0;
   lastWritten = 1.0;
 }

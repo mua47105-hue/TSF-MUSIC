@@ -317,6 +317,26 @@ export const SMART_VOLUME = {
   defaultOn: true,
 } as const;
 
+/** WAVE B B1 — ReplayGain (per-track loudness normalization from the
+ *  baked LUFS `l` column — the industry -14 LUFS streaming target; no
+ *  DSP, no servers: a pure lookup + a pure dB→linear conversion pushed
+ *  through the volume bus). The gain composes multiplicatively with
+ *  Smart Volume and the fades — it never races them. */
+export const REPLAY_GAIN = {
+  /** THE target — the streaming-industry loudness standard. */
+  targetLufs: -14,
+  /** The hard clamp: gain never boosts above +6 dB nor cuts below −6 dB
+   *  (a ±6 dB window is the ReplayGain convention — enough to tame the
+   *  quiet-indie → loud-EDM whiplash without pumping the stream). */
+  maxBoostDb: 6,
+  maxCutDb: 6,
+  /** Linear bounds derived from the clamp (10^(∓6/20), precomputed at
+   *  module load — deterministic, no drift): the bus clamps the gain
+   *  FACTOR to this band so a rogue factor cannot run away. */
+  minFactor: Math.pow(10, -6 / 20),
+  maxFactor: Math.pow(10, 6 / 20),
+} as const;
+
 /** FEATURE 2 — Crossfade / transition fade. RNTP v4.1.1 exposes NO
  *  crossfade API and its single ExoPlayer instance cannot overlap two
  *  streams, so this ships as a volume-automation fade with the honest

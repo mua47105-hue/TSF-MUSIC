@@ -32,11 +32,16 @@ import { DATASET } from './constants';
 import type { TrackFeatures } from './types';
 import { recordingKeyOf, titleKeyOf, clusterTitleKeyOf } from './bakedKeys';
 
-/** The baked row shape: e=energy, v=valence, d=danceability (0..1, 2dp). */
+/** The baked row shape: e=energy, v=valence, d=danceability (0..1, 2dp).
+ *  WAVE B B1: l = baked loudness in LUFS (negative dB reference) —
+ *  OPTIONAL: rows from bakes predating the column omit it, and
+ *  ReplayGain treats a missing `l` as "no loudness evidence"
+ *  (gain 0 dB ⇒ factor exactly 1.0 — the honest no-op). */
 export interface BakedFeatures {
   e: number;
   v: number;
   d: number;
+  l?: number;
 }
 
 interface BakedTableJSON {

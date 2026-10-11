@@ -23,6 +23,7 @@ import { getAutoplay } from '../storage/store';
 import { mindbeat } from '../ai/mindbeat';
 import { crossfadeTick, initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
+import { applyReplayGainForTrack } from './replayGain';
 import { initPlaybackRate } from './playbackRate';
 import { primePrewarm } from './prewarm';
 import { primeImagePrewarm } from './imagePrewarm';
@@ -90,6 +91,9 @@ export async function playbackService(): Promise<void> {
               // the multiplier here. THE TEN F3 — the persisted rate boots
               // lazily in the headless context (the provider never ran).
               applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: t.title, artist: t.artist }));
+              // WAVE B B1 — headless transitions get ReplayGain too (the
+              // UI provider may be dead; the bus stays the single writer).
+              applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: t.title, artist: t.artist }));
               initPlaybackRate();
               // MAGNUM OPUS F1/F3 — headless transitions prime the same
               // prewarm stores (idempotent per active id; the UI provider,
