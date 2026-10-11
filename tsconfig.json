@@ -3,7 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "module": "esnext"
   },
   "include": [
     "App.tsx",

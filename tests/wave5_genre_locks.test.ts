@@ -166,7 +166,12 @@ describe('F19 · source laws (PanResponder, filterClean playback, zero assets, l
   test('the door is registered LAZY in App.tsx (bar X5 — the cold path gains the pointer, never the module)', () => {
     const app = readFileSync('App.tsx', 'utf8');
     expect(app).toMatch(/name="GenreExplorer"/);
-    expect(app).toMatch(/getComponent=\{\(\) => require\('\.\/src\/screens\/GenreExplorer'\)\.GenreExplorer\}/);
+    // WAVE A (A3) migration: the door was getComponent(() => require(...)) —
+    // lazy EVALUATION inside one monolithic chunk. It now rides the app-wide
+    // React.lazy + asyncRoutes split (the module parses on first navigation
+    // AND lives outside the boot bundle — the same bar, stronger letter).
+    // The eager-import ban (next line) is unchanged and still enforced.
+    expect(app).toMatch(/const GenreExplorer = lazy\(\(\) => import\('\.\/src\/screens\/GenreExplorer'\)/);
     expect(app).not.toMatch(/import \{ GenreExplorer \} from '\.\/src\/screens\/GenreExplorer'/);
     const nav = readFileSync('src/screens/navigation.ts', 'utf8');
     expect(nav).toContain('GenreExplorer: undefined;');

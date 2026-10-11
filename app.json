@@ -6,6 +6,9 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "experiments": {
+      "asyncRoutes": true
+    },
     "backgroundColor": "#F4F1EA",
     "newArchEnabled": false,
     "splash": {
@@ -44,6 +47,11 @@
       "expo-sqlite",
       "./plugins/withWindowPolicy",
       "./plugins/withHermesFlags"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "ln": true
+      }
+    }
   }
 }

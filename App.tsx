@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Font from 'expo-font';
@@ -10,17 +10,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { PlayerProvider } from './src/player/PlayerProvider';
 import { ToastProvider } from './src/components/Toast';
 import { MiniPlayer } from './src/components/MiniPlayer';
+// WAVE A (A3) — SCREEN SPLITTING. The four boot-critical screens stay
+// EAGER (Front, Index, Crates, the Player modal — the surfaces a human
+// can reach in the first seconds). The other EIGHT ride React.lazy:
+// with metro asyncRoutes their modules parse on first navigation, not
+// at boot — the cold path gains only the lazy registrations, never the
+// work (the GenreExplorer's own getComponent idea, finally whole-app).
+// Every lazy screen mounts behind its own Suspense boundary so a chunk
+// loading can never blank the whole shell — the skeleton shows in the
+// screen's slot only (ScreenSkeleton: honest "arriving", no fake rows).
+const StatsScreen = lazy(() => import('./src/screens/StatsScreen').then((m) => ({ default: m.StatsScreen })));
+const TasteScreen = lazy(() => import('./src/screens/TasteScreen').then((m) => ({ default: m.TasteScreen })));
+const GenreExplorer = lazy(() => import('./src/screens/GenreExplorer').then((m) => ({ default: m.GenreExplorer })));
+const MindbeatWireScreen = lazy(() => import('./src/screens/MindbeatWireScreen').then((m) => ({ default: m.MindbeatWireScreen })));
+const CollectionScreen = lazy(() => import('./src/screens/CollectionScreen').then((m) => ({ default: m.CollectionScreen })));
+const PlaylistScreen = lazy(() => import('./src/screens/PlaylistScreen').then((m) => ({ default: m.PlaylistScreen })));
+const PremiumScreen = lazy(() => import('./src/screens/PremiumScreen').then((m) => ({ default: m.PremiumScreen })));
+const AIScreen = lazy(() => import('./src/screens/AIScreen').then((m) => ({ default: m.AIScreen })));
 import { HomeScreen } from './src/screens/HomeScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
-import { MindbeatWireScreen } from './src/screens/MindbeatWireScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
-import { PremiumScreen } from './src/screens/PremiumScreen';
-import { CollectionScreen } from './src/screens/CollectionScreen';
-import { PlaylistScreen } from './src/screens/PlaylistScreen';
-import { StatsScreen } from './src/screens/StatsScreen';
-import { TasteScreen } from './src/screens/TasteScreen';
-import { AIScreen } from './src/screens/AIScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
+import { ScreenSkeleton } from './src/components/ScreenSkeleton';
 import { DynamicThemeProvider } from './src/theme/DynamicThemeProvider';
 import { WhatsNewDialog } from './src/components/WhatsNewDialog';
 import { Onboarding } from './src/components/Onboarding';
@@ -98,7 +109,13 @@ function TabsScreen() {
         <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Search" component={SearchScreen} />
         <Tab.Screen name="Library" component={LibraryScreen} />
-        <Tab.Screen name="Wire" component={MindbeatWireScreen} />
+        <Tab.Screen name="Wire">
+          {() => (
+            <Suspense fallback={<ScreenSkeleton />}>
+              <MindbeatWireScreen />
+            </Suspense>
+          )}
+        </Tab.Screen>
       </Tab.Navigator>
       {/* PULSE mini player: ink bar floating above the tab bar */}
       <View style={[styles.miniWrap, { bottom: 66 + insets.bottom + 6 }]}>
@@ -164,43 +181,78 @@ export default function App() {
                 <Stack.Screen name="Tabs" component={TabsScreen} />
                 <Stack.Screen
                   name="Collection"
-                  component={CollectionScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <CollectionScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="Playlist"
-                  component={PlaylistScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <PlaylistScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="Stats"
-                  component={StatsScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <StatsScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="Taste"
-                  component={TasteScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <TasteScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="AI"
-                  component={AIScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <AIScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="Premium"
-                  component={PremiumScreen}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <PremiumScreen />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 {/* MAGNUM OPUS F19 — the genre map (seeded, deterministic).
-                    LAZY on purpose: getComponent defers the module's
-                    evaluation to first navigation — the cold path gains
-                    the registration, never the work (bar X5). */}
+                    LAZY twice over: React.lazy (A3) defers the module's
+                    parse to first navigation — the cold path gains the
+                    registration, never the work (bar X5). */}
                 <Stack.Screen
                   name="GenreExplorer"
-                  getComponent={() => require('./src/screens/GenreExplorer').GenreExplorer}
                   options={{ animation: 'slide_from_right' }}
-                />
+                >
+                  {() => (
+                    <Suspense fallback={<ScreenSkeleton />}>
+                      <GenreExplorer />
+                    </Suspense>
+                  )}
+                </Stack.Screen>
                 <Stack.Screen
                   name="Player"
                   component={PlayerScreen}
