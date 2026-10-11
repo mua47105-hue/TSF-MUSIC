@@ -2225,3 +2225,100 @@ Stage Summary:
   1000 → 1042/0 (+42 locks, 4,598 → 4,710 expects); tsc 0
   throughout; zero new dependencies; zero regressions.
 - Commits: 2a0bda0 (C1), b426875 (C2), b937159 (C3) on origin/main.
+
+---
+Task ID: WAVE D (visual polish)
+Agent: Super Z (main agent)
+Task: Wave D of the improvement arc — D1 Album Art Parallax on Scroll.
+GAUNTLET: BUILD → LOCK → MUTATE (≥2, all RED, byte-exact reverts,
+porcelain proof) → COMMIT → PUSH.
+
+Work Log:
+- GATE: "Do not start until Wave C is pushed" — verified via git fetch:
+  origin/main = 70cfebe carries Wave C (C1 2a0bda0, C2 b426875,
+  C3 b937159) atop Wave B (aca4b8a) and Wave A (A1–A4). Local
+  ff-pulled 51cf33e → 70cfebe, tree clean. Gate SATISFIED.
+- BASELINE: tsc 0; bun test 1042/0 (4,710 expects, 83 files).
+- READ-FIRST ground truth: Artwork.tsx is the PULSE square primitive
+  (memo'd, 1.5px ink border, hatch fallback); shelf cards live in
+  Shelf.tsx (coverWrap carries border + hardShadow + the overhanging
+  play FAB); HomeScreen is ONE windowed FlatList whose shelves sit in
+  the ListHeaderComponent + FeedAlbumShelf rows; LibraryScreen has the
+  2-col grid cells + 48px list rows; dataSaverActive() is a module flag
+  with a live subscription (audioQuality.ts); AuraVisualizer sets the
+  pure-gate precedent. RN ground truth probed in node_modules: core
+  Animated has NO Animated.clamp node on this RN (diffClamp only) and
+  ListHeaderComponent emits NO view tokens (VirtualizedList builds
+  tokens from data indices only) — both constraints shaped the design.
+- D1 BUILD: PARALLAX constants (factor 0.15, capPx 20,
+  itemVisiblePercentThreshold 15). NEW src/components/ParallaxArtwork.tsx
+  — the pure gate parallaxMode(reduceMotion, dataSaver, visible) (the
+  auraMode precedent) + parallaxOffset(scrollY) = clamp(scrollY × 0.15,
+  ±20) as the SPEC the native chain mirrors: an interpolation over
+  ±(capPx/factor) with extrapolate 'clamp' (the native-driver-safe
+  clamp), fed by the screen's shared Animated.Value written by
+  Animated.event(..., { useNativeDriver: true }) — zero JS frames per
+  scroll event. GAP-FREE DRIFT: the inner art renders oversized by
+  2×capPx (centered) and is clipped by the bordered frame; the honest
+  trade (the visible crop is the centre ~(size−2·cap)/size of the art,
+  the physics of a fully-covering moving image) is disclosed in the
+  module header. GATES: AccessibilityInfo.isReduceMotionEnabled read on
+  mount + tracked LIVE via reduceMotionChanged (X5); dataSaverActive()
+  + subscribeDataSaver (X6); the owning list's viewability gate
+  (visible rows only) — all three live, and ANY closed gate renders the
+  plain Artwork bit-identically (zero regression surface). No
+  Animated.clamp exists ⇒ no API risk; no interval/rAF ⇒ no JS loop.
+- WIRING: Shelf.tsx ShelfCard gains optional parallaxScrollY +
+  parallaxVisible — renders ParallaxArtwork ONLY when handed a scroll
+  value, else the plain primitive (every other consumer bit-identical).
+  HomeScreen: the feed FlatList drives scrollY via Animated.event +
+  useNativeDriver: true + scrollEventThrottle 16; viewabilityConfig
+  (15% item threshold) tracks rows; FeedAlbumShelf rows gate per-row;
+  the header shelves ride the 'fh-0' first-feed-row proxy (headers
+  emit no view tokens — documented); all 8 HomeHeader ShelfCard sites
+  spread the gate. LibraryScreen: grid cells render ParallaxArtwork
+  behind the same gate; the 48px list rows stay static (sub-50px art,
+  the effect is invisible there — disclosed); visibleRows reset on
+  chip/grid flips (the key={} remount re-fires tokens). ArtistCard +
+  QuickTile intentionally static (the brief names shelf cards and grid
+  cells only).
+- D1 LOCK: tests/waved_d1_parallax_locks.test.ts — 21 locks in 4
+  evidence classes: THE BAR literals (0 → 0, 100 → 15, cap engages
+  exactly at capPx/factor, ±20 holds, monotone); the gates as pure
+  literals (each of Reduce Motion / Data Saver / invisible-row
+  sufficient alone, composing); the 60fps mechanism as source laws
+  (Animated.event + useNativeDriver: true + throttle 16 in BOTH
+  screens, the native clamped interpolation carrying the same
+  PARALLAX numbers, no JS frame loop, no Math.random); the wiring
+  (header proxy 'fh-0', per-row gate, ShelfCard's dual branch, mount
+  isolation — import EDGES prove exactly Shelf + LibraryScreen adopt
+  the module, HomeScreen never imports it). Suite → 1063/0
+  (4,775 expects, 84 files), tsc 0.
+- COLLISION HONESTLY FIXED, NOT WEAKENED: my module comments named the
+  PseudoVisualizer idiom — which tripped the wave3 mount-isolation
+  source law (grep for PseudoVisualizer must hit ONLY the player
+  files). Existing locks are law; the comments were reworded
+  ("the visualizer's live reduce-motion idiom").
+- D1 MUTATIONS (all RED, byte-exact reverts, cmp+md5-proven,
+  porcelain shows exactly the wave's own files after each):
+  M-D1-1 useNativeDriver true→false in LibraryScreen → 1 fail;
+  M-D1-2 the Reduce Motion branch removed → 1 fail;
+  M-D1-3 viewabilityConfig removed from the Home feed FlatList →
+  1 fail. BONUS third mutation per the brief's ≥2 floor.
+- D1 COMMIT 209c424; this wave commit carries the mandated message.
+- X-BARS: X1 tsc 0 + bun test 0 fail at every step. X2 zero regression
+  — 1042/0 → 1063/0, the only delta is this wave's 21 locks. X3 zero
+  new runtime dependencies (Animated + AccessibilityInfo are RN
+  built-ins). X4 potato-phone budget: native-driver-only, transform-
+  only, no per-frame JS anywhere in the feature (source-locked);
+  offscreen rows never attach a transform (viewability-gated). X5
+  Reduce Motion respected, live. X6 Data Saver respected, live.
+
+Stage Summary:
+- Wave D SHIPPED: D1 the parallax covers (native-driver drift
+  translateY = clamp(scrollY × 0.15, ±20), three live gates, gap-free
+  overscan, bit-identical fallback).
+- 3 mutations, all RED, all byte-exact reverts; suite 1042 → 1063/0
+  (+21 locks, 4,710 → 4,775 expects); tsc 0 throughout; zero new
+  dependencies; zero regressions.
+- Commits: 209c424 (D1) on origin/main.
