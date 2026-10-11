@@ -64,6 +64,8 @@ import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
 import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queueOptimizer';
 import { QUEUE_VIBE, SESSION_MEMORY } from '../ai/core/constants';
+// WAVE A (A4) — the queue survives the kill: debounced persistence + boot restore.
+import { createQueueSaver, loadQueue, makeAsyncStorageDeps } from './queuePersistence';
 import { shouldSnapshot } from '../ai/sessionMemory';
 import { getAppTables } from '../storage/appTables';
 import { primeImagePrewarm, refreshNetworkKind } from './imagePrewarm';
@@ -194,6 +196,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const booted = useRef(false);
   const surfaceRef = useRef<SourceSurface>('user_queue');
   const pendingSkip = useRef(false);
+  // WAVE A (A4) — the boot restore handoff: the id of the row that was
+  // ACTIVE when the app last died. togglePlay consumes it ONCE (play
+  // resumes at the same song), then it is gone — never a stale target.
+  const restoredActiveIdRef = useRef<string | null>(null);
+  // the A4 saver is created on FIRST USE (never during provider mount —
+  // the boot path gains nothing) and lives for the provider's lifetime
+  const queueSaverRef = useRef<ReturnType<typeof createQueueSaver> | null>(null);
+  const getQueueSaver = () => {
+    if (!queueSaverRef.current) queueSaverRef.current = createQueueSaver(makeAsyncStorageDeps());
+    return queueSaverRef.current;
+  };
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -213,6 +226,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       try {
         await ensureSetup();
         await refreshQueue();
+        // WAVE A (A4) — if the ENGINE came up empty (a real app kill, not
+        // just a backgrounded service), the persisted queue answers: the
+        // sheet mirrors the saved room and togglePlay resumes at the SAME
+        // song via the restored-active handoff. If RNTP still held the
+        // queue (service survived the kill), the engine wins — never a
+        // duplicated or clobbered queue.
+        const engineQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+        if (!engineQueue.length) {
+          const saved = await loadQueue(makeAsyncStorageDeps());
+          if (saved) {
+            restoredActiveIdRef.current = saved.activeId;
+            setQueue(saved.tracks);
+          }
+        }
       } catch {
         /* first cold start: empty queue */
       }
@@ -247,6 +274,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         void mindbeat.appActive();
       } else if (state === 'background') {
         void mindbeat.appBackground();
+        // WAVE A (A4) — a backgrounding flushes the pending debounced save:
+        // the OS may kill the process before the 500ms fuse burns.
+        void getQueueSaver().flush().catch(() => undefined);
         // MAGNUM OPUS F15 — SESSION MEMORY: snapshot on background, only
         // when the session carried ≥ SESSION_MEMORY.minTracks tracks
         // (a 2-song drive is not a session worth remembering). FIFO cap
@@ -363,6 +393,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (now && !wasPlayingRef.current) perfMark('audio-playing', String(active?.id ?? ''));
     wasPlayingRef.current = now;
   }, [state, active?.id]);
+
+  // WAVE A (A4) — EVERY queue mutation lands here (playQueue, add/remove,
+  // shuffle, vibe walk, service resync — they all converge on `queue`),
+  // plus every engine auto-advance (the active row moved — the restore
+  // target moved with it). Debounced 500ms: a burst of taps costs ONE
+  // write. The empty guard is the saver's own law — a blank queue is
+  // never persisted, so the boot restore can never be overwritten by a
+  // pre-hydration empty state.
+  useEffect(() => {
+    if (!queue.length) return;
+    getQueueSaver().save(queue, active?.id ?? null);
+  }, [queue, active?.id]);
 
   async function buildPlayable(tracks: Track[]): Promise<RNTrack[]> {
     const downloads = await getDownloadIndex();
@@ -628,7 +670,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       await ensureSetup();
       const current = await TrackPlayer.getActiveTrackIndex();
       if (current == null) {
-        if (queue.length) await playQueue(queue, 0);
+        if (queue.length) {
+          // WAVE A (A4) — a restored queue resumes at the SONG the listener
+          // left (the one-shot boot handoff), never at a random position.
+          // The rows ride the EXISTING buildPlayable ladder (their stream
+          // fields were stripped before persisting — house rule 14 — so
+          // resolution answers fresh, exactly like any rebuilt queue).
+          const idx = restoredActiveIdRef.current
+            ? queue.findIndex((t) => t.id === restoredActiveIdRef.current)
+            : 0;
+          restoredActiveIdRef.current = null;
+          await playQueue(queue, Math.max(0, idx));
+        }
         return;
       }
       if (isPlaying) await TrackPlayer.pause();

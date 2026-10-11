@@ -975,3 +975,20 @@ export const HERMES = {
 export const YT_CIPHER = {
   ttlMs: 6 * 60 * 60 * 1000,
 } as const;
+
+/** WAVE A (A4) — the offline queue. The playing queue persists to
+ *  AsyncStorage (`tsf.queue.v1`) so a killed app restores its queue
+ *  instead of waking up mute. Caps keep the payload lean on potato
+ *  phones: 50 tracks max (stored as a window around the active row —
+ *  the upcoming list is the payload that matters), a 24h freshness TTL
+ *  (yesterday's queue is not a promise), and a 500ms debounce so a
+ *  rapid-fire mutation burst costs one write, not ten. Stream URLs are
+ *  stripped before persisting (house rule 14 — they are IP-bound,
+ *  time-limited lies); tap-time resolution re-answers. */
+export const QUEUE_PERSIST = {
+  maxTracks: 50,
+  ttlMs: 24 * 60 * 60 * 1000,
+  debounceMs: 500,
+  /** Rows kept BEFORE the active track inside the capped window. */
+  activeBackfill: 10,
+} as const;
