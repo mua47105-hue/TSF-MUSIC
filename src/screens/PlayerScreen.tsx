@@ -291,6 +291,7 @@ export function PlayerScreen() {
     removeFromQueue,
     refreshQueue,
     optimizeQueueByVibe,
+    playNext,
   } = usePlayer();
 
   const { position, duration: liveDuration } = useProgress(250);
@@ -452,6 +453,39 @@ export function PlayerScreen() {
     [active, reloadBookmarks, toast],
   );
   const [showQueue, setShowQueue] = useState(false);
+  // Wave C · C3 — the kill switch reads when the sheet opens: the
+  // Surprise Me button exists ONLY while intelligence is on (§5.6).
+  const [intelOff, setIntelOff] = useState(false);
+  useEffect(() => {
+    if (!showQueue) return;
+    let alive = true;
+    void mindbeat.isDisabled().then((off) => {
+      if (alive) setIntelOff(off);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [showQueue]);
+  const [surpriseBusy, setSurpriseBusy] = useState(false);
+  const surpriseMe = useCallback(() => {
+    if (surpriseBusy) return;
+    setSurpriseBusy(true);
+    void (async () => {
+      try {
+        const pick = await mindbeat.surprisePick(queue.map((t) => t.id));
+        if (!pick) {
+          toast.show({ message: 'NO SURPRISE FOUND — PLAY MORE MUSIC FIRST', icon: 'information-circle-outline' });
+          return;
+        }
+        await playNext(pick);
+        toast.show({ message: 'Playing a surprise pick — see if it sticks', icon: 'sparkles-outline' });
+      } catch {
+        toast.show({ message: 'THE SURPRISE GOT AWAY — TRY AGAIN', icon: 'alert-outline' });
+      } finally {
+        setSurpriseBusy(false);
+      }
+    })();
+  }, [queue, playNext, surpriseBusy, toast]);
   const [showSleep, setShowSleep] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [radioLoading, setRadioLoading] = useState(false);
@@ -1316,6 +1350,31 @@ export function PlayerScreen() {
               </MonoText>
             )}
 
+            {/* WAVE C · C3 — "✨ SURPRISE ME": one track that fits the
+                vibe but comes from an artist/genre you never visit.
+                Hidden entirely under the intelligence kill switch —
+                a surprise the user opted out of is not a surprise. */}
+            {!intelOff ? (
+              <Pressable
+                testID="surprise-me-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Play a surprise pick that breaks your filter bubble"
+                onPress={surpriseMe}
+                disabled={surpriseBusy}
+                style={({ pressed }) => [
+                  styles.vibeSortBtn,
+                  styles.surpriseBtn,
+                  pressed && { opacity: 0.6 },
+                  surpriseBusy && { opacity: 0.4 },
+                ]}
+              >
+                <Ionicons name="sparkles" size={14} color={colors.ink} />
+                <MonoText size={9} bold color={colors.ink} style={{ letterSpacing: 1.6 }}>
+                  {surpriseBusy ? 'PICKING…' : '✨ SURPRISE ME'}
+                </MonoText>
+              </Pressable>
+            ) : null}
+
             {/* MAGNUM OPUS F18 — SHARE AS CONCERT: the queue + a synced
                 start travel as ONE base64url code (no server, no room
                 service — the code IS the room). The ±500ms clock-drift
@@ -1945,6 +2004,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     marginTop: 12,
+  },
+  surpriseBtn: {
+    borderColor: colors.orange,
+    backgroundColor: colors.paper,
   },
   vibeSortNote: {
     letterSpacing: 0.8,

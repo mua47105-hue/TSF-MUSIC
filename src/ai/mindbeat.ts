@@ -25,6 +25,7 @@ import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
 import { buildRadioV2 } from './surfaces/radio';
 import { buildShuffleRecs } from './surfaces/shuffle';
+import { pickSurprise, topGenres } from './surfaces/surpriseMe';
 import { buildDailyMixesV2, shouldRefreshMixes, type DailyMixV2 } from './surfaces/mixes';
 import { buildWeeklyCrate, weekKeyOf } from './surfaces/weekly';
 import { buildNowSound, type NowSoundCard } from './surfaces/daylist';
@@ -581,6 +582,47 @@ class Mindbeat {
       return await buildShuffleRecs(ctx, upcoming, { healFrom: healFrom ?? null });
     } catch {
       return [];
+    }
+  }
+
+  /** Wave C · C3 — ONE track that fits the vibe while breaking the
+   *  bubble. Kill-switch honored (disabled → null, the button hides);
+   *  the pool probes AWAY from the profile's top genres, the pure
+   *  pickSurprise enforces the four constraints deterministically. */
+  async surprisePick(excludeIds: string[] = []): Promise<Track | null> {
+    await this.ready();
+    if (this.disabled || !this.ledger) return null;
+    const ctx = this.surfaceCtx();
+    try {
+      // the pool: probe queries seeded by the genres OUTSIDE the top-5
+      // (the bubble breakers) + a fixed discovery ladder as the floor
+      const top = new Set(topGenres(this.profile, 5));
+      const away = Object.keys(this.profile.genres)
+        .map((g) => g.trim().toLowerCase())
+        .filter((g) => g && !top.has(g))
+        .slice(0, 3);
+      const probes = [...away, 'indie india songs', 'lofi songs', 'regional hits'];
+      const pool: Track[] = [];
+      const seen = new Set<string>();
+      for (const q of probes) {
+        try {
+          for (const t of await CATALOG.search(q, 15)) {
+            if (!seen.has(t.id)) {
+              seen.add(t.id);
+              pool.push(t);
+            }
+          }
+        } catch {
+          /* one dead probe never kills the surprise */
+        }
+      }
+      if (!pool.length) return null;
+      return pickSurprise(ctx.profile, ctx.session, pool, {
+        now: Date.now(),
+        excludeIds,
+      });
+    } catch {
+      return null;
     }
   }
 
