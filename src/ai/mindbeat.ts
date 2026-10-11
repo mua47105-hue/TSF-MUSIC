@@ -14,6 +14,7 @@ import { createLedgerStore } from './core/storeSqlite'; // web → storeMemory v
 import { SessionBrain } from './core/session';
 import { estimateFeatures, calibrate, setLyricDeltaProvider } from './core/features';
 import { loadFeatureTable, lookupBakedFeatures } from './core/featureTable';
+import { loadHindiLexicon } from './core/hindiLexicon';
 import { Bandit } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
 import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
@@ -130,6 +131,9 @@ class Mindbeat {
     const run = (async () => {
       // 1. the baked knowledge table (the parse-once → Map → release path)
       await loadFeatureTable();
+      // 1b. Wave C · C1 — the IITB Hindi sentiment lexicon (lazy require
+      // of a ~8KB-gz asset; feeds tokenScore's 0.6-weight tier)
+      loadHindiLexicon();
       // 2. the bandit arms (kv read + eviction)
       await this.bandit.hydrate();
       // 3. the lyric-delta cache + its estimator provider

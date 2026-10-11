@@ -18,6 +18,7 @@
 
 import { LYRIC_MOOD } from './constants';
 import { ROMANIZED_MOOD } from './romanizedMood';
+import { iitbScore } from './hindiLexicon';
 import type { TrackFeatures } from './types';
 import { clamp } from './time';
 
@@ -63,11 +64,19 @@ function tokenize(line: string): string[] {
     .filter((t) => t.length > 1);
 }
 
-/** Lexicon score for one token in −1..1 (romanized table wins ties — it
- *  is the domain-specific reading; VADER normalizes by /4). */
+/**
+ * Lexicon score for one token in −1..1. Three tiers, most-trusted
+ * first (Wave C · C1): the hand-curated romanized table (weight 1.0 —
+ * it is the domain-specific lyric reading) → the IITB HSWN expansion
+ * (weight 0.6, lazy-loaded post-paint) → VADER (English, /4). A word
+ * the IITB table knows that VADER doesn't now scores instead of
+ * falling through to null — that is the whole point of the expansion.
+ */
 export function tokenScore(token: string): number | null {
   const rom = ROMANIZED_MOOD[token];
   if (rom !== undefined) return rom;
+  const iitb = iitbScore(token);
+  if (iitb !== null) return clamp(iitb, -1, 1);
   const v = vader?.[token];
   if (v !== undefined) return clamp(v / 4, -1, 1);
   return null;
