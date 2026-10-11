@@ -181,13 +181,17 @@ def main():
             "V510-B4 AUDIO BOOKMARKS service": "createBookmarks",
             "V510-B5 AUDIO BOOKMARKS classifier": "classifyPress",
             "V510-B6 BOOKMARKS LIST view (new in 5.1.0)": "Your bookmarks for this song",
-            "V510-B7 honest bookmarks empty state (new)": "NO BOOKMARKS YET",
-            "V510-B8 honest memory empty state (new)": "NO MEMORY YET",
+            "V510-B7 honest bookmarks empty state (new)": "NO BOOKMARKS YET \u2014 HOLD THE PROGRESS BAR WHILE PLAYING TO PIN ONE",
+            "V510-B8 honest memory empty state (new)": "NO MEMORY YET \u2014 YOUR NOTE STAYS ON THIS DEVICE",
             "V510-B9 pure row label (new)": "bookmarkTimeLabel",
             "V510-B10 user-content database": "appcontent.db",
-            "V510-B11 stories table": "song_stories",
-            "V510-B12 bookmarks table": "idx_bookmarks_track",
-            "V510-B13 stale-response guard (new)": "bmReqRef",
+            "V510-B11 stories table": "DELETE FROM song_stories WHERE recordingKey = ?",
+            "V510-B12 bookmarks table": "INSERT OR REPLACE INTO bookmarks (id, recordingKey, positionMs, note, createdAt) VALUES (?,?,?,?,?)",
+            # bmReqRef is a MINIFIED-AWAY local (the v4.3 lesson: only string
+            # literals + property names survive) — the stale-response guard
+            # itself is locked by the bun suite (wave_v510 locks). The APK bar
+            # proves the per-row delete affordance rode the bundle instead.
+            "V510-B13 per-row delete affordance (new)": "bookmark-del-",
         }
         for name, marker in memory.items():
             check(name, marker in sset)
