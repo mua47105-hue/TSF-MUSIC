@@ -963,3 +963,15 @@ export const HERMES = {
   /** Metro transform — inline requires ON (expo default false). */
   inlineRequires: true,
 } as const;
+
+/** WAVE A (A2) — the YouTube cipher cache. The parsed base.js decipher
+ *  program (~1-2KB of JS) persists across cold boots so the DAILY cold
+ *  boot skips the ~300KB player-JS fetch + regex parse and goes straight
+ *  to function construction. ttlMs mirrors the charts/home-feed 6-hour
+ *  freshness class: YouTube rotates the player JS when it ships a new
+ *  player build, and a stale program self-heals — the decipher eval
+ *  falls back to a fresh fetch, so the TTL trades at most one wasted
+ *  boot-time hit for 6 hours of skipped downloads. */
+export const YT_CIPHER = {
+  ttlMs: 6 * 60 * 60 * 1000,
+} as const;

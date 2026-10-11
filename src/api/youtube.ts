@@ -23,6 +23,8 @@
 
 import type { Track } from '../types';
 import { recordingKey, reconcileRecordings } from './recording';
+// WAVE A (A2) — the cold-boot cipher cache (parsed base.js program).
+import { loadCipherCache, saveCipherCache, makeAsyncStorageDeps } from './ytCipherCache';
 
 // ── client registry (ONE place to update when YouTube rotates shapes) ──
 // Refreshed 2026-02 against the OSS playback ecosystem (yt-dlp PO-Token-Guide
@@ -761,6 +763,21 @@ function balancedFrom(src: string, openIdx: number): string | null {
  *  on EVERY invocation (the rung was silently dead code). */
 async function getDecipherer(jsPath: string): Promise<(s: string) => string> {
   if (decipherCache && decipherCache.jsPath === jsPath) return decipherCache.fn;
+  // WAVE A (A2) — the cold-boot cache: the parsed program (≈1-2KB) rides
+  // the KV so a daily cold boot skips the ~300KB fetch + parse. Order:
+  // RAM cache (above) → KV cache (here) → fetch (below). EVERY cache
+  // failure — miss, expiry, corrupt payload, a body that refuses to
+  // eval — degrades to the fetch: the cache only ever saves work.
+  try {
+    const cached = await loadCipherCache(makeAsyncStorageDeps(), jsPath);
+    if (cached) {
+      const fn = new Function('s', cached.body) as (s: string) => string;
+      decipherCache = { jsPath, fn };
+      return fn;
+    }
+  } catch {
+    /* cache read/eval failure → the fetch path answers, as always */
+  }
   const res = await ytFetch(`https://www.youtube.com${jsPath}`);
   if (!res.ok) throw new Error(`player js http ${res.status}`);
   const js = await res.text();
@@ -800,8 +817,17 @@ async function getDecipherer(jsPath: string): Promise<(s: string) => string> {
     if (objSrc) break;
   }
   // assemble: helper object decl + the fn VERBATIM from the source, then call it
-  const fn = new Function('s', `${objSrc}${fullFn}; return ${fnName}(s);`) as (s: string) => string;
+  const body = `${objSrc}${fullFn}; return ${fnName}(s);`;
+  const fn = new Function('s', body) as (s: string) => string;
   decipherCache = { jsPath, fn };
+  // WAVE A (A2) — persist the parsed program for the NEXT cold boot
+  // (best-effort: a failed save costs one re-download tomorrow, nothing
+  // today — the current resolution already succeeded).
+  try {
+    await saveCipherCache(makeAsyncStorageDeps(), jsPath, body);
+  } catch {
+    /* best-effort persistence — never blocks resolution */
+  }
   return fn;
 }
 
@@ -944,5 +970,6 @@ export async function ytStreamUrlForTrack(track: Track): Promise<string | null> 
 export function clearYtCaches(): void {
   streamCache.clear();
   clientHealth.clear();
+  decipherCache = null; // WAVE A (A2): the RAM decipher drains too — the hook must simulate a COLD BOOT (the KV-persisted program deliberately survives; that is the point)
   lastTrail = [];
 }
