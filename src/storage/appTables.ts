@@ -41,6 +41,19 @@ import {
   type MemoryTagsStore,
   type MemoryTag,
 } from './memoryTags';
+import {
+  createIndexedStories,
+  createIndexedMemoryTags,
+  noteEntryKey,
+  ftsQueryFor,
+  snippetFor,
+  MIN_NOTE_QUERY_CHARS,
+  type NotesIndex,
+  type NoteEntry,
+  type PersonalNoteHit,
+} from './noteIndex';
+
+export type { NotesIndex, NoteEntry, PersonalNoteHit };
 
 /** Parse a JSON array column defensively (corrupt row ≠ dead read path). */
 function safeParseArray<T>(raw: string): T[] {
@@ -90,6 +103,16 @@ CREATE TABLE IF NOT EXISTS session_snapshots (
 );
 `;
 
+// Wave C · C2 — the full-text index over the user's own words. The
+// brief's sketch listed recording_key twice (once searchable, once
+// UNINDEXED — invalid SQL, duplicate column): the working schema keeps
+// recording_key + note_text + source SEARCHABLE (THE BAR's "heartbreak"
+// example matches a story through its recording identity) and adds an
+// UNINDEXED entry_key so deletes/upserts can target exactly one row.
+const NOTES_FTS_SCHEMA = `CREATE VIRTUAL TABLE IF NOT EXISTS personal_notes_fts USING fts5(
+  recording_key, note_text, source, UNINDEXED(entry_key)
+);`;
+
 export interface AppTables {
   stories: SongStoriesService;
   bookmarks: BookmarksService;
@@ -97,6 +120,8 @@ export interface AppTables {
   sessions: SessionSnapshotsService;
   /** F20 (LITE) — the listener's tagged moments. */
   memoryTags: MemoryTagsService;
+  /** Wave C · C2 — full-text search over stories + memory-tag notes. */
+  notes: NotesIndex;
 }
 
 let instance: Promise<AppTables> | null = null;
@@ -109,6 +134,107 @@ export function getAppTables(): Promise<AppTables> {
       await db.execAsync(`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;`);
       await db.execAsync(SCHEMA);
 
+      // ── Wave C · C2: the FTS5 index over the user's own words ──
+      // expo-sqlite compiles with -DSQLITE_ENABLE_FTS5=1; if a build
+      // ever ships without it, the honest degradation is a LIKE scan
+      // over the (capped) source tables — the feature never dies.
+      let fts = false;
+      try {
+        await db.execAsync(NOTES_FTS_SCHEMA);
+        fts = true;
+      } catch {
+        fts = false;
+      }
+
+      const sqliteNotesIndex = (useFts: boolean): NotesIndex => ({
+        async upsert(entry: NoteEntry) {
+          if (!useFts) return; // the LIKE fallback reads the source tables
+          await db.runAsync(
+            `DELETE FROM personal_notes_fts WHERE entry_key = ?`,
+            [entry.entryKey],
+          );
+          await db.runAsync(
+            `INSERT INTO personal_notes_fts (recording_key, note_text, source, entry_key) VALUES (?,?,?,?)`,
+            [entry.recordingKey, entry.text, entry.source, entry.entryKey],
+          );
+        },
+        async remove(entryKey) {
+          if (!useFts) return;
+          await db.runAsync(`DELETE FROM personal_notes_fts WHERE entry_key = ?`, [entryKey]);
+        },
+        async search(query, limit = 8) {
+          if (String(query ?? '').trim().length < MIN_NOTE_QUERY_CHARS) return [];
+          if (!useFts) {
+            // honest LIKE fallback (potato-safe: capped tables)
+            const like = `%${String(query).trim().toLowerCase()}%`;
+            const rows = await db.getAllAsync<{ recording_key: string; note_text: string; source: string }>(
+              `SELECT recordingKey AS recording_key, text AS note_text, 'story' AS source FROM song_stories WHERE lower(text) LIKE ?
+               UNION ALL
+               SELECT recordingKey AS recording_key, note AS note_text, 'memory_tag' AS source FROM memory_tags WHERE lower(note) LIKE ?
+               LIMIT ?`,
+              [like, like, limit],
+            );
+            return rows.map((r) => ({
+              entryKey: noteEntryKey(r.source as 'story' | 'memory_tag', r.recording_key),
+              recordingKey: r.recording_key,
+              text: r.note_text,
+              source: r.source as 'story' | 'memory_tag',
+              snippet: snippetFor(r.note_text, query),
+            }));
+          }
+          const match = ftsQueryFor(query);
+          if (!match) return [];
+          const rows = await db.getAllAsync<{
+            recording_key: string;
+            note_text: string;
+            source: string;
+            snip: string;
+          }>(
+            `SELECT recording_key, note_text, source,
+                    snippet(personal_notes_fts, 1, '', '', '…', 12) AS snip
+             FROM personal_notes_fts WHERE personal_notes_fts MATCH ?
+             ORDER BY rank LIMIT ?`,
+            [match, limit],
+          );
+          return rows.map((r) => ({
+            entryKey: noteEntryKey(r.source as 'story' | 'memory_tag', r.recording_key),
+            recordingKey: r.recording_key,
+            text: r.note_text,
+            source: r.source as 'story' | 'memory_tag',
+            snippet: r.snip || snippetFor(r.note_text, query),
+          }));
+        },
+        async count() {
+          if (!useFts) {
+            const r = await db.getFirstAsync<{ c: number }>(
+              `SELECT (SELECT COUNT(*) FROM song_stories) + (SELECT COUNT(*) FROM memory_tags WHERE note != '') AS c`,
+            );
+            return r?.c ?? 0;
+          }
+          const r = await db.getFirstAsync<{ c: number }>(`SELECT COUNT(*) AS c FROM personal_notes_fts`);
+          return r?.c ?? 0;
+        },
+      });
+      const notesIndex = sqliteNotesIndex(fts);
+
+      if (fts) {
+        // one-time migration: an empty index with populated source
+        // tables means the C2 upgrade just landed — backfill once
+        const c = await db.getFirstAsync<{ c: number }>(`SELECT COUNT(*) AS c FROM personal_notes_fts`);
+        if ((c?.c ?? 0) === 0) {
+          await db.runAsync(
+            `INSERT INTO personal_notes_fts (recording_key, note_text, source, entry_key)
+             SELECT recordingKey, text, 'story', 'story:' || recordingKey FROM song_stories`,
+          );
+          await db.runAsync(
+            `INSERT INTO personal_notes_fts (recording_key, note_text, source, entry_key)
+             SELECT recordingKey, note, 'memory_tag', 'tag:' || id FROM memory_tags WHERE note IS NOT NULL AND note != ''`,
+          );
+        }
+      }
+
+      // Wave C · C2 — the stores below are INDEXED: every write (user
+      // save or service LRU eviction) keeps the index in sync for free.
       const storiesStore: SongStoriesStore = {
         async getStory(key) {
           const row = await db.getFirstAsync<{
@@ -196,11 +322,15 @@ export function getAppTables(): Promise<AppTables> {
         },
       };
 
+      const indexedStoriesStore = createIndexedStories(storiesStore, notesIndex);
+      const indexedTagsStore = createIndexedMemoryTags(memoryTagsStore, notesIndex);
+
       return {
-        stories: createSongStories(storiesStore),
+        stories: createSongStories(indexedStoriesStore),
         bookmarks: createBookmarks(bookmarksStore),
         sessions: createSessionSnapshots(sessionsStore),
-        memoryTags: createMemoryTags(memoryTagsStore),
+        memoryTags: createMemoryTags(indexedTagsStore),
+        notes: notesIndex,
       };
     })();
     instance.catch(() => {

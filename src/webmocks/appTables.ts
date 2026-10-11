@@ -30,6 +30,12 @@ import {
   type MemoryTagsStore,
   type MemoryTag,
 } from '../storage/memoryTags';
+import {
+  createIndexedStories,
+  createIndexedMemoryTags,
+  createMemoryNotesIndex,
+  type NotesIndex,
+} from '../storage/noteIndex';
 
 export interface AppTables {
   stories: SongStoriesService;
@@ -38,6 +44,8 @@ export interface AppTables {
   sessions: SessionSnapshotsService;
   /** F20 (LITE) — the listener's tagged moments. */
   memoryTags: MemoryTagsService;
+  /** Wave C · C2 — full-text search over stories + memory-tag notes. */
+  notes: NotesIndex;
 }
 
 const storiesMap = new Map<string, SongStory>();
@@ -49,6 +57,11 @@ let instance: Promise<AppTables> | null = null;
 
 export function getAppTables(): Promise<AppTables> {
   if (!instance) {
+    // Wave C · C2 — the SAME decorators + the SAME pure search run on
+    // web over an in-memory index (parity: identical behavior, cheaper
+    // storage). The stores below are indexed, exactly like the native
+    // appTables.ts wires them.
+    const notesIndex = createMemoryNotesIndex();
     const storiesStore: SongStoriesStore = {
       async getStory(key) {
         return storiesMap.get(key) ?? null;
@@ -102,11 +115,14 @@ export function getAppTables(): Promise<AppTables> {
         memoryTagsMap.delete(id);
       },
     };
+    const indexedStoriesStore = createIndexedStories(storiesStore, notesIndex);
+    const indexedTagsStore = createIndexedMemoryTags(memoryTagsStore, notesIndex);
     instance = Promise.resolve({
-      stories: createSongStories(storiesStore),
+      stories: createSongStories(indexedStoriesStore),
       bookmarks: createBookmarks(bookmarksStore),
       sessions: createSessionSnapshots(sessionsStore),
-      memoryTags: createMemoryTags(memoryTagsStore),
+      memoryTags: createMemoryTags(indexedTagsStore),
+      notes: notesIndex,
     });
   }
   return instance;

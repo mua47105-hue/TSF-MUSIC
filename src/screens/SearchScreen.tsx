@@ -54,6 +54,9 @@ import { rememberResolve } from '../search/learn';
 import { artistAffinity } from '../ai/core/decision';
 import { estimateFeatures } from '../ai/core/features';
 import { usePlayer } from '../player/PlayerProvider';
+import { getAppTables, type PersonalNoteHit } from '../storage/appTables';
+import { MIN_NOTE_QUERY_CHARS } from '../storage/noteIndex';
+import { useToast } from '../components/Toast';
 import {
   clearRecentSearches,
   getChartsCache,
@@ -146,6 +149,10 @@ export function SearchScreen() {
   const browseCols = Math.min(3, browseColumnsFor(winWidth));
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { playQueue } = usePlayer();
+  const toast = useToast();
+  // Wave C · C2 — the user's own words, searched in parallel with the
+  // catalog (≥3 chars). Shown as the "📝 YOUR NOTES" section.
+  const [noteHits, setNoteHits] = useState<PersonalNoteHit[]>([]);
   // ── the field is UNCONTROLLED (v4.0.1 "hihiz" fix) ────────────────
   // Native text is the source of truth while typing; `query` state is a
   // throttled commit (useStableField) that drives the search debounce and
@@ -388,6 +395,7 @@ export function SearchScreen() {
         abortRef.current?.abort();
         abortRef.current = null;
         setResults([]);
+        setNoteHits([]);
         perfMark('search-wipe', 'empty-q');
         setMeta({ degraded: false });
         setVibeChips([]);
@@ -405,6 +413,22 @@ export function SearchScreen() {
       setSearched(true);
       setSuggests(null);
       resetPagination();
+      // Wave C · C2 — the personal-notes index flies IN PARALLEL with
+      // the catalog search (≥3 chars), generation-guarded by the same
+      // gen: a stale answer never paints (X6: one FTS5 query, <10ms).
+      const noteQuery = q.trim();
+      if (noteQuery.length >= MIN_NOTE_QUERY_CHARS) {
+        void getAppTables()
+          .then((t) => t.notes.search(noteQuery, 8))
+          .then((hits) => {
+            if (gen === searchGen.current) setNoteHits(hits);
+          })
+          .catch(() => {
+            if (gen === searchGen.current) setNoteHits([]);
+          });
+      } else if (gen === searchGen.current) {
+        setNoteHits([]);
+      }
       const deps = engineDeps();
       try {
         if (src === 'youtube') {
@@ -608,6 +632,36 @@ export function SearchScreen() {
     };
   }, [query, runSearch]);
 
+  /** Wave C · C2 — tap a personal-note hit: resolve the recording's
+   *  track via a catalog search (the recordingKey IS the normalized
+   *  title|artist identity), play it, open the player, and show the
+   *  full note (the honest "show the note" surface — the MEMORIES chip
+   *  carries tags on the player for tags; stories surface in TrackMenu). */
+  const openNoteHit = useCallback(
+    async (hit: PersonalNoteHit) => {
+      const sep = hit.recordingKey.lastIndexOf('|');
+      const title = sep > 0 ? hit.recordingKey.slice(0, sep) : hit.recordingKey;
+      const artist = sep > 0 ? hit.recordingKey.slice(sep + 1) : '';
+      Keyboard.dismiss();
+      try {
+        const res: SearchV2Result = await searchMusicV2(`${title} ${artist}`.trim(), {
+          deps: engineDeps(),
+        });
+        const track = res.tracks[0];
+        if (!track) {
+          toast.show({ message: 'THAT RECORDING IS NOT IN THE CATALOG ANYMORE', icon: 'alert-outline' });
+          return;
+        }
+        await playQueue([track], 0, 'search');
+        nav.navigate('Player');
+        toast.show({ message: hit.text, icon: 'book-outline' });
+      } catch {
+        toast.show({ message: 'COULD NOT OPEN THAT NOTE', icon: 'alert-outline' });
+      }
+    },
+    [engineDeps, nav, playQueue, toast],
+  );
+
   const play = (index: number) => {
     if (!results.length) return;
     const track = results[index];
@@ -636,6 +690,47 @@ export function SearchScreen() {
     } else {
       void mindbeat.searchClicked(track.id, index);
     }
+  };
+
+  /** Wave C · C2 — the "📝 YOUR NOTES" section: personal hits first,
+   *  badged so the user knows these are THEIR words, not the catalog's. */
+  const renderNoteHits = () => {
+    if (noteHits.length === 0) return null;
+    return (
+      <View style={styles.notesWrap} testID="your-notes-section">
+        <View style={styles.secLabel}>
+          <MonoText size={9.5} bold color={colors.orange} style={{ letterSpacing: 2.2 }}>
+            {'📝 YOUR NOTES'}
+          </MonoText>
+          <View style={styles.secRule} />
+        </View>
+        {noteHits.map((hit) => (
+          <Pressable
+            key={hit.entryKey}
+            testID="note-hit-row"
+            accessibilityRole="button"
+            accessibilityLabel={`Your note: ${hit.text}`}
+            onPress={() => void openNoteHit(hit)}
+            style={({ pressed }) => [styles.noteRow, pressed && { opacity: 0.6 }]}
+          >
+            <View style={styles.noteBadge}>
+              <MonoText size={7.5} bold color={colors.ink} style={{ letterSpacing: 1 }}>
+                {hit.source === 'story' ? 'STORY' : 'TAG'}
+              </MonoText>
+            </View>
+            <View style={styles.noteBody}>
+              <Text style={styles.noteText} numberOfLines={2} allowFontScaling={false}>
+                {hit.snippet}
+              </Text>
+              <MonoText size={8.5} color={colors.ink40} style={styles.noteKey} numberOfLines={1}>
+                {hit.recordingKey.split('|').join(' · ')}
+              </MonoText>
+            </View>
+            <Ionicons name="play" size={13} color={colors.ink60} />
+          </Pressable>
+        ))}
+      </View>
+    );
   };
 
   const openGenre = (label: string, q: string) => {
@@ -978,6 +1073,7 @@ export function SearchScreen() {
         </View>
       ) : results.length === 0 ? (
         <View style={styles.zero}>
+          {renderNoteHits()}
           <Text style={styles.zeroTitle}>NOT IN THE STACKS</Text>
           {didYouMean.length > 0 ? (
             <View style={styles.dymWrap}>
@@ -1043,6 +1139,7 @@ export function SearchScreen() {
           contentContainerStyle={{ paddingBottom: 170 }}
         >
           <View>
+              {renderNoteHits()}
               {meta.sigState === 'partial' ? (
                 <View style={styles.sigNote}>
                   <MonoText size={10} bold color={colors.ink} style={{ letterSpacing: 0.8 }} numberOfLines={1}>
@@ -1442,6 +1539,24 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 40 },
+  // ── Wave C · C2 — the "📝 YOUR NOTES" section ──
+  notesWrap: { paddingHorizontal: 18, marginTop: 14 },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
+  },
+  noteBadge: {
+    backgroundColor: colors.orange,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  noteBody: { flex: 1, minWidth: 0 },
+  noteText: { fontSize: 13, color: colors.ink, fontFamily: fonts.regular },
+  noteKey: { marginTop: 2, letterSpacing: 0.4 },
   sigNote: {
     marginHorizontal: 18,
     marginTop: 12,
