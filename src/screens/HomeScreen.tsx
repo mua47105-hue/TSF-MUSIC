@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -44,6 +45,7 @@ import { EndlessFeedPager, type FeedBatch } from '../api/feed';
 import { ARTIST_SEEDS, cleanArtistName, lookupArtistPhoto, type ArtistInfo } from '../api/artists';
 import { getBecauseYouListened, getDailyMixes } from '../ai/engine';
 import { mindbeat } from '../ai/mindbeat';
+import { PARALLAX } from '../ai/core/constants';
 import type { NowSoundCard } from '../ai/surfaces/daylist';
 import type { OnTheRiseCard } from '../ai/surfaces/ontherise';
 import {
@@ -433,6 +435,38 @@ export function HomeScreen() {
   );
   const onGoAI = useCallback(() => nav.navigate('AI'), [nav]);
 
+  // ── Wave D · D1 — parallax plumbing ────────────────────────────────
+  // The shared native-driver scroll value: Animated.event writes
+  // contentOffset.y on the UI thread; every ParallaxArtwork derives its
+  // own clamped transform from it — zero JS frames per scroll event.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  // Viewability gate (D1 perf bar): only rows the list reports viewable
+  // attach a transform. ListHeaderComponent emits no view tokens (RN
+  // tracks data rows only), so the header shelves ride 'fh-0' — the
+  // first feed row, permanently keyed — as their visibility proxy.
+  const [headerParallaxOn, setHeaderParallaxOn] = useState(false);
+  const [visibleRows, setVisibleRows] = useState<Set<string>>(() => new Set());
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: PARALLAX.itemVisiblePercentThreshold }).current;
+  const onViewableItemsChanged = useRef(
+    ({ changed }: { changed: Array<{ key: string; isViewable: boolean }> }) => {
+      setVisibleRows((prev) => {
+        let next: Set<string> | null = null;
+        for (const t of changed) {
+          const k = String(t.key);
+          if (t.isViewable ? !prev.has(k) : prev.has(k)) {
+            if (!next) next = new Set(prev);
+            if (t.isViewable) next.add(k);
+            else next.delete(k);
+          }
+        }
+        return next ?? prev;
+      });
+      for (const t of changed) {
+        if (String(t.key) === 'fh-0') setHeaderParallaxOn(t.isViewable);
+      }
+    },
+  ).current;
+
   // ── Endless feed → windowed FlatList rows (R8-P1) ──────────────────
   const feedItems = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
@@ -452,9 +486,17 @@ export function HomeScreen() {
     ({ item }: { item: FeedItem }) => {
       if (item.k === 'header') return <FeedHeaderRow title={item.title} />;
       if (item.k === 'song') return <FeedSongRow track={item.track} onPlay={playFeedSong} />;
-      return <FeedAlbumShelf title={item.title} albums={item.albums} onOpen={openCollection} />;
+      return (
+        <FeedAlbumShelf
+          title={item.title}
+          albums={item.albums}
+          onOpen={openCollection}
+          parallaxScrollY={scrollY}
+          parallaxVisible={visibleRows.has(item.key)}
+        />
+      );
     },
-    [playFeedSong, openCollection],
+    [playFeedSong, openCollection, visibleRows, scrollY],
   );
 
   return (
@@ -462,6 +504,11 @@ export function HomeScreen() {
       <FlatList
         data={feedItems}
         scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
         ListHeaderComponent={
@@ -490,6 +537,8 @@ export function HomeScreen() {
             openTrackCollection={openTrackCollection}
             openArtist={openArtist}
             onGoAI={onGoAI}
+            parallaxScrollY={scrollY}
+            parallaxVisible={headerParallaxOn}
           />
         }
         ListFooterComponent={
@@ -568,10 +617,14 @@ const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
   title,
   albums,
   onOpen,
+  parallaxScrollY,
+  parallaxVisible,
 }: {
   title: string;
   albums: Collection[];
   onOpen: (c: Collection) => void;
+  parallaxScrollY?: Animated.Value;
+  parallaxVisible?: boolean;
 }) {
   return (
     <Shelf title={title}>
@@ -585,6 +638,8 @@ const FeedAlbumShelf = React.memo(function FeedAlbumShelf({
           size={150}
           index={String(i + 1).padStart(2, '0')}
           onPress={() => onOpen(c)}
+          parallaxScrollY={parallaxScrollY}
+          parallaxVisible={parallaxVisible}
         />
       ))}
     </Shelf>
@@ -663,6 +718,8 @@ const HomeHeader = React.memo(function HomeHeader({
   openTrackCollection,
   openArtist,
   onGoAI,
+  parallaxScrollY,
+  parallaxVisible,
 }: {
   chip: Chip;
   setChip: (c: Chip) => void;
@@ -688,8 +745,14 @@ const HomeHeader = React.memo(function HomeHeader({
   openTrackCollection: (title: string, tracks: Track[]) => void;
   openArtist: (artist: string) => void;
   onGoAI: () => void;
+  /** Wave D · D1 — shared native scroll value + viewability gate. */
+  parallaxScrollY: Animated.Value;
+  parallaxVisible: boolean;
 }) {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // The header's shelf covers breathe while the first feed row reports
+  // the header still in-viewport (the proxy — headers emit no tokens).
+  const par = { parallaxScrollY, parallaxVisible };
 
   // ── On The Rise wears the ARTIST's photo (v4.0.1) ──────────────────
   // The cards used to borrow the SONG's album cover while labeled as the
@@ -932,6 +995,7 @@ const HomeHeader = React.memo(function HomeHeader({
                 seed={crate.id}
                 size={275}
                 onPress={() => openTrackCollection('The Weekly Crate', crate.tracks)}
+                {...par}
               />
             </Shelf>
           ) : null}
@@ -947,6 +1011,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   seed={mix.id}
                   size={150}
                   onPress={() => openTrackCollection(mix.title, mix.tracks)}
+                  {...par}
                 />
               ))}
               <AICreateCard onPress={() => nav.navigate('AI')} />
@@ -964,6 +1029,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   seed={t.id}
                   size={150}
                   onPress={() => play(recents, Math.max(0, recents.findIndex((r) => r.id === t.id)))}
+                  {...par}
                 />
               ))}
             </Shelf>
@@ -1001,6 +1067,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   size={150}
                   index={String(i + 1).padStart(2, '0')}
                   onPress={() => play(trending, Math.max(0, trending.findIndex((x) => x.id === t.id)))}
+                  {...par}
                 />
               ))}
             </Shelf>
@@ -1055,6 +1122,7 @@ const HomeHeader = React.memo(function HomeHeader({
                       },
                     })
                   }
+                  {...par}
                 />
               ) : null}
             </Shelf>
@@ -1071,6 +1139,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   seed={`album-${c.id}`}
                   size={150}
                   onPress={() => nav.navigate('Collection', { collection: c })}
+                  {...par}
                 />
               ))}
             </Shelf>
@@ -1087,6 +1156,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   seed={`feat-${c.id}`}
                   size={150}
                   onPress={() => nav.navigate('Collection', { collection: c })}
+                  {...par}
                 />
               ))}
             </Shelf>
@@ -1104,6 +1174,7 @@ const HomeHeader = React.memo(function HomeHeader({
                   size={150}
                   index={String(i + 1).padStart(2, '0')}
                   onPress={() => nav.navigate('Collection', { collection: c })}
+                  {...par}
                 />
               ))}
             </Shelf>

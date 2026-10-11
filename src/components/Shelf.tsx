@@ -10,10 +10,11 @@
  */
 
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, hardShadow } from '../theme';
 import { Artwork } from './Artwork';
+import { ParallaxArtwork } from './ParallaxArtwork';
 import { Brutal, MonoText } from './Brutal';
 
 /** Editorial section header: orange kicker + display title + rule. */
@@ -63,7 +64,11 @@ export function Shelf({
   );
 }
 
-/** The .card — bordered cover, hard shadow, ink play FAB. */
+/** The .card — bordered cover, hard shadow, ink play FAB.
+ *  Wave D · D1: pass parallaxScrollY (the owning list's shared native
+ *  scroll value) and parallaxVisible (its viewability gate) and the
+ *  cover breathes with the scroll; omit them and the card renders the
+ *  plain primitive, bit-identical to before. */
 export const ShelfCard = React.memo(function ShelfCard({
   title,
   subtitle,
@@ -76,6 +81,8 @@ export const ShelfCard = React.memo(function ShelfCard({
   badge,
   subtitleMaxLines = 1,
   index,
+  parallaxScrollY,
+  parallaxVisible = false,
 }: {
   title: string;
   subtitle?: string;
@@ -88,6 +95,8 @@ export const ShelfCard = React.memo(function ShelfCard({
   badge?: React.ReactNode;
   subtitleMaxLines?: number;
   index?: string;
+  parallaxScrollY?: Animated.Value;
+  parallaxVisible?: boolean;
 }) {
   return (
     <Brutal
@@ -101,7 +110,19 @@ export const ShelfCard = React.memo(function ShelfCard({
     >
       <View style={{ width: '100%' }}>
         <View style={[styles.coverWrap, { width: size, height: size }]}>
-          <Artwork uri={artwork} seed={seed} size={size} variant={round ? 'circle' : 'square'} style={round ? styles.artistRing : undefined} />
+          {parallaxScrollY ? (
+            <ParallaxArtwork
+              uri={artwork}
+              seed={seed}
+              size={size}
+              variant={round ? 'circle' : 'square'}
+              style={round ? styles.artistRing : undefined}
+              scrollY={parallaxScrollY}
+              visible={parallaxVisible}
+            />
+          ) : (
+            <Artwork uri={artwork} seed={seed} size={size} variant={round ? 'circle' : 'square'} style={round ? styles.artistRing : undefined} />
+          )}
           {badge}
           <View style={styles.fab}>
             <Ionicons name="play" size={13} color={colors.acid} />

@@ -9,9 +9,10 @@
  * Downloaded), sort + grid toggle, playlist CRUD, download verification.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Constants from 'expo-constants';
 import {
+  Animated,
   FlatList,
   Modal,
   Pressable,
@@ -36,8 +37,10 @@ import {
 } from '../storage/store';
 import { verifyDownloads } from '../storage/downloads';
 import { mindbeat } from '../ai/mindbeat';
+import { PARALLAX } from '../ai/core/constants';
 import type { SmartFolders } from '../ai/smartFolders';
 import { Artwork } from '../components/Artwork';
+import { ParallaxArtwork } from '../components/ParallaxArtwork';
 import { Brutal, MonoText, OutlineText } from '../components/Brutal';
 import { useToast } from '../components/Toast';
 import { colors, fonts } from '../theme';
@@ -81,6 +84,36 @@ export function LibraryScreen() {
   const [menuFor, setMenuFor] = useState<Playlist | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameText, setRenameText] = useState('');
+
+  // ── Wave D · D1 — parallax plumbing (grid covers breathe) ──────────
+  // The shared native-driver scroll value: Animated.event writes
+  // contentOffset.y on the UI thread; each grid cell's ParallaxArtwork
+  // derives its own clamped transform — zero JS frames per event.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  // Viewability gate (D1 perf bar): only rows the list reports viewable
+  // attach a transform. Cleared when the view flips (the key={} remount
+  // re-fires the tokens with fresh keys).
+  const [visibleRows, setVisibleRows] = useState<Set<string>>(() => new Set());
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: PARALLAX.itemVisiblePercentThreshold }).current;
+  const onViewableItemsChanged = useRef(
+    ({ changed }: { changed: Array<{ key: string; isViewable: boolean }> }) => {
+      setVisibleRows((prev) => {
+        let next: Set<string> | null = null;
+        for (const t of changed) {
+          const k = String(t.key);
+          if (t.isViewable ? !prev.has(k) : prev.has(k)) {
+            if (!next) next = new Set(prev);
+            if (t.isViewable) next.add(k);
+            else next.delete(k);
+          }
+        }
+        return next ?? prev;
+      });
+    },
+  ).current;
+  useEffect(() => {
+    setVisibleRows(new Set());
+  }, [chip, grid]);
 
   const reload = useCallback(async () => {
     const [p, f, d, r] = await Promise.all([
@@ -432,11 +465,13 @@ export function LibraryScreen() {
           <Ionicons name="sparkles" size={38} color={colors.ink} />
         </View>
       ) : (
-        <Artwork
+        <ParallaxArtwork
           uri={item.artwork}
           seed={item.seed}
           size={gridCell}
           variant={item.circle ? 'circle' : 'square'}
+          scrollY={scrollY}
+          visible={visibleRows.has(item.key)}
         />
       )}
       <Text style={styles.gridTitle} numberOfLines={1}>
@@ -465,6 +500,12 @@ export function LibraryScreen() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <FlatList
         data={items}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         keyExtractor={(i) => i.key}
         renderItem={grid ? renderGridItem : renderItem}
         numColumns={grid ? 2 : 1}

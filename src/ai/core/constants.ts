@@ -1012,3 +1012,22 @@ export const QUEUE_PERSIST = {
   /** Rows kept BEFORE the active track inside the capped window. */
   activeBackfill: 10,
 } as const;
+
+// ── THE IMPROVEMENT ARC — WAVE D: VISUAL POLISH ─────────────────────────
+
+/** D1 — Album Art Parallax on Scroll. THE BAR: parallax is visible but
+ *  subtle (±20px max), runs at 60fps on mid devices (native driver only,
+ *  zero JS frames), respects Reduce Motion (§13) and Data Saver (§11).
+ *  The drift is translateY = clamp(scrollY × factor, −capPx, +capPx),
+ *  built as a native interpolation over the ±(capPx/factor) window with
+ *  clamp extrapolation — the exact same numbers, computed on the UI
+ *  thread. */
+export const PARALLAX = {
+  /** The drift slope — 0.15 keeps it "subtle, not dizzying" (D1 bar). */
+  factor: 0.15,
+  /** Hard cap in px — art never flies off its frame (D1 bar). */
+  capPx: 20,
+  /** Viewability gate: % of a row that must be on-screen before its
+   *  artwork runs parallax (only visible rows get a native transform). */
+  itemVisiblePercentThreshold: 15,
+} as const;
