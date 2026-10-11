@@ -2003,3 +2003,109 @@ Stage Summary:
 - MISSION COMPLETE: v5.0.0 tagged, pushed, remote refs verified.
   807/0 tests, tsc 0, 52 mutations all RED across waves 2–5, 4 blind
   critics satisfied, zero new dependencies, cold path untouched.
+
+---
+Task ID: WAVE B (audio intelligence)
+Agent: Super Z (main agent)
+Task: Wave B of the performance arc — B1 ReplayGain from baked loudness,
+B2 genre-aware haptic patterns, B3 offline queue persistence (skip-if-
+shipped check against Wave A's A4). GAUNTLET per feature: BUILD → LOCK →
+MUTATE (≥2, all RED, byte-exact reverts, porcelain proof) → COMMIT → PUSH.
+
+Work Log:
+- GATE: "Do not start until Wave A is pushed" — verified via git
+  ls-remote/fetch: origin/main = 2bde25e carries v5.1.0 wave 1 (34bba6c)
+  + Wave A A1–A4 (527858f, 2b10ee9, a5e0c9f, 0839415) + verifier.
+  Local ff-pulled 51cf33e → 2bde25e, tree clean. Gate SATISFIED.
+- BASELINE: tsc 0; bun test 968/0 (4,495 expects, 78 files).
+- READ-FIRST ground truth established: volumeBus single-writer law
+  (composeVolume pinned 0.5 × 0.85 = 0.425; the v4.3.1 fake-ceiling
+  lesson), haptics pure-decision laws (hydration gate, one-fire-per-beat,
+  lazy expo-haptics, JS-thread-only), smartVolume apply sites
+  (PlayerProvider:346 foreground, service.ts:92 headless), Track.genre
+  exists (iTunes primaryGenreName), baked table is {e,v,d} — NO loudness
+  column (the brief's premise adapted honestly; see B1).
+- B1 BUILD: REPLAY_GAIN constants (target −14 LUFS, ±6 dB clamp,
+  min/maxFactor = 10^(∓6/20) precomputed); NEW src/player/replayGain.ts
+  (computeGain pure core, gainToLinear, replayGainFactor,
+  applyReplayGainForTrack); volumeBus → THREE factors:
+  effective = smartVolume × replayGain × activeFade (composeVolume grew
+  an optional gain arg defaulting 1.0 so every legacy 2-arg lock is
+  untouched; the write ceiling widened to the honest product band
+  1.05 × 10^(6/20) so a +4 dB boost SURVIVES the bus; setReplayGainFactor
+  clamps the band and NaN-degrades to 1.0); BakedFeatures.l? optional
+  column typed; mindbeat.bakedLoudnessFor() added (null until a bake
+  carries LUFS); wired BOTH apply sites (PlayerProvider + service).
+  DATA HONESTY: the current bake predates the column ⇒ every track is
+  factor 1.0 TODAY (byte-identical volume); the wiring is live and the
+  locks pin the math on fixtures — a future bake engages normalization
+  with zero code changes.
+- B1 LOCK: tests/waveb_b1_replaygain_locks.test.ts — 14 locks: THE BAR
+  literals (−10 ⇒ −4 dB, −18 ⇒ +4 dB, missing ⇒ 0 dB), the ±6 clamp
+  extremes, 10^(dB/20) to 12 dp, the 3-factor bus composition through a
+  mocked TrackPlayer, persistence across a fade release, missing-loudness
+  byte-identical write, rogue-factor band, NaN non-poisoning (write-dedup
+  observed honestly), ceiling 1.05 × 10^(6/20), legacy 2-arg contract
+  untouched. Suite → 982/0, tsc 0.
+- B1 MUTATIONS (all RED, byte-exact reverts, diff-proven):
+  M-B1-1 gain dropped from recompute → 5 fail;
+  M-B1-2 ±6 clamp removed from computeGain → 1 fail;
+  M-B1-3 missing-loudness guard removed → 5 fail.
+- B1 COMMIT 03fe605, pushed (origin/main 2bde25e..03fe605).
+- B2 BUILD: haptics.ts — HapticGenreMode ('auto'|'uniform'|'off'),
+  HapticTrackInput.genre, HapticsSettings.genreMode (undefined = 'auto'
+  ⇒ legacy behavior for genre-less callers), HapticPatternSpec +
+  hapticPattern(genre, tempoClass): EDM/Hip-hop heavy on bar-1 (fireOn
+  [0]), Classical/Jazz soft every beat, Bollywood medium on [0,2],
+  Lofi/Ambient disabled by default (uniform = the override), Rock/Pop
+  medium every beat; missing/unknown ⇒ uniform fallback byte-identical.
+  Genre resolution: exact alias hit then containment pass, scan order =
+  precedence (lo-fi hip hop → lofi; Hip-Hop/Rap → hiphop; Alternative
+  Rock → rock). hapticEvent beat-tick: mode law ('off' nulls every tick;
+  'auto' filters slots by beatIndex % 4 and honors pattern.disabled;
+  'uniform' = legacy). store.ts: tsf.hapticGenreMode.v1 + get/set
+  (corrupt ⇒ auto). PlayerScreen: both haptics settings hydrate in ONE
+  Promise.all BEFORE markHapticsHydrated; beat-tick feeds
+  {tempoClass, genre: active?.genre}; GENRE pill cycles auto→uniform→off
+  with an honest toast.
+  CONFLICT RESOLVED: the wave3 source-law lock pins the literal
+  `hapticEvent('beat-tick'` — the multi-line call form broke it; the
+  call site was restored to the literal form with a prepared trackInput
+  (existing tests are law — never modified).
+  Beat-math note: the interval floor makes index 1 the first fireable
+  tick, so slot-0 hits land on indices 4, 8, 12… (the initial test
+  expectations were corrected to the true math; the engine was right).
+- B2 LOCK: tests/waveb_b2_genre_haptics_locks.test.ts — 18 locks: the
+  five families as literals, compound catalog strings, the uniform
+  fallback for missing/unknown/empty, THE BAR end-to-end (EDM vs
+  classical at the same BPM; bollywood slots; lofi stillness + the
+  uniform override; 'off' silences; 'uniform' forces legacy even with
+  genre; undefined mode = auto; hydration + reduced laws; persistence
+  round-trip + corrupt-degrades). Suite → 1000/0 (4,598 expects,
+  80 files), tsc 0.
+- B2 MUTATIONS (all RED, byte-exact reverts, diff-proven):
+  M-B2-1 genre branch removed (always uniform) → 11 fail;
+  M-B2-2 lofi stillness removed → 2 fail;
+  M-B2-3 'off' gate removed → 1 fail.
+- B2 COMMIT 8126981, pushed (03fe605..8126981).
+- B3 SKIP (the brief's own instruction — "if A4 is already shipped, skip
+  this feature and note it in the report"): Wave A A4 shipped the offline
+  queue in 0839415 (src/player/queuePersistence.ts: tsf.queue.v1,
+  500 ms debounce, 50-row cap, 24 h TTL, house-rule-14 strip on write
+  AND read, one-shot active-id handoff) and its 13 locks pass inside
+  this wave's 1000/0 suite. NO code touched for B3.
+- X3: zero new runtime dependencies. X4: the gain routes through the
+  bus — no direct TrackPlayer.setVolume anywhere in the diff. X5: the
+  service still never imports haptics; expo-haptics still lazy.
+  X6: ReplayGain = one Map.get + one pow per track CHANGE; pattern
+  selection = a ≤26-alias scan per beat decision (pure math, no I/O).
+
+Stage Summary:
+- Wave B SHIPPED: B1 ReplayGain (wired end-to-end, honest about the
+  missing LUFS column), B2 genre-aware haptics (five families, three
+  modes, one persisted law), B3 skipped-with-evidence (A4 already
+  ships the offline queue).
+- 6 mutations, all RED, all byte-exact reverts; suite 968 → 1000/0
+  (+32 locks, 4,495 → 4,598 expects); tsc 0 throughout; zero
+  regressions in the wave1 volume locks and the wave3 haptics laws.
+- Commits: 03fe605 (B1), 8126981 (B2) on origin/main.
