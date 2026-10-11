@@ -24,7 +24,9 @@ import {
   type EncodedTrack,
 } from './historical';
 
-const SCHEMA = `
+/** The full mindbeat.db schema — exported for the locks (a lock test runs
+ *  the REAL DDL through a real SQLite engine; see waveA_a1 locks). */
+export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   ts INTEGER NOT NULL,
@@ -89,6 +91,52 @@ CREATE TABLE IF NOT EXISTS historical_summary (
 CREATE INDEX IF NOT EXISTS idx_historical_start ON historical_summary(dayStartTs);
 `;
 
+// ── WAVE A (A1) — hot-path index migration ──────────────────────────────
+// The three most-queried `events` patterns (Smart Crates by track,
+// hygiene/engine reads by type, session folding by sessionId) previously
+// full-scanned up to the retention cap (~10k rows) because the only index
+// was idx_events_ts. The DDL lives OUTSIDE SCHEMA on purpose: the SCHEMA
+// block stays byte-identical to pre-Wave-A (sacred-ground law L1), and
+// the migration is flag-gated so a steady-state boot runs ZERO migration
+// work (potato-phone law — the check is one kv SELECT, nothing more).
+//
+// Mission sketch said events(track_id …) — the REAL column names are the
+// camelCase ones above (trackId / sessionId); SQLite would refuse the
+// snake_case form, so the shipped DDL follows the actual schema.
+export const WAVE_A_INDEXES = {
+  /** The exactly-once witness. Present ⇒ indexes were verified/created on
+   *  a previous open; the sqlite_master probe is skipped entirely. Only
+   *  set AFTER the CREATE INDEX statements succeeded, so a crashed
+   *  migration re-runs honestly on the next open. */
+  flagKey: 'mig.wave_a_indexes_v1',
+  names: ['idx_events_track_ts', 'idx_events_type_ts', 'idx_events_session'] as const,
+  statements: [
+    'CREATE INDEX IF NOT EXISTS idx_events_track_ts ON events(trackId, ts DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_events_session ON events(sessionId)',
+  ] as const,
+} as const;
+
+/**
+ * The once-per-device migration law, PURE so it is lockable without a
+ * device: a present flag means the work already happened (create nothing,
+ * touch nothing); an absent flag means probe sqlite_master, create ONLY
+ * the missing indexes (never rebuild what exists), and ALWAYS raise the
+ * flag when absent — a pass that found every index already in place
+ * (restored backup, pre-flag device) has verified them and converges to
+ * the steady state: from the next open on, the migration costs one kv
+ * SELECT and nothing else.
+ */
+export function planIndexMigration(
+  flagPresent: boolean,
+  existingIndexNames: string[],
+): { create: readonly string[]; setFlag: boolean } {
+  if (flagPresent) return { create: [], setFlag: false };
+  const have = new Set(existingIndexNames);
+  const create = WAVE_A_INDEXES.names.filter((n) => !have.has(n));
+  return { create, setFlag: true };
+}
+
 interface EventRow {
   id: string;
   ts: number;
@@ -150,6 +198,39 @@ export async function createLedgerStore(): Promise<LedgerStore> {
     PRAGMA synchronous = NORMAL;
   `);
   await db.execAsync(SCHEMA);
+
+  // WAVE A (A1) — the flag-gated hot-path index migration. Steady state
+  // (flag present) costs ONE kv SELECT; first open after the upgrade
+  // probes sqlite_master, creates only the missing indexes, and raises
+  // the flag. The plan is computed by the PURE planIndexMigration so the
+  // exactly-once law is lockable without a device.
+  try {
+    const flagRow = await db.getFirstAsync<{ value: string }>(
+      `SELECT value FROM kv WHERE key = ?`,
+      [WAVE_A_INDEXES.flagKey],
+    );
+    const existing = await db.getAllAsync<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND name IN (?, ?, ?)`,
+      [...WAVE_A_INDEXES.names],
+    );
+    const plan = planIndexMigration(!!flagRow, existing.map((r) => r.name));
+    const ddlByName = new Map<string, string>(
+      WAVE_A_INDEXES.names.map((n, i) => [n, WAVE_A_INDEXES.statements[i]]),
+    );
+    for (const name of plan.create) {
+      const ddl = ddlByName.get(name);
+      if (ddl) await db.execAsync(ddl);
+    }
+    if (plan.setFlag) {
+      await db.runAsync(`INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)`, [
+        WAVE_A_INDEXES.flagKey,
+        JSON.stringify({ appliedAt: Date.now(), indexes: WAVE_A_INDEXES.names }),
+      ]);
+    }
+  } catch {
+    /* a failed migration must never block the ledger from opening — the
+       next open retries (the flag is only raised on success) */
+  }
 
   const impl: LedgerStore = {
     async appendEvents(events: LedgerEvent[]): Promise<void> {
