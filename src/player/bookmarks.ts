@@ -55,6 +55,19 @@ export function sanitizeBookmarkNote(raw: string): string {
 }
 
 /**
+ * The m:ss row label for the track-menu list view (v5.1.0) — pure and
+ * literal: 65432 → "1:05", 247000 → "4:07". Negative input clamps at
+ * 0:00 (a corrupted row must never render a lie), halves round up
+ * (59500 → "1:00"), and the seconds digit is always zero-padded.
+ */
+export function bookmarkTimeLabel(positionMs: number): string {
+  const totalSec = Math.max(0, Math.round(positionMs / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
  * THE GESTURE CONTRACT (pure): decide what a press on the progress bar
  * means. A hold of ≥ longPressMs with travel ≤ moveTolerancePx is a
  * BOOKMARK save; everything else is the existing scrub (fast taps and

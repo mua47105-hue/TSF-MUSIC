@@ -11,14 +11,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Brutal, MonoText } from './Brutal';
 import { colors, fonts } from '../theme';
 
-const SEEN_KEY = 'tsf.whatsNew.v5_0_2';
+// Bulletin key history — one key per release, shown exactly once:
+//   'tsf.whatsNew.v5_0_1' (THE VERIFICATION ROUND) ·
+//   'tsf.whatsNew.v5_0_2' (THE STABILITY PATCH) ·
+//   'tsf.whatsNew.v5_1_0' (THE MEMORY LAYER — current).
+const SEEN_KEY = 'tsf.whatsNew.v5_1_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── v5.0.2 — the stability patch ──
-  'THE STABILITY PATCH — a test-isolation bug (the v5.0.1 network-mock leak) held the v5.0.1 release in CI red; it is fixed and the full suite is green again. No app behavior changed in this patch: expo-network gained its web mock (lab parity) and the README numbers now match what ships.',
-  'As always: all of it runs 100% on-device — zero servers, zero accounts, zero telemetry.',
+  // ── v5.1.0 — THE MEMORY LAYER (wave 1) ──
+  'SONG STORIES — leave a personal note on any song ("this was playing when we met"). It shows as an italic line under the lyrics, it follows the SONG (not the source row — a re-listed or re-credited version of the same recording shares the memory), and it never leaves this device.',
+  'AUDIO BOOKMARKS — press-and-hold the progress bar to pin a moment (with an optional note). A dot lands on the bar: tap it to jump back to that second, hold on it to remove it. Scrubbing behaves exactly as before — the hold is a distinct gesture. Up to 50 pins per song, 500 total.',
+  'YOUR BOOKMARKS, LISTED — the track menu (long-press any row) now lists every pinned moment for that song with its note, and lets you remove the ones you outgrew.',
+  'As always: memories and bookmarks live in the on-device database only — zero servers, zero accounts, zero telemetry. They survive source switches and stay portable.',
 ];
 
 export function WhatsNewDialog() {
@@ -61,7 +67,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 5.0.1 — THE VERIFICATION ROUND
+            TSF MUSIC 5.1.0 — THE MEMORY LAYER
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

@@ -3,6 +3,51 @@
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 
+## v5.1.0 — 2026-10-11 — WAVE 1: THE MEMORY LAYER (Song Stories + Audio Bookmarks)
+
+The first wave of the five-wave memory upgrade: the app stops being just a
+player and starts remembering. Two emotionally-resonant, purely additive
+features — storage and UI only, zero new runtime dependencies, zero
+cold-start cost, zero servers.
+
+- **Song Stories** — a personal note attached to a recording ("this was
+  playing when we met"). Editor entry in the track menu ("Add a memory"),
+  rendered as an italic line under the lyrics while the song plays. Rows
+  are keyed by `recordingKey` (normalized title + primary artist), NOT a
+  provider track id — a re-credited re-listing of the same recording
+  shares one memory. Sanitized (control chars stripped, newlines
+  collapsed, 500-char cap) and LRU-capped at 1000 stories (evict
+  oldest-touched, documented in constants). Blank save is an honest
+  no-op; the empty editor says NO MEMORY YET instead of pretending.
+- **Audio Bookmarks** — press-and-hold the progress bar to save a
+  position (+ optional note); a dot lands on the bar; tap a dot to jump
+  to that moment via the EXISTING seek path (no second seek
+  implementation, no new ledger write); hold ON a dot (4 px — narrow on
+  purpose) to remove it. The pre-existing scrub/drag gesture is
+  byte-identical: the pure `classifyPress` contract (≥550 ms held,
+  ≤10 px travel) separates a bookmark save from a scrub, and a
+  system-stolen gesture cancels honestly instead of committing a seek
+  that never happened. Caps: 50 per recording, 500 total (FIFO by
+  createdAt, counted deletions). Deterministic ids
+  (`recordingKey:second`) — re-saving a second UPDATES it.
+- **Your bookmarks, listed (new in v5.1.0)** — the track menu lists
+  every pinned moment for that song ("Your bookmarks for this song"):
+  m:ss + note, delete per row (the store confirms BEFORE the list
+  updates), honest empty state. Loads lazily — only when opened, behind
+  a stale-response guard.
+- **Storage** — both features live in `appcontent.db` (user-content
+  tables, separate from the intelligence ledger): `song_stories` and
+  `bookmarks`, both keyed by `recordingKey`, neither schema carrying a
+  column a stream URL could occupy (bar-locked on both). The web build
+  rides its existing in-memory twin (house rule 15).
+- **Honest limitations**: stories are text-only (no photos, no
+  locations — Memory Tags own moments-in-space); bookmarks are
+  second-granular and per-recording (a 50-pin chapter list, not a
+  diary); the menu list reviews and deletes but does not seek (the menu
+  can hold a track that is not playing — the tap-to-jump lives on the
+  progress bar, the one place a seek is real); nothing syncs — the
+  memories die with the device, by design.
+
 ## v5.0.2 — 2026-10-08 — THE STABILITY PATCH: the test-isolation ship-blocker, closed
 
 The v5.0.1 tag could not ship: `bun test` stood at 884 pass / 1 fail and

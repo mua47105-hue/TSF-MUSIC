@@ -4,7 +4,7 @@
  * create) / Download. Shared by playlist rows, search rows, queue.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Playlist, Track } from '../types';
@@ -25,6 +25,7 @@ import {
 import { usePlayer } from '../player/PlayerProvider';
 import { mindbeat } from '../ai/mindbeat';
 import { getAppTables, contentKeyOf } from '../storage/appTables';
+import { bookmarkTimeLabel, type Bookmark } from '../player/bookmarks';
 import { STORIES } from '../ai/core/constants';
 import { useToast } from '../components/Toast';
 import { PressableScale } from '../components/PressableScale';
@@ -72,6 +73,14 @@ export function TrackMenu({
   const [storyOpen, setStoryOpen] = useState(false);
   const [storyText, setStoryText] = useState('');
   const [storyExists, setStoryExists] = useState(false);
+  // WAVE 1 (v5.1.0) — the bookmarks list for this song. Loads LAZILY on
+  // first open (potato rule ⑥: never on the boot path, never on menu
+  // open — only when the listener asks for it). The request-id guard
+  // drops stale responses (open menu A → close → open B before A's
+  // rows resolved must never paint A's bookmarks in B's list).
+  const [bmOpen, setBmOpen] = useState(false);
+  const [bmRows, setBmRows] = useState<Bookmark[]>([]);
+  const bmReqRef = useRef(0);
 
   useEffect(() => {
     if (visible && track) {
@@ -82,6 +91,8 @@ export function TrackMenu({
       setStoryOpen(false);
       setStoryText('');
       setStoryExists(false);
+      setBmOpen(false);
+      setBmRows([]);
       getPlaylists().then(setPlaylists);
       isDownloaded(track.id).then(setDownloaded);
       // the existing memory (if any) loads so the editor edits, not wipes.
@@ -179,6 +190,36 @@ export function TrackMenu({
     toast.show({ message: 'MEMORY REMOVED', icon: 'trash-outline' });
     onClose();
   }, [track, toast, onClose]);
+
+  // WAVE 1 (v5.1.0) — open the bookmarks list: keyed by recordingKey so
+  // the list shows every saved spot for THIS recording, whichever
+  // provider row it was saved from. An honest empty on failure — a
+  // broken read must never invent rows.
+  const openBookmarks = useCallback(async () => {
+    if (!track) return;
+    const req = ++bmReqRef.current;
+    setBmOpen(true);
+    try {
+      const tables = await getAppTables();
+      const rows = await tables.bookmarks.list(contentKeyOf(track));
+      if (req === bmReqRef.current) setBmRows(rows);
+    } catch {
+      if (req === bmReqRef.current) setBmRows([]);
+    }
+  }, [track]);
+
+  // Delete one bookmark row: the store confirms BEFORE the list updates
+  // — an honest list beats an optimistic lie (a failed delete keeps the
+  // row visible).
+  const removeBookmark = useCallback(async (id: string) => {
+    try {
+      const tables = await getAppTables();
+      const ok = await tables.bookmarks.remove(id);
+      if (ok) setBmRows((prev) => prev.filter((b) => b.id !== id));
+    } catch {
+      /* the row stays — best-effort, refreshes on next open */
+    }
+  }, []);
 
   const add = useCallback(
     async (playlist: Playlist) => {
@@ -318,6 +359,9 @@ export function TrackMenu({
                     maxLength={STORIES.maxChars}
                     testID="story-editor-input"
                   />
+                  {!storyExists ? (
+                    <Text style={styles.storyHint}>NO MEMORY YET — YOUR NOTE STAYS ON THIS DEVICE</Text>
+                  ) : null}
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                     <PressableScale style={styles.cancelBtn} onPress={() => setStoryOpen(false)} haptic>
                       <Text style={styles.cancelText}>Back</Text>
@@ -337,6 +381,48 @@ export function TrackMenu({
                   icon="sparkles-outline"
                   label={storyExists ? 'Edit the memory' : 'Add a memory'}
                   onPress={() => setStoryOpen(true)}
+                />
+              )}
+              {/* WAVE 1 (v5.1.0) — the bookmarks list ("Your bookmarks for
+                  this song"). Review + delete only: this menu opens for
+                  tracks that may not be playing, so a seek from here would
+                  be dishonest — the tap-to-JUMP lives on the progress bar
+                  (the one place a seek is real). */}
+              {bmOpen ? (
+                <>
+                  <Text style={styles.pickerTitle}>Your bookmarks for this song</Text>
+                  {bmRows.length === 0 ? (
+                    <Text style={styles.bmEmpty}>
+                      NO BOOKMARKS YET — HOLD THE PROGRESS BAR WHILE PLAYING TO PIN ONE
+                    </Text>
+                  ) : (
+                    <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled>
+                      {bmRows.map((b) => (
+                        <View key={b.id} style={styles.bmRow}>
+                          <Ionicons name="bookmark" size={15} color={colors.ink} />
+                          <Text style={styles.bmTime}>{bookmarkTimeLabel(b.positionMs)}</Text>
+                          <Text style={styles.bmNote} numberOfLines={1}>
+                            {b.note || 'no note'}
+                          </Text>
+                          <PressableScale
+                            style={styles.bmDel}
+                            onPress={() => void removeBookmark(b.id)}
+                            haptic
+                            testID={`bookmark-del-${b.id}`}
+                          >
+                            <Ionicons name="trash-outline" size={15} color={colors.ink40} />
+                          </PressableScale>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                  <Action icon="chevron-back" label="Back" dim onPress={() => setBmOpen(false)} />
+                </>
+              ) : (
+                <Action
+                  icon="time-outline"
+                  label="Your bookmarks for this song"
+                  onPress={() => void openBookmarks()}
                 />
               )}
               {/* MINDBEAT taste corrections (§6.6) — every action changes
@@ -604,5 +690,48 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     paddingHorizontal: 20,
     paddingVertical: 12,
+  },
+  storyHint: {
+    color: colors.ink40,
+    fontSize: 9,
+    fontFamily: fonts.mono,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  bmEmpty: {
+    color: colors.ink40,
+    fontSize: 10,
+    fontFamily: fonts.mono,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  bmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.ink16,
+  },
+  bmTime: {
+    color: colors.ink,
+    fontSize: 11,
+    fontFamily: fonts.monoBold,
+    letterSpacing: 0.5,
+    minWidth: 44,
+  },
+  bmNote: {
+    flex: 1,
+    color: colors.ink60,
+    fontSize: 11,
+    fontFamily: fonts.mono,
+  },
+  bmDel: {
+    padding: 6,
   },
 });
