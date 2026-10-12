@@ -112,7 +112,7 @@ export const ParallaxArtwork = React.memo(function ParallaxArtwork({
     };
   }, []);
 
-  const active = scrollY != null && parallaxMode(reduceMotion, dataSaver, visible);
+  const active = false && scrollY != null && parallaxMode(reduceMotion, dataSaver, visible); // PROBE C: render path neutralized
 
   // The native transform: interpolate over ±(capPx/factor) with clamp
   // extrapolation — EXACTLY parallaxOffset(y), computed on the UI
