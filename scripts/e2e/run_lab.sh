@@ -34,8 +34,10 @@ echo "===== DIAGNOSTIC: uiautomator dump at T+12s ====="
 adb shell uiautomator dump /sdcard/lab-window.xml >/dev/null 2>&1 || true
 adb shell cat /sdcard/lab-window.xml 2>/dev/null | head -c 14000 || true
 echo
-echo "===== DIAGNOSTIC: crash buffer (tail) ====="
-adb logcat -b crash -d 2>/dev/null | tail -80 || true
+echo "===== DIAGNOSTIC: crash buffer HEAD (the exception) ====="
+adb logcat -b crash -d 2>/dev/null | grep -a -A 40 "FATAL EXCEPTION" | head -60 || true
+echo "===== DIAGNOSTIC: ReactNativeJS HEAD (the JS error message) ====="
+grep -a "ReactNativeJS" /tmp/logcat.txt | head -25 || true
 echo "===== DIAGNOSTIC: ReactNativeJS lines (tail) ====="
 grep -a "ReactNativeJS" /tmp/logcat.txt | tail -40 || true
 echo "===== END DIAGNOSTIC ====="
