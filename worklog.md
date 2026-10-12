@@ -2523,3 +2523,46 @@ Work Log:
   (bc5ec763846c75363d0ccac5617d93e5c2f5acf1) — the one rule, re-proven.
 - FINAL MEASURED STATE: tsc 0; bun test 1,072/0 (4,811 expects, 85
   files) — README/CHANGELOG carry these numbers.
+
+---
+Task ID: V5.2.0-VERIFY (final verification + the honest numbers)
+Agent: Super Z (main agent)
+Task: close the release — final CI, APK verification, the real counts.
+
+Work Log:
+- FINAL HEAD 5999d8e; tag v5.2.0 = 2cca103 (the docs commit; the
+  verifier correction 5999d8e is tooling-only, not release content —
+  stated precisely, no tag==HEAD claim beyond what git says).
+- FINAL SUITE (measured at 5999d8e): bun test 1,072 pass / 0 fail /
+  4,811 expects / 85 files; bunx tsc --noEmit 0; tree clean.
+- CI (authenticated REST): Native Android #147 on the v5.2.0 tag
+  (2cca103) = success; #146 on main (2cca103) = success; E2E Lab #59 on
+  bc5ec76 (the app code inside the release) = success — all required
+  Maestro flows green on the emulator, 8-bullet bulletin included.
+  (#144/#145 cancelled by the concurrency policy; #58 probe-d red at
+  the bun gate by design — the locks fired; #60 ran redundantly.)
+- APK VERIFICATION: released app-release.apk (83,278,572 bytes, 1,417
+  entries, updated 2026-10-12T05:20:46Z by run #147) downloaded and
+  deep-verified: versionName 5.2.0; all retained regression bars (baked
+  keys 58,869, __meta, VADER 6/6, memory layer); Wave A–D markers —
+  after THREE honest-marker corrections (the FTS5 DDL rides as whole
+  multi-line statements, not the bare table name; the index-DDL prefix
+  does not survive minification — pinned the third index name instead;
+  the lexicon is a Metro-inlined module, NOT an APK asset entry —
+  pinned the verified baked key 'aabhaaheen' instead): verify_v52_apk.py
+  ALL GREEN, 25/25 including the self-inventory.
+- MUTATION MATRIX (6): M1 mock-spread removed → L2 RED + the leak
+  reproduced (pair 1/8); M2 StyleSheet off the surface → L1+L3+L5 RED;
+  M3 SURPRISE_TOP_GENRE_COUNT removed → C3 RED (0/1/1); M4 stale badge →
+  docs-truth RED; M5 verifier marker deleted → self-inventory RED
+  (24/25; pre-hardening it ran ALL GREEN — the law's origin);
+  M6 plain <FlatList revert → waved_d1 invariant + R8 RED (4 fails).
+  All byte-exact restored, md5-verified, zero mutation residue.
+
+Stage Summary:
+- v5.2.0 SHIPPED AND VERIFIED END-TO-END: the mock-leak class closed
+  (the CI 1042/1 root cause), the SURPRISE_* constants home-law enforced,
+  docs honest (badge 899→1,072 stale-twice law tightened), and the
+  Wave D device crash the E2E lab caught — root-caused to the Android
+  VirtualizedList invariant, fixed with Animated.FlatList, locked, and
+  proven green on the emulator. Verdict: SHIP IT.
