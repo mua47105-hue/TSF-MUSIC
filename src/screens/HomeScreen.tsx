@@ -501,7 +501,16 @@ export function HomeScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <FlatList
+      {/* D1 (v5.2.0 fix): a VirtualizedList carrying a native-driver
+          onScroll MUST be Animated.createAnimatedComponent-wrapped — the
+          plain FlatList throws a fatal Invariant Violation on Android
+          (proven by the E2E lab: "Components based on VirtualizedList
+          must be wrapped with Animated.createAnimatedComponent"). The
+          web build tolerates the plain list, which is why the bun suite
+          and the device lab diverged. Animated.FlatList is the preset
+          wrapper — the native-driver event and the 60fps bar are
+          unchanged. */}
+      <Animated.FlatList
         data={feedItems}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {

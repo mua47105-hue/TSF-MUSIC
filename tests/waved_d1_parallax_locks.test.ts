@@ -140,6 +140,21 @@ describe('WAVE D · D1 — source laws: the 60fps mechanism (X4, by construction
     }
   });
 
+  test('the native-driver onScroll rides an Animated-WRAPPED list (the Android invariant)', () => {
+    // v5.2.0 — the E2E lab found this one: a PLAIN FlatList carrying
+    // Animated.event(..., { useNativeDriver: true }) throws a FATAL
+    // Invariant Violation on Android at mount ("Components based on
+    // VirtualizedList must be wrapped with Animated.createAnimatedComponent
+    // to support native onScroll events with useNativeDriver") — while the
+    // web build runs it happily, which is exactly why the bun suite and
+    // the emulator lab diverged. The list must be the Animated preset.
+    // Mutation M-D1-4: reverting to the plain <FlatList → this lock RED.
+    for (const [src, name] of [[home, 'HomeScreen'], [library, 'LibraryScreen']] as const) {
+      expect(src).toContain('<Animated.FlatList');
+      expect(src).not.toMatch(/<FlatList[\s>]/);
+    }
+  });
+
   test('the component builds the NATIVE clamped interpolation (same numbers as parallaxOffset)', () => {
     expect(component).toContain('PARALLAX.capPx / PARALLAX.factor');
     expect(component).toContain('outputRange: [-PARALLAX.capPx, PARALLAX.capPx]');

@@ -498,7 +498,10 @@ export function LibraryScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <FlatList
+      {/* D1 (v5.2.0 fix): the Android native-driver invariant — see
+          HomeScreen. Animated.FlatList wraps the VirtualizedList so the
+          native onScroll event is legal. */}
+      <Animated.FlatList
         data={items}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {

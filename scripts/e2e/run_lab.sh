@@ -26,6 +26,25 @@ sleep 2
 adb shell am start -W -n "$ACT" | tee "$ART/am-start.txt"
 sleep 4 # let the fresh boot settle before flow 01 restarts it clean
 
+# ── boot diagnostics (v5.2.0 — the lab that caught the Android
+#    VirtualizedList invariant): if the app dies at boot, the crash
+#    buffer and the on-screen hierarchy ride the CI LOG, not just the
+#    artifacts, so the next boot crash is a 2-minute read, not a
+#    4-round CI archaeology.
+adb shell am force-stop "$PKG" || true
+adb shell am start -W -n "$ACT" >/dev/null 2>&1 || true
+sleep 12
+echo "===== DIAGNOSTIC: uiautomator dump at T+12s ====="
+adb shell uiautomator dump /sdcard/lab-window.xml >/dev/null 2>&1 || true
+adb shell cat /sdcard/lab-window.xml 2>/dev/null | head -c 14000 || true
+echo
+echo "===== DIAGNOSTIC: crash buffer HEAD (the exception) ====="
+adb logcat -b crash -d 2>/dev/null | grep -a -A 40 "FATAL EXCEPTION" | head -60 || true
+echo "===== DIAGNOSTIC: ReactNativeJS HEAD (the JS error message) ====="
+grep -a "ReactNativeJS" /tmp/logcat.txt | head -25 || true
+echo "===== END DIAGNOSTIC ====="
+adb shell am force-stop "$PKG" || true
+
 # ── required flows (any failure fails the lab; each flow gets ONE retry —
 #    the CI network flakes (round-11: the popular-artists fetch) and one
 #    honest retry separates flake from regression ────────────────────────

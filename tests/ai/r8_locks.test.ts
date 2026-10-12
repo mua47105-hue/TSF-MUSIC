@@ -683,7 +683,11 @@ describe('R8-P1 — the home feed is a windowed FlatList (source contract)', () 
   const home = SRC('screens/HomeScreen.tsx');
 
   test('the endless feed renders through FlatList, never a bare ScrollView', () => {
-    expect(home).toContain('<FlatList');
+    // v5.2.0: the feed list is the Animated-WRAPPED preset
+    // (<Animated.FlatList — the Android native-driver onScroll invariant;
+    // see the waved_d1 lock) — still a FlatList, still windowed.
+    expect(home).toContain('<Animated.FlatList');
+    expect(home).not.toMatch(/<FlatList[\s>]/);
     expect(home).toContain('windowSize=');
     expect(home).toContain('maxToRenderPerBatch=');
     // the manual JS onScroll prefetch is GONE (native onEndReached instead)
