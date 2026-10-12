@@ -26,6 +26,21 @@ sleep 2
 adb shell am start -W -n "$ACT" | tee "$ART/am-start.txt"
 sleep 4 # let the fresh boot settle before flow 01 restarts it clean
 
+# ── DIAGNOSTIC (v5.2.0 lab probe): what is actually on screen? ────────
+adb shell am force-stop "$PKG" || true
+adb shell am start -W -n "$ACT" >/dev/null 2>&1 || true
+sleep 12
+echo "===== DIAGNOSTIC: uiautomator dump at T+12s ====="
+adb shell uiautomator dump /sdcard/lab-window.xml >/dev/null 2>&1 || true
+adb shell cat /sdcard/lab-window.xml 2>/dev/null | head -c 14000 || true
+echo
+echo "===== DIAGNOSTIC: crash buffer (tail) ====="
+adb logcat -b crash -d 2>/dev/null | tail -80 || true
+echo "===== DIAGNOSTIC: ReactNativeJS lines (tail) ====="
+grep -a "ReactNativeJS" /tmp/logcat.txt | tail -40 || true
+echo "===== END DIAGNOSTIC ====="
+adb shell am force-stop "$PKG" || true
+
 # ── required flows (any failure fails the lab; each flow gets ONE retry —
 #    the CI network flakes (round-11: the popular-artists fetch) and one
 #    honest retry separates flake from regression ────────────────────────
