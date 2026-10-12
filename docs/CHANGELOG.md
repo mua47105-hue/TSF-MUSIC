@@ -1,5 +1,179 @@
 # Changelog
 
+## v5.2.0 — 2026-10-12 — THE IMPROVEMENT ARC (Waves A–D) + the mock-leak fix
+
+Four gauntleted waves of improvement — performance, audio intelligence,
+search & discovery, visual polish — plus the test-isolation fix that
+closes the react-native mock-leak class for good. No new runtime
+dependencies anywhere in the arc (Wave D's parallax rides the RN
+`Animated` API the app already ships).
+
+### The arc, wave by wave
+
+- **Wave A — performance & resilience**
+  - **A1 · Hot-path SQLite indexes** — the three hot event-query shapes
+    (by-track, by-type, by-session) ride real covering indexes
+    (`idx_events_track_ts`, `idx_events_type_ts`, `idx_events_session`)
+    created by a once-per-device, flag-witnessed migration (the flag is
+    raised only after the DDL succeeds, so a crashed migration retries).
+    Locked over a real in-memory SQLite engine with EXPLAIN QUERY PLAN
+    bars (13 locks).
+  - **A2 · The YouTube cipher cache** — a cold boot never re-downloads
+    `base.js`: the parsed decipher program persists under a
+    deterministic FNV-1a key (`tsf.ytCipher.<path-hash>`), TTL-checked
+    and foreign-path-proof, RAM → KV → fetch. Locked end-to-end over the
+    module's fetch seam — base.js is fetched exactly ONCE across two
+    resolutions, the deciphered URL byte-identical (11 locks).
+  - **A3 · Screen splitting** — **PARTIAL — lazy evaluation live, bundle
+    size unmet on RN 0.76.** Eight screens ride React.lazy behind
+    Suspense + ScreenSkeleton; the four boot-critical screens stay
+    eager; no new sync work on the boot path. The honest trade: Metro on
+    this toolchain ships ONE Hermes bundle, so lazy moves evaluation off
+    the boot critical section but does not shrink the APK (8 locks).
+  - **A4 · The offline queue** — a killed app wakes up with its room
+    intact: every queue mutation persists (500 ms debounce, one write
+    per burst carrying the LATEST queue), boot restores only when the
+    engine came up empty, 50-row cap around the active row, 24 h TTL,
+    and house rule 14 on BOTH the write and the read (stream URLs are
+    unrepresentable in the payload — tap-time resolution re-answers)
+    (13 locks).
+- **Wave B — audio intelligence**
+  - **B1 · ReplayGain** — **DORMANT — wired but inert until
+    baked_features.json carries a loudness column.** The full pipeline
+    ships and is locked: `computeGain` targets −14 LUFS with a ±6 dB
+    clamp, a third factor in the volume bus (`smartVolume × replayGain ×
+    activeFade`), the ceiling widened so a +4 dB boost survives, NaN
+    degrades to 1.0, missing loudness is byte-identical 1.0 (14 locks).
+    Today's bake predates the column, so every track plays at factor
+    1.0 — the wiring is live and a future bake engages normalization
+    with zero code changes. NOT advertised in the bulletin for the same
+    reason: a dormant feature is not a bullet.
+  - **B2 · Genre haptics** — five genre families (EDM/Hip-hop heavy on
+    the downbeat, Classical/Jazz soft every beat, Bollywood medium on
+    [0, 2], Lofi/Ambient still, Rock/Pop medium every beat), three modes
+    (`auto`/`uniform`/`off`, persisted at `tsf.hapticGenreMode.v1`,
+    corrupt-degrades to auto), exact-alias-then-containment genre
+    resolution, unknown genres fall back to the legacy uniform pattern
+    byte-identically (18 locks).
+- **Wave C — search & discovery**
+  - **C1 · The Hindi lexicon hears 1,805 more words** — the IITB HSWN
+    (Hindi SentiWordNet, Joshi et al., MIT-licensed mirror) baked by
+    `scripts/bake_hindi_lexicon.py` into `assets/hindi_lexicon_iitb.json`
+    (1,816 romanized entries, weight-matched to the existing romanized
+    lexicon at weight 0.6, deterministic bake). The lyric mood reader
+    parses Hindi lyrics as honestly as English ones (13 locks).
+  - **C2 · Search finds YOUR words** — personal notes (Song Stories +
+    Memory Tags) are full-text searchable via an FTS5 virtual table
+    (`personal_notes_fts`, bm25-ranked) with a webmock twin for the web
+    build; the SearchScreen gains the "📝 YOUR NOTES" section above the
+    catalog, multi-token AND matching, honest limits (18 locks).
+  - **C3 · ✨ Surprise Me** — the filter-bubble escape hatch: one pure
+    function, four mandatory constraints (energy within ±0.1 of the
+    session mean, artistAffinity < 0.1, genre outside the profile's
+    top-5, filterClean), a seeded mulberry32 pick over the
+    equally-qualifying pool — same session + same moment = same pick,
+    never `Math.random`. Returns null honestly when nothing qualifies
+    (13 locks).
+- **Wave D — visual polish**
+  - **D1 · Album Art Parallax on Scroll** — the shelf and grid covers
+    breathe: `translateY = clamp(scrollY × 0.15, −20, +20)`, built as a
+    NATIVE clamped interpolation driven by
+    `Animated.event(..., { useNativeDriver: true })` at
+    `scrollEventThrottle 16` — zero JS frames per scroll event (the same
+    60fps-by-construction contract as the visualizer). Triple-gated, all
+    gates live: viewability (only visible rows attach a transform, 15%
+    threshold), Reduce Motion (`AccessibilityInfo`, tracked live via
+    `reduceMotionChanged`), Data Saver (`dataSaverActive()`, subscribed
+    live). The inner art renders oversized by 2×cap and clips, so the
+    drift never reveals an edge; a closed gate renders the plain
+    primitive bit-identically (21 locks).
+
+### FIX 1 — the react-native mock-leak class (the P0)
+
+- **Root cause**: bun's `mock.module` registry is PROCESS-GLOBAL and
+  outlives its file. 19 test files registered PARTIAL hand-rolled
+  `react-native` mocks; any later file importing a react-native-dependent
+  module without its own mock destructured a missing key and died at
+  module scope. The v5.2.0 crash report named the wave-D pair —
+  `fix_b3_prewarm_locks.test.ts` (its factory lacked `StyleSheet`)
+  poisoning `ParallaxArtwork.tsx` (`StyleSheet.create` at module scope).
+- **Reproduced honestly, twice**: a minimal pair (prewarm file → a
+  mock-less later file importing `Artwork.tsx`) fails 1/8 under bun
+  1.3.14 AND 1.4.3. The DEFAULT full suite at e097d70 measured
+  **1063 pass / 0 fail / 4,773 expects across 84 files on BOTH bun
+  1.3.14 and 1.4.3** — the leak was latent, one re-ordering or one new
+  mock-less file away from a deterministically red CI. The same class
+  shipped once before: the v5.0.2 expo-network mock leak. It will not
+  ship a third time.
+- **The fix**: every react-native mock registration now routes through
+  one shared full-surface factory (`tests/helpers/rnMockSurface.ts`) —
+  each file's own overrides spread last, so every locked behavior is
+  unchanged, while every named import in the repo
+  (25 runtime keys, scanned live) is guaranteed present. A future
+  `import { newAPI } from 'react-native'` without a surface key is a RED
+  in `tests/fix_v520_rn_mock_surface_locks.test.ts` (union-completeness,
+  spread-discipline, incident-regression, helper-purity, core-key laws —
+  6 locks), not a crashed suite next week.
+- **Gates after the fix**: `bunx tsc --noEmit` 0; full suite **1,071
+  pass / 0 fail / 4,808 expects across 85 files** (three consecutive
+  gate runs, identical pass/fail; the expect counter drifts ±2 between
+  identical runs — the v5.0.2 runner-noise class, disclosed).
+
+### FIX 2 — the SURPRISE_* tuning constants move home (house law 4)
+
+`SURPRISE_ENERGY_BAND`, `SURPRISE_AFFINITY_FLOOR` and
+`SURPRISE_TOP_GENRE_COUNT` move from `surpriseMe.ts` into
+`src/ai/core/constants.ts` — the single tuning table — each with its
+rationale comment. `surpriseMe.ts` imports them; the C3 locks now pin
+both the literals and the moved-not-copied law (no `export const
+SURPRISE_` beside the algorithm). 2 new locks.
+
+### FIX 3 — documentation honesty
+
+- The README total-test badge had gone stale for a SECOND time (899
+  while the shipped suite measured 1,071) — the badge now pins the
+  measured number (`total_tests-1071_passing`), the docs-truth lock
+  bites on the stale total, and the QA rows carry the measured
+  decomposition (885 replay + 186 arc & wave locks · 4,808 assertions).
+- This changelog gains the improvement-arc waves (A–D) — they shipped
+  after v5.1.0 with no release entry.
+- The worklog gains the missing Wave A entry — back-filled strictly
+  from committed evidence and two fresh measured runs (v5.1.0 baseline
+  899/0/4,332 at `34bba6c`; Wave A exit 968/0/4,493 at `2bde25e`).
+
+### FIX 4 — the release itself
+
+- Version 5.2.0 (package.json + app.json), bulletin key
+  `tsf.whatsNew.v5_2_0`, headline "TSF MUSIC 5.2.0 — THE IMPROVEMENT
+  ARC", bulletin bullets that name only what actually ships (ReplayGain
+  is deliberately absent — a dormant feature is not a bullet).
+- `scripts/verify_v52_apk.py` mirrors the v5.1.0 verifier: manifest
+  versionName probe, the parsed-Hermes-string-table method, all retained
+  regression bars (knowledge table, lexicons, memory layer, waves 2–5),
+  plus exact markers for Waves A–D (index names, KV key prefixes,
+  testIDs, storage keys, FTS5 table, lexicon asset + sampled words,
+  the parallax proxy key) and the v5.2.0 bulletin pair.
+- **The self-inventory law (found by mutation M5)**: deleting a marker
+  line from the verifier was a SILENT loosening — the check merely
+  stopped running and the run stayed ALL GREEN. Both verifiers
+  (v5.1.0's and v5.2.0's) now pin their executed-check count; a quietly
+  removed or added check is a RED. The v5.1.0 verifier re-ran ALL GREEN
+  (27/27) against the real released v5.1.0 APK after hardening.
+
+### Mutation evidence
+
+5 mutations, all RED, all byte-exact reverts, md5-verified,
+`git status --porcelain` clean of mutation residue after each restore;
+backups in `.mutation-backups/v520/`.
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | the mock spread removed (prewarm file back to the bare partial factory) | the L2 spread-discipline lock RED (1 fail) AND the leak itself reproduced: the minimal pair fails 1/8 again |
+| M2 | `StyleSheet` dropped from the shared surface | L1 union-completeness + L3 incident-regression + L5 core-keys RED (3 fails — the crash modules crash again) |
+| M3 | `SURPRISE_TOP_GENRE_COUNT` removed from the tuning table | the C3 lock file RED (0 pass / 1 fail / 1 error — the import chain breaks) |
+| M4 | the README total badge reverted to the stale 899 | the docs-truth lock RED (1 fail) |
+| M5 | a Wave A–D marker line deleted from the v5.2.0 verifier | the self-inventory check RED (24/25) — before the hardening, this mutation ran ALL GREEN, which is exactly why the law now exists |
+
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).
 

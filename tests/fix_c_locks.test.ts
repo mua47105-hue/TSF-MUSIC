@@ -35,16 +35,24 @@ describe('FIX-C1 · the F17 docs describe the shipped decade timeline', () => {
     expect(f17).not.toContain('horizontal year axis'); // the CLAIM is gone (a quoted mention in the relabel note is honest history)
   });
 
-  test('the docs carry no stale claim (no "year axis"; the README counts say 885, not 807)', () => {
+  test('the docs carry no stale claim (no "year axis"; the README counts say 885/1071, not 807/899)', () => {
     expect(readFileSync('src/components/WhatsNewDialog.tsx', 'utf8')).not.toContain('year axis');
     const readme = readFileSync('README.md', 'utf8');
     expect(readme).not.toContain('year axis');
     // v5.0.2 FIX 3 — the test-count badge tells the truth. The 807 badge
     // survived TWO releases stale (the suite hit 885 at v5.0.1); these
     // pins bite the moment the README and the shipped suite diverge.
-    expect(readme).toContain('replay_tests-885_passing'); // the badge
+    // v5.2.0 FIX 3 — same law, next generation: the 899 TOTAL badge
+    // survived the whole improvement arc stale (the suite hit 1,071);
+    // the total badge now pins the measured number too.
+    expect(readme).toContain('replay_tests-885_passing'); // the badge (the replay core is still 885)
+    expect(readme).toContain('total_tests-1071_passing'); // the total badge (measured at v5.2.0)
     expect(readme).toContain('# 885 replay tests incl. latency budgets'); // the quick-start comment
-    expect(readme).not.toContain('807'); // the stale count is gone everywhere
+    // the stale counts are gone everywhere — matched as COUNT CLAIMS,
+    // not raw substrings (the v5.2.0 lesson: "4,807 assertions" legally
+    // contains the digits "807"; the law bites on badge/claim shapes)
+    expect(readme).not.toMatch(/807\s*(replay )?tests|tests-807|807_passing/);
+    expect(readme).not.toMatch(/899\s*(replay )?tests|tests-899|899_passing/);
   });
 
   test('the v5.0.2 bulletin carries the patch headline (and still no year-axis claim)', () => {

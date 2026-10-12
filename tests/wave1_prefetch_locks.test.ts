@@ -15,8 +15,9 @@
  */
 
 import { describe, expect, test, beforeAll, afterAll, beforeEach, mock } from 'bun:test';
+import { rnMockSurface } from './helpers/rnMockSurface';
 
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android, Version: 34 },
   NativeModules: {},

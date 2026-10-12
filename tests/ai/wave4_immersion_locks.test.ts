@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, test, mock } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 
 // Real in-memory AsyncStorage (the facades touch nothing here, but the
 // player modules read prefs at import-time only via their init fns).
@@ -30,7 +31,7 @@ mock.module('@react-native-async-storage/async-storage', () => ({
     removeItem: async () => undefined,
   },
 }));
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

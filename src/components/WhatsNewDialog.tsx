@@ -14,17 +14,22 @@ import { colors, fonts } from '../theme';
 // Bulletin key history — one key per release, shown exactly once:
 //   'tsf.whatsNew.v5_0_1' (THE VERIFICATION ROUND) ·
 //   'tsf.whatsNew.v5_0_2' (THE STABILITY PATCH) ·
-//   'tsf.whatsNew.v5_1_0' (THE MEMORY LAYER — current).
-const SEEN_KEY = 'tsf.whatsNew.v5_1_0';
+//   'tsf.whatsNew.v5_1_0' (THE MEMORY LAYER) ·
+//   'tsf.whatsNew.v5_2_0' (THE IMPROVEMENT ARC — current).
+const SEEN_KEY = 'tsf.whatsNew.v5_2_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── v5.1.0 — THE MEMORY LAYER (wave 1) ──
-  'SONG STORIES — leave a personal note on any song ("this was playing when we met"). It shows as an italic line under the lyrics, it follows the SONG (not the source row — a re-listed or re-credited version of the same recording shares the memory), and it never leaves this device.',
-  'AUDIO BOOKMARKS — press-and-hold the progress bar to pin a moment (with an optional note). A dot lands on the bar: tap it to jump back to that second, hold on it to remove it. Scrubbing behaves exactly as before — the hold is a distinct gesture. Up to 50 pins per song, 500 total.',
-  'YOUR BOOKMARKS, LISTED — the track menu (long-press any row) now lists every pinned moment for that song with its note, and lets you remove the ones you outgrew.',
-  'As always: memories and bookmarks live in the on-device database only — zero servers, zero accounts, zero telemetry. They survive source switches and stay portable.',
+  // ── v5.2.0 — THE IMPROVEMENT ARC (waves A–D) ──
+  'THE COVERS BREATHE — album art drifts subtly with the scroll (a ±20px parallax rendered entirely on the UI thread, so scrolling stays 60fps even on modest phones). It sits still under Reduce Motion or Data Saver.',
+  '✨ SURPRISE ME — one tap in the player serves a track that fits the current vibe but comes from an artist you barely play and a genre outside your top five. Same session, same moment, same pick — never a rerun of the algorithm.',
+  'SEARCH FINDS YOUR OWN WORDS — your song stories and memory tags are now full-text searchable right from the search screen, with the matching line shown under the result.',
+  'THE MOOD ENGINE READS HINDI — the lyric mood detector learned 3,000+ more Hindi words (the IITB sentiment wordnet, weight-matched), so desi lyrics read as honestly as English ones.',
+  'HAPTICS THAT HEAR THE GENRE — EDM lands heavy on the downbeat, classical stays soft, lofi goes still. Auto, uniform or off, right beside the existing haptics setting.',
+  'YOUR QUEUE SURVIVES THE REAPER — kill the app mid-session and come back within 24 hours: the queue wakes up intact (up to 50 tracks; stream links re-resolve fresh — nothing stale is ever replayed).',
+  'FASTER UNDER THE HOOD — the library\'s hot queries ride real SQLite indexes, heavy screens load on demand instead of at boot, and the YouTube engine caches its decipher program so a cold start stops re-downloading it.',
+  'As always: memories, bookmarks and taste live in the on-device database only — zero servers, zero accounts, zero telemetry.',
 ];
 
 export function WhatsNewDialog() {
@@ -67,7 +72,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 5.1.0 — THE MEMORY LAYER
+            TSF MUSIC 5.2.0 — THE IMPROVEMENT ARC
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

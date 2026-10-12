@@ -11,10 +11,11 @@
  */
 
 import { describe, expect, test, mock } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 
 // The facade describe imports mindbeat — mock the RN shell first (same
 // pattern as godmode_locks; sqlite throws → init degrades, ledger null).
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

@@ -22,6 +22,7 @@
  */
 
 import { describe, expect, test, mock } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 
 // ── module mocks (bun per-file registry; same pattern as feed_query_locks) ──
 // NOTE: bun hoists STATIC imports above runtime mock.module calls, so the
@@ -44,7 +45,7 @@ mock.module('@react-native-async-storage/async-storage', () => ({
     },
   },
 }));
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

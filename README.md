@@ -11,7 +11,7 @@ No server · No account · No tracking · Install and it works
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=D9FF3D&label=release&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build&color=D9FF3D&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
 [![Tests](https://img.shields.io/badge/replay_tests-885_passing-D9FF3D?labelColor=161513)](#quality-assurance)
-[![Tests](https://img.shields.io/badge/total_tests-899_passing-D9FF3D?labelColor=161513)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/total_tests-1071_passing-D9FF3D?labelColor=161513)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-FF4D00?labelColor=161513)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-D9FF3D?labelColor=161513)](#privacy--content-safety)
 
@@ -180,11 +180,11 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v5.1.0** (WAVE 1 — THE MEMORY LAYER: Song Stories ("this was playing when we met" — a note that follows the song across re-listings) + Audio Bookmarks (press-and-hold the progress bar to pin a moment, tap the dot to jump back on the existing seek path) + the new track-menu bookmarks list — all recordingKey-keyed, both tables streamUrl-free, zero new dependencies, zero cold-start cost. In-place upgrades, same keystore since v2.0) |
+| Latest release | **v5.2.0** (THE IMPROVEMENT ARC — Waves A–D: the covers breathe with the scroll (±20px native-driver parallax, gated by viewability/Reduce Motion/Data Saver), ✨ Surprise Me, full-text search over your own notes, a 3,000-word Hindi mood lexicon, genre-aware haptics, the offline queue that survives a killed app, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screen splitting — plus the v5.2.0 mock-hygiene fix. In-place upgrades, same keystore since v2.0) |
 | Audio | Up to 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | Multi-source aggregation on-device — primary catalog + supplemental sources + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 899 tests (885 replay + 14 wave-1 memory-layer locks) · 4,334 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 1,071 tests (885 replay suite + 186 improvement-arc & wave locks) · 4,808 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -255,9 +255,9 @@ on v4.1.0).
 
 ## Quality assurance
 
-1. **899 tests — the 885 replay suite + 14 wave-1 memory-layer locks** — engine behavior, latency budgets, gauntlet
+1. **1,071 tests — the 885 replay suite + 186 improvement-arc & wave locks** (v5.1.0 memory layer 14 · Wave A 45 · Wave B 32 · Wave C 44 · Wave D 21 · v5.2.0 mock-surface & tuning-table locks 8 · plus locks the waves folded into existing files) — engine behavior, latency budgets, gauntlet
    regression locks (every shipped bug class is locked red-on-old-code),
-   plus the adversarial mutation harness (every fix in v5.0.1/v5.0.2 is
+   plus the adversarial mutation harness (every fix in v5.0.1/v5.0.2/v5.2.0 is
    mutation-proven RED; see the changelog)
 2. **The device lab** — the real app on react-native-web with fixture
    data layers, driven by Playwright at hardware-faithful viewports:
@@ -277,7 +277,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, playback pipeline, theming, persistence, CI topology |
 | [MINDBEAT.md](docs/MINDBEAT.md) | The six-layer intelligence stack: surfaces, reason codes, tuning, privacy |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setup, workflow, device lab, gauntlet methodology, release process, conventions |
-| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v5.1.0, root-caused and verified |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Every release v1.0 → v5.2.0, root-caused and verified |
 | [SEARCH-INTENT-RESCUE-PLAN.md](docs/SEARCH-INTENT-RESCUE-PLAN.md) | Engineering RFC: the specific-intent guarantee (shipped in v3.4.0) |
 | [SUPPLEMENTAL-CATALOG-RFC.md](docs/SUPPLEMENTAL-CATALOG-RFC.md) | Engineering RFC: the supplemental catalog source design (shipped in v3.4.0) |
 | [LAB-TESTING-GUIDE.md](docs/LAB-TESTING-GUIDE.md) | The staging-repo workflow that device-verified the v3.4.0 line |
@@ -286,6 +286,7 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v5.2.0** | **THE IMPROVEMENT ARC** — Waves A–D: parallax artwork (native-driver, triple-gated), Surprise Me, FTS5 search over personal notes, the IITB Hindi mood lexicon, genre haptics, offline queue persistence, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screens; plus the react-native mock-surface fix (the v5.0.2 class, closed for the RN mock itself) and the SURPRISE_* constants moved to the tuning table; suite 1,071/0 |
 | **v5.1.0** | **WAVE 1 · THE MEMORY LAYER** — Song Stories + Audio Bookmarks: notes under the lyrics, press-and-hold pins on the bar with tap-to-jump on the existing seek path, the new track-menu bookmarks list, honest empty states, recordingKey portability, both tables streamUrl-free (bar-locked), suite 899/0 (885 replay + 14 new locks) |
 | **v5.0.2** | **THE STABILITY PATCH** — the test-isolation ship-blocker closed (the B3 network-mock leak that held v5.0.1 in CI red), expo-network webmock parity (house rule 15), README test-count truth; zero app-behavior change, suite 885/0 |
 | **v5.0.1** | **THE VERIFICATION ROUND** — the independent auditor's 2 P1 ship-blockers + 6 P2 broken promises fixed with mutation-proven locks: atomic Time-Machine folds (no more data loss on a failing write), the honest session-memory relabel (≤30% *freshly added*, not *unheard*), the vibe-shuffle bound enforced during the walk, real Concert-Mode size caps (no silent truncation, the 4:3 dead band closed), real network-kind artwork prewarm (expo-network) + queue-fingerprint invalidation, resolved-count playback toasts on five surfaces, clock-proof stories/bookmarks caps, haptic hydration gate, karaoke integer word-spans, negative art cache, and docs that match what shipped |

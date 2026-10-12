@@ -38,11 +38,12 @@
  */
 
 import { describe, expect, test, mock } from 'bun:test';
+import { rnMockSurface } from './helpers/rnMockSurface';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
 // ── module mocks (bun per-file registry; the waveb pattern) ────────────
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AccessibilityInfo: {
     isReduceMotionEnabled: async () => false,
     addEventListener: () => ({ remove: () => undefined }),

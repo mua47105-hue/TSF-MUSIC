@@ -8,10 +8,11 @@
  */
 
 import { describe, expect, test, mock } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 
 // The engine orchestrator imports storage (AsyncStorage) transitively —
 // stub the RN-native modules BEFORE the dynamic import below.
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }) },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

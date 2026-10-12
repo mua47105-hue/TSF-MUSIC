@@ -28,6 +28,7 @@
  */
 
 import { describe, expect, test, mock, beforeAll } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
@@ -75,7 +76,7 @@ function WebViewV14(props: any) {
   );
 }
 
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   Platform: { OS: 'android', select: (o: any) => o?.android },
 }));
 mock.module('react-native-webview', () => ({

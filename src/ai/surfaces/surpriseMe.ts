@@ -29,16 +29,14 @@
 import { mulberry32 } from '../genreExplorer';
 import { artistAffinity, sessionEnergyOf } from '../core/decision';
 import { estimateFeatures } from '../core/features';
+import { SURPRISE_AFFINITY_FLOOR, SURPRISE_ENERGY_BAND, SURPRISE_TOP_GENRE_COUNT } from '../core/constants';
 import { filterClean } from '../../safety';
 import type { Track } from '../../types';
 import type { SessionState, TasteProfile } from '../core/types';
 
-/** The vibe band: tighter than Smart Shuffle's ±0.2 (ENERGY_TOLERANCE). */
-export const SURPRISE_ENERGY_BAND = 0.1;
-/** The rarity floor: affinity below this = "rarely played" artist. */
-export const SURPRISE_AFFINITY_FLOOR = 0.1;
-/** The bubble breaker: the top-N profile genres a surprise must avoid. */
-export const SURPRISE_TOP_GENRE_COUNT = 5;
+// The three tuning constants (SURPRISE_ENERGY_BAND, SURPRISE_AFFINITY_FLOOR,
+// SURPRISE_TOP_GENRE_COUNT) live in ../core/constants (house law 4 — the
+// single tuning table); v5.2.0 moved them out of this file.
 
 /** Deterministic string hash (xmur3) → 32-bit seed for mulberry32. */
 export function hashSeed(seed: string): number {

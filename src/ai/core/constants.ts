@@ -1013,6 +1013,23 @@ export const QUEUE_PERSIST = {
   activeBackfill: 10,
 } as const;
 
+// ── THE IMPROVEMENT ARC — WAVE C: SEARCH & DISCOVERY ────────────────────
+
+/** C3 — "Surprise Me", the filter-bubble escape hatch. House law 4: the
+ *  tuning numbers live HERE, not beside the algorithm (v5.2.0 moved them
+ *  out of src/ai/surfaces/surpriseMe.ts). */
+/** Rationale (ENERGY_BAND): TIGHTER than Smart Shuffle's ±0.2
+ *  (ENERGY_TOLERANCE) — a surprise still fits the vibe (±0.1 of the
+ *  session's weighted mean); it escapes the bubble, not the mood. */
+export const SURPRISE_ENERGY_BAND = 0.1;
+/** Rationale (AFFINITY_FLOOR): the rarity floor — artistAffinity below
+ *  this means a never-played (or decayed-to-nothing) artist;
+ *  familiarity disqualifies. */
+export const SURPRISE_AFFINITY_FLOOR = 0.1;
+/** Rationale (TOP_GENRE_COUNT): the bubble breaker — a track in the
+ *  profile's top-5 genres is not a surprise, it is the algorithm again. */
+export const SURPRISE_TOP_GENRE_COUNT = 5;
+
 // ── THE IMPROVEMENT ARC — WAVE D: VISUAL POLISH ─────────────────────────
 
 /** D1 — Album Art Parallax on Scroll. THE BAR: parallax is visible but

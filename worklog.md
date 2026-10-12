@@ -2322,3 +2322,158 @@ Stage Summary:
   (+21 locks, 4,710 → 4,775 expects); tsc 0 throughout; zero new
   dependencies; zero regressions.
 - Commits: 209c424 (D1) on origin/main.
+
+---
+Task ID: WAVE A (the improvement arc opener — BACK-FILLED during v5.2.0)
+Agent: Super Z (main agent)
+Task: Wave A of the improvement arc — A1 hot-path SQLite indexes, A2 the
+YouTube cipher cache, A3 React.lazy screen splitting, A4 the offline
+queue. GAUNTLET per feature: BUILD → LOCK → MUTATE (≥2, all RED,
+byte-exact reverts, porcelain proof) → COMMIT → PUSH.
+
+Back-fill note (v5.2.0 FIX 3, P2-3): this entry was MISSING from the
+worklog — Waves B/C/D were logged, their opener was not. It is
+reconstructed STRICTLY from committed evidence: the four lock files'
+headers (tests/waveA_*.test.ts), the commit messages (527858f, 2b10ee9,
+a5e0c9f, 0839415, 2bde25e), and two fresh measured runs (v5.1.0 baseline
+and the Wave A exit state, both re-run today in throwaway worktrees).
+No number below is invented; anything not re-measurable today is
+attributed to its recording, not claimed as fresh.
+
+Work Log:
+- BASELINE (measured today at 34bba6c, v5.1.0): bun test 899/0 (4,332
+  expects, 74 files) — matches the README's 899 (the recorded 4,334
+  expects is the known ±runner-count drift class).
+- A1 (commit 527858f): the hot-path SQLite index migration —
+  planIndexMigration decides once per device (flag-witnessed: the flag
+  is raised only AFTER the CREATE INDEX statements succeed, so a
+  crashed migration retries); indexes (trackId, ts), (type, ts),
+  (sessionId, ts) serve the three hot query shapes as "USING INDEX
+  idx_events_track_ts" instead of SCAN TABLE. Locks:
+  tests/waveA_a1_sqlite_indexes_locks.test.ts — 13 locks over a REAL
+  in-memory SQLite engine (bun:sqlite) executing the REAL DDL, EXPLAIN
+  QUERY PLAN must show the indexes, plus the once-per-device pure law.
+  Recorded mutations M-A1-1 (planner says always-nothing-to-do) and
+  M-A1-2 (wrong column order (ts, trackId) — SQLite cannot serve the
+  sort from that shape) both RED.
+- A2 (commit 2b10ee9): src/api/ytCipherCache.ts — a cold boot never
+  re-downloads base.js: RAM → KV → fetch ladder, the parsed decipher
+  program persisted under the deterministic key prefix tsf.ytCipher.
+  (FNV-1a of the jsPath), TTL-checked, foreign-path-proof; webmock
+  parity via src/webmocks/ytCipherCache.ts. Locks:
+  tests/waveA_a2_cipher_cache_locks.test.ts — 11 locks incl. a REAL
+  end-to-end cold boot over the module's fetch seam (base.js fetched
+  exactly ONCE across two resolutions; the deciphered URL byte-
+  identical). Recorded mutations M-A2-1/2/3 (KV load removed, TTL
+  removed, save removed) all RED.
+- A3 (commit a5e0c9f): App.tsx wraps EXACTLY eight screens in
+  React.lazy behind Suspense + ScreenSkeleton (testID
+  lazy-screen-skeleton); the four boot-critical screens stay eager;
+  zero testID breakage; no new sync work on the boot path (X5).
+  Locks: tests/waveA_a3_lazy_screens_locks.test.ts — 8 locks.
+  Recorded mutations M-A3-1/2 (a screen reverted to eager; the Suspense
+  fallback stripped) both RED. HONEST DISCLOSURE (the commit message
+  says it too): the mechanism is shipped but the bundle-size bar is
+  UNMET on this toolchain (RN 0.76 + Metro does not split Hermes
+  bytecode per lazy chunk — one hbc ships; lazy still moves parse/
+  eval cost off the boot path's critical section). PARTIAL, on purpose.
+- A4 (commit 0839415): src/player/queuePersistence.ts — the offline
+  queue: save on every mutation (500ms debounce, one write per burst
+  carrying the LATEST queue), restore on boot only when the engine
+  came up empty, 50-row cap around the active row, 24h TTL, house rule
+  14 on BOTH the write and the read (stream URLs unrepresentable —
+  tap-time resolution re-answers), togglePlay one-shot active-index
+  handoff. Locks: tests/waveA_a4_queue_persistence_locks.test.ts —
+  13 locks with hand-driven timers. Recorded mutations M-A4-1/2/3
+  (save effect removed, TTL removed, strip removed) all RED.
+- Verifier paperwork (commit 2bde25e): scripts/verify_v510_apk.py —
+  the five honest-marker fixes (the v4.3 lesson re-learned against the
+  real APK).
+- EXIT STATE (measured today at 2bde25e): bun test 968/0 (4,493
+  expects, 78 files). The Wave B entry's recorded "4,495 expects" is
+  the same ±runner drift class — both runs green, zero fails.
+
+Stage Summary:
+- Wave A SHIPPED: A1/A2/A4 complete with behavioral locks over real
+  engines; A3 PARTIAL BY DISCLOSURE (mechanism live, size bar unmet on
+  RN 0.76 + Metro single-hbc). 45 locks in the four wave files + locks
+  folded into existing files; suite 899 → 968/0. tsc 0 throughout.
+- Commits: 527858f (A1), 2b10ee9 (A2), a5e0c9f (A3), 0839415 (A4),
+  2bde25e (v5.1.0 verifier honest-marker fixes) on origin/main.
+
+---
+Task ID: V5.2.0 (emergency fix — the mock leak + honest docs + the wave release)
+Agent: Super Z (main agent)
+Task: v5.2.0 — FIX 1 the react-native mock-leak P0, FIX 2 the SURPRISE_*
+constants home, FIX 3 documentation honesty, FIX 4 the release cut;
+≥4 mutations; 3× green; tag+push; report ONLY measured numbers.
+
+Work Log:
+- STATE VERIFIED FIRST: local clone was stale (51cf33e); fetched —
+  origin/main = e097d70 carries Waves A–D exactly as the mission
+  described; ff-pulled, tree clean.
+- BASELINE (measured, both bun versions): at e097d70 the DEFAULT full
+  suite is 1063 pass / 0 fail / 4,773 expects / 84 files on bun 1.3.14
+  AND bun 1.4.3 — the mission's claimed "1042/1/1" did NOT reproduce in
+  the default run. The leak itself DID: a minimal pair (prewarm file →
+  a mock-less later file importing Artwork.tsx) fails 1/8 on both
+  versions — the partial prewarm mock (no StyleSheet) poisons any later
+  mock-less file; the latent class, one re-order away from red CI.
+- FIX 1: tests/helpers/rnMockSurface.ts (the full-surface factory: 25
+  runtime keys = the live-union of every named RN import in the repo);
+  all 19 mock registrations converted (overrides spread last — every
+  locked behavior unchanged); tests/fix_v520_rn_mock_surface_locks.test.ts
+  (6 locks: L1 live union-completeness, L2 spread discipline, L3 the
+  incident regression (Artwork + ParallaxArtwork evaluate), L4 helper
+  purity, L5 core-key pins). Suite → 1069/0 (4,800).
+- FIX 2: SURPRISE_ENERGY_BAND / SURPRISE_AFFINITY_FLOOR /
+  SURPRISE_TOP_GENRE_COUNT moved surpriseMe.ts:37-41 → constants.ts
+  (rationale comments); surpriseMe imports them; C3 locks updated + the
+  moved-not-copied law. Suite → 1071/0 (4,805). tsc 0.
+- FIX 3: README total badge 899 → 1,071 (the stale badge had survived
+  the whole arc) + QA rows (1,071 = 885 replay + 186 arc & wave locks ·
+  4,805 assertions) + release-history v5.2.0 row + latest-release row +
+  doc-range v1.0 → v5.2.0; docs-truth lock extended to bite on the
+  stale total; CHANGELOG gains the full v5.2.0 entry (the waves A–D
+  with B1 DORMANT and A3 PARTIAL verbatim); worklog gains the missing
+  Wave A entry (back-filled from committed evidence + two fresh
+  worktree-measured runs: v5.1.0 899/0/4,332 at 34bba6c, Wave A exit
+  968/0/4,493 at 2bde25e).
+- FIX 4: versions → 5.2.0 (package.json + app.json); WhatsNewDialog
+  SEEN_KEY tsf.whatsNew.v5_2_0 + THE IMPROVEMENT ARC bulletin (8 honest
+  bullets; ReplayGain deliberately absent — a dormant feature is not a
+  bullet); wave_v510 bulletin locks reconciled (the durable concern:
+  the key names THIS release); scripts/verify_v52_apk.py mirrors v510
+  (parsed-hbc method, all retained bars, Wave A–D markers, bulletin
+  pair) + the SELF-INVENTORY law.
+- THE M5 DISCOVERY: deleting a marker line from a verifier was a SILENT
+  loosening — the check merely stopped running, the run stayed ALL
+  GREEN (proven on the real v5.1.0 APK before the hardening). Both
+  verifiers now pin their executed-check count (v510: 27/27 green
+  against the real released APK after hardening; v52: 25/25).
+- MUTATIONS (5, backups .mutation-backups/v520/, md5-verified restores,
+  no mutation residue after any restore):
+  M1 mock spread removed → L2 RED + the leak reproduced again (pair 1/8);
+  M2 StyleSheet dropped from the surface → L1+L3+L5 RED (3 fails);
+  M3 SURPRISE_TOP_GENRE_COUNT removed → C3 RED (0 pass/1 fail/1 error);
+  M4 README badge → stale 899 → docs-truth RED (1 fail);
+  M5 Wave D1 marker deleted from the v52 verifier → self-inventory RED
+  (24/25) — RED only BECAUSE of the new law; the pre-hardening verifier
+  ran ALL GREEN under the identical mutation.
+- REAL-ARTIFACT EVIDENCE: the released v5.1.0 APK (83,200,164 bytes,
+  1,417 entries) downloaded; verify_v510_apk.py ALL GREEN on it (before
+  and after the inventory hardening); verify_v52_apk.py against it
+  fails EXACTLY the 16 checks a pre-arc bundle must fail (version +
+  every arc marker) with all retained bars green — the discriminating
+  behavior proven on a real artifact before the tag.
+
+Stage Summary:
+- v5.2.0 gates: tsc 0; THREE consecutive bun test runs 1,071/0
+  (4,808 / 4,808 / 4,808 expects, 85 files — the FINAL gate after the
+  docs-law tightening; earlier identical-tree runs measured 4,805 then
+  4,807, the ±2 runner-counting drift plus one added expect, disclosed
+  rather than stitched).
+- THE ONE RULE kept: every number above is from a run in THIS session;
+  no numbers stitched from different runs; the mission's 1042/1/1
+  premise did not reproduce and is reported as not-reproduced alongside
+  the reproduced leak class.

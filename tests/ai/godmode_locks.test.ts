@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, test, beforeAll, mock } from 'bun:test';
+import { rnMockSurface } from '../helpers/rnMockSurface';
 
 const setVolumeCalls: number[] = [];
 let paused = false;
@@ -38,7 +39,7 @@ mock.module('react-native-track-player', () => ({
     PlayerError: 'player-error',
   },
 }));
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

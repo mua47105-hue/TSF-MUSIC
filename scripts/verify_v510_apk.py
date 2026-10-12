@@ -39,9 +39,12 @@ import sys
 import zipfile
 
 failures = []
+checks_run = 0
 
 
 def check(name, ok, detail=""):
+    global checks_run
+    checks_run += 1
     print(f"  [{'OK' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
     if not ok:
         failures.append(name)
@@ -217,6 +220,13 @@ def main():
               and b"webmocks/fixtures" not in z.read(bundle_name))
 
     print()
+    # V510-S — the verifier inventories ITSELF (the v5.2.0 M5 lesson:
+    # deleting a marker line was a SILENT loosening — the check merely
+    # stopped running and the run stayed ALL GREEN. The executed-check
+    # count is pinned; a quietly removed or added check is a RED.)
+    PINNED_CHECK_COUNT = 27
+    check("V510-S the verifier executed its full pinned inventory",
+          checks_run == PINNED_CHECK_COUNT, f"{checks_run}/{PINNED_CHECK_COUNT}")
     if failures:
         print(f"v5.1.0 verify: {len(failures)} FAILURE(S): {failures}")
         return 1

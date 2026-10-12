@@ -25,6 +25,7 @@
  */
 
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
+import { rnMockSurface } from './helpers/rnMockSurface';
 
 // ── module mocks (bun per-file registry; same pattern as wave1 locks) ──
 const memStore = new Map<string, string>();
@@ -42,7 +43,7 @@ mock.module('@react-native-async-storage/async-storage', () => ({
     },
   },
 }));
-mock.module('react-native', () => ({
+mock.module('react-native', () => rnMockSurface({
   AppState: { addEventListener: () => ({ remove: () => undefined }), currentState: 'active' },
   Platform: { OS: 'android', select: (o: any) => o.android },
   NativeModules: {},

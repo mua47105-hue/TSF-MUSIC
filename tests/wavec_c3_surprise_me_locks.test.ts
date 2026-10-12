@@ -19,7 +19,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { pickSurprise, hashSeed, topGenres, SURPRISE_ENERGY_BAND } from '../src/ai/surfaces/surpriseMe';
+import { pickSurprise, hashSeed, topGenres } from '../src/ai/surfaces/surpriseMe';
+import {
+  SURPRISE_AFFINITY_FLOOR,
+  SURPRISE_ENERGY_BAND,
+  SURPRISE_TOP_GENRE_COUNT,
+} from '../src/ai/core/constants';
 import { mulberry32 } from '../src/ai/genreExplorer';
 import { estimateFeatures } from '../src/ai/core/features';
 import { sessionEnergyOf } from '../src/ai/core/decision';
@@ -233,5 +238,22 @@ describe('wavec c3 — the top-5 genre boundary', () => {
     const session = fixtureSession();
     const catalog = [track('s1', 'mystery jazz trio', 'midnight wanderings', undefined)];
     expect(pickSurprise(profile, session, catalog, { now: NOW, seed: 's' })).not.toBeNull();
+  });
+});
+
+// ── v5.2.0 FIX 2 — the tuning constants live in the single table ────────
+describe('v5.2.0 FIX 2 · the SURPRISE_* tuning constants live in constants.ts (house law 4)', () => {
+  const fs = require('fs');
+  const surface = fs.readFileSync('src/ai/surfaces/surpriseMe.ts', 'utf8');
+
+  test('the three constants exist in the tuning table with their locked literals', () => {
+    expect(SURPRISE_ENERGY_BAND).toBe(0.1);
+    expect(SURPRISE_AFFINITY_FLOOR).toBe(0.1);
+    expect(SURPRISE_TOP_GENRE_COUNT).toBe(5);
+  });
+
+  test('they are imported from constants, not re-declared beside the algorithm (moved, not copied)', () => {
+    expect(surface).toContain("from '../core/constants'");
+    expect(surface).not.toMatch(/export const SURPRISE_/);
   });
 });
