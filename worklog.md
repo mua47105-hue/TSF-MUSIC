@@ -2477,3 +2477,49 @@ Stage Summary:
   no numbers stitched from different runs; the mission's 1042/1/1
   premise did not reproduce and is reported as not-reproduced alongside
   the reproduced leak class.
+
+---
+Task ID: V5.2.0-LAB (the E2E lab round — the D1 device crash)
+Agent: Super Z (main agent)
+Task: both workflows green on the v5.2.0 release — diagnose and fix the
+emulator-lab failure the release inherited from Wave D.
+
+Work Log:
+- CI TRUTH at e097d70 (retrieved): Native Android #141 = failure at the
+  bun gate — "1042 pass / 1 fail / SyntaxError: Export named
+  'StyleSheet' not found" inside tests/waved_d1_parallax_locks.test.ts —
+  the hostile verifier's numbers were REAL (CI's bun resolves the leaked
+  partial mock differently than my local 1.3.14/1.4.3, where the default
+  suite measured 1063/0). The mock-surface fix (FIX 1) targets exactly
+  this. E2E Lab #53 died at the same gate — the emulator never ran.
+- v5.2.0 first cut (f042ecc): Native Android #142/#143 GREEN (bun gate +
+  build); E2E Lab #54 — the emulator lab RAN for the first time since
+  Wave C — FAILED: every flow dead at its first visible-assert, app
+  showing the native "TSF Music keeps stopping" dialog.
+- LOCAL WEB REPRO: none (the committed dist renders clean at the same
+  viewport) — the crash is Android-only.
+- BISECTION (4 lab runs, each with boot diagnostics patched into
+  run_lab.sh: uiautomator dump + crash-buffer head into the CI LOG):
+  probe (short bulletin) FAILED ⇒ the v5.2.0 bulletin innocent;
+  probe C (parallax active path off, native event on) FAILED with the
+  exception verbatim: "Invariant Violation: Components based on
+  VirtualizedList must be wrapped with Animated.createAnimatedComponent
+  to support native onScroll events with useNativeDriver" — a plain
+  FlatList cannot carry a native-driver onScroll on Android (the web
+  build tolerates it — why the layers diverged);
+  probe D (native event off) died at the bun gate on the waved_d1
+  source laws — the locks doing their job.
+- FIX: both wired lists ride Animated.FlatList (the preset
+  createAnimatedComponent wrapper); useNativeDriver: true and the 60fps
+  bar unchanged; the Android invariant locked as a source law
+  (a plain '<FlatList' beside a native-driver onScroll = RED), the old
+  R8 windowing lock reconciled. Lab run #59 on the fix branch: SUCCESS —
+  all required flows green, 8-bullet bulletin included.
+- M6 MUTATION: revert to the plain <FlatList → 4 fails (waved_d1
+  invariant lock + R8 windowing lock + siblings) → RED → byte-exact
+  restore (md5-verified).
+- RELEASE RE-CUT: v5.2.0 moved f042ecc → bc5ec76 (delete remote tag,
+  re-tag, push); git rev-parse v5.2.0^{commit} == git rev-parse HEAD
+  (bc5ec763846c75363d0ccac5617d93e5c2f5acf1) — the one rule, re-proven.
+- FINAL MEASURED STATE: tsc 0; bun test 1,072/0 (4,811 expects, 85
+  files) — README/CHANGELOG carry these numbers.

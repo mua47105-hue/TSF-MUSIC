@@ -114,8 +114,8 @@ dependencies anywhere in the arc (Wave D's parallax rides the RN
   in `tests/fix_v520_rn_mock_surface_locks.test.ts` (union-completeness,
   spread-discipline, incident-regression, helper-purity, core-key laws —
   6 locks), not a crashed suite next week.
-- **Gates after the fix**: `bunx tsc --noEmit` 0; full suite **1,071
-  pass / 0 fail / 4,808 expects across 85 files** (three consecutive
+- **Gates after the fix**: `bunx tsc --noEmit` 0; full suite **1,072
+  pass / 0 fail / 4,811 expects across 85 files** (three consecutive
   gate runs, identical pass/fail; the expect counter drifts ±2 between
   identical runs — the v5.0.2 runner-noise class, disclosed).
 
@@ -134,12 +134,36 @@ SURPRISE_` beside the algorithm). 2 new locks.
   while the shipped suite measured 1,071) — the badge now pins the
   measured number (`total_tests-1071_passing`), the docs-truth lock
   bites on the stale total, and the QA rows carry the measured
-  decomposition (885 replay + 186 arc & wave locks · 4,808 assertions).
+  decomposition (885 replay + 187 arc & wave locks · 4,811 assertions).
 - This changelog gains the improvement-arc waves (A–D) — they shipped
   after v5.1.0 with no release entry.
 - The worklog gains the missing Wave A entry — back-filled strictly
   from committed evidence and two fresh measured runs (v5.1.0 baseline
   899/0/4,332 at `34bba6c`; Wave A exit 968/0/4,493 at `2bde25e`).
+
+### FIX 5 — the D1 device crash the E2E lab caught (the Android invariant)
+
+The bun suite was green and the web device lab was green — but the
+EMULATOR lab caught Wave D killing the app at boot on Android:
+
+    FATAL EXCEPTION: mqt_native_modules
+    JavascriptException: Invariant Violation: Components based on
+    VirtualizedList must be wrapped with Animated.createAnimatedComponent
+    to support native onScroll events with useNativeDriver
+
+A plain `FlatList` cannot carry `Animated.event(..., { useNativeDriver:
+true })` — Android throws a fatal Invariant Violation at mount while the
+web build runs it happily, which is exactly why the two test layers
+diverged. The fix: both wired lists ride `Animated.FlatList` (the preset
+wrapper) — the native-driver event and the 60fps bar are unchanged.
+Locked as a source law in the waved_d1 suite (a plain `<FlatList` beside
+a native-driver onScroll is a RED), with the old R8 windowing lock
+reconciled to the same concern. The lab's boot diagnostics (on-screen
+UI dump + the crash-buffer head into the CI log) are now permanent, so
+the NEXT boot crash is a 2-minute read instead of a CI archaeology.
+Four lab runs isolated it: probe C (active path off, event on) still
+crashed with this exact exception; probe D (event off) died at the bun
+gate on the waved_d1 source laws — the locks doing their job.
 
 ### FIX 4 — the release itself
 
@@ -162,7 +186,7 @@ SURPRISE_` beside the algorithm). 2 new locks.
 
 ### Mutation evidence
 
-5 mutations, all RED, all byte-exact reverts, md5-verified,
+6 mutations, all RED, all byte-exact reverts, md5-verified,
 `git status --porcelain` clean of mutation residue after each restore;
 backups in `.mutation-backups/v520/`.
 
@@ -173,6 +197,7 @@ backups in `.mutation-backups/v520/`.
 | M3 | `SURPRISE_TOP_GENRE_COUNT` removed from the tuning table | the C3 lock file RED (0 pass / 1 fail / 1 error — the import chain breaks) |
 | M4 | the README total badge reverted to the stale 899 | the docs-truth lock RED (1 fail) |
 | M5 | a Wave A–D marker line deleted from the v5.2.0 verifier | the self-inventory check RED (24/25) — before the hardening, this mutation ran ALL GREEN, which is exactly why the law now exists |
+| M6 | the feed list reverted to the plain `<FlatList` (the Android invariant re-introduced) | the waved_d1 Android-invariant lock + the R8 windowing lock RED (4 fails) |
 
 All notable releases of TSF Music. Dates are UTC.
 Detailed build history: `worklog.md` (the session log).

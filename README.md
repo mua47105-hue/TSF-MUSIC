@@ -11,7 +11,7 @@ No server · No account · No tracking · Install and it works
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=D9FF3D&label=release&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build&color=D9FF3D&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
 [![Tests](https://img.shields.io/badge/replay_tests-885_passing-D9FF3D?labelColor=161513)](#quality-assurance)
-[![Tests](https://img.shields.io/badge/total_tests-1071_passing-D9FF3D?labelColor=161513)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/total_tests-1072_passing-D9FF3D?labelColor=161513)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-FF4D00?labelColor=161513)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-D9FF3D?labelColor=161513)](#privacy--content-safety)
 
@@ -184,7 +184,7 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 | Audio | Up to 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | Multi-source aggregation on-device — primary catalog + supplemental sources + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 1,071 tests (885 replay suite + 186 improvement-arc & wave locks) · 4,808 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 1,072 tests (885 replay suite + 187 improvement-arc 1,071 tests (885 replay suite + 186 improvement-arc & wave locks) · 4,808 assertions wave locks) · 4,811 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -255,7 +255,7 @@ on v4.1.0).
 
 ## Quality assurance
 
-1. **1,071 tests — the 885 replay suite + 186 improvement-arc & wave locks** (v5.1.0 memory layer 14 · Wave A 45 · Wave B 32 · Wave C 44 · Wave D 21 · v5.2.0 mock-surface & tuning-table locks 8 · plus locks the waves folded into existing files) — engine behavior, latency budgets, gauntlet
+1. **1,072 tests — the 885 replay suite + 187 improvement-arc & wave locks** (v5.1.0 memory layer 14 · Wave A 45 · Wave B 32 · Wave C 44 · Wave D 21 · v5.2.0 mock-surface & tuning-table locks 8 · plus locks the waves folded into existing files) — engine behavior, latency budgets, gauntlet
    regression locks (every shipped bug class is locked red-on-old-code),
    plus the adversarial mutation harness (every fix in v5.0.1/v5.0.2/v5.2.0 is
    mutation-proven RED; see the changelog)
