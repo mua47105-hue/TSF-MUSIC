@@ -200,12 +200,15 @@ def main():
         # ── V520-W: THE IMPROVEMENT ARC (Waves A–D) ─────────────────────
         arc = {
             "V520-W-A1 SQLite index names (Wave A1)": "idx_events_track_ts",
-            "V520-W-A1b index DDL rides the bundle": "CREATE INDEX IF NOT EXISTS",
+            "V520-W-A1b the full index set rides (Wave A1)": "idx_events_session",
             "V520-W-A2 cipher-cache KV prefix (Wave A2)": "tsf.ytCipher.",
             "V520-W-A3 lazy-screen skeleton testID (Wave A3)": "lazy-screen-skeleton",
             "V520-W-A4 offline-queue storage key (Wave A4)": "tsf.queue.v1",
             "V520-W-B2 genre-haptics store key (Wave B2)": "tsf.hapticGenreMode.v1",
-            "V520-W-C2 FTS5 notes virtual table (Wave C2)": "personal_notes_fts",
+            # the honest-marker lesson (v5.2.0 round): the FTS5 DDL rides
+            # as WHOLE multi-line statements, not as the bare table name —
+            # pinned to an exact single-line statement from appTables.ts.
+            "V520-W-C2 FTS5 notes statement (Wave C2)": "DELETE FROM personal_notes_fts WHERE entry_key = ?",
             "V520-W-C2b YOUR NOTES section header (Wave C2)": "\U0001F4DD YOUR NOTES",
             "V520-W-C3 surprise button testID (Wave C3)": "surprise-me-btn",
             "V520-W-C3b surprise toast line (Wave C3)": "Playing a surprise pick \u2014 see if it sticks",
@@ -214,9 +217,13 @@ def main():
         for name, marker in arc.items():
             check(name, marker in sset)
 
-        # ── V520-W-C1: the Hindi lexicon (bundled asset + sampled words) ─
-        check("V520-W-C1 the HSWN lexicon asset is packaged",
-              "assets/hindi_lexicon_iitb.json" in names)
+        # ── V520-W-C1: the Hindi lexicon (Metro-inlined module + sampled
+        #    words). The v5.2.0 honest-marker lesson: the JSON is NOT an
+        #    APK asset entry (expo-asset ships only 4 named assets) — the
+        #    lexicon rides INSIDE the Hermes string table as a bundled
+        #    module, so the check pins a verified baked key instead.
+        check("V520-W-C1 the HSWN lexicon rides the bundle",
+              "aabhaaheen" in sset)
         hindi_samples = ["aabhaaheen", "aadamkhor", "zeest", "khamoshi", "tanhai"]
         hhits = sum(1 for w in hindi_samples if w in sset)
         check("V520-W-C1b romanized HSWN words inside the bundle", hhits >= 3, f"{hhits}/5 sampled words")
