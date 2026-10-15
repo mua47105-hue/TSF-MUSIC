@@ -2850,3 +2850,38 @@ Stage Summary:
   the Wire is lazy on its last eager route, dead code deleted, the cipher
   eval is integrity-gated, the WebView surface is minimal. 20 new locks.
   Zero regressions.
+
+---
+Task ID: V5.2.1-RELEASE
+Agent: Super Z (main agent)
+Task: the v5.2.1 release cut — versions, bulletin, changelog, verifier,
+final gates, tag, CI, APK verification.
+
+Work Log:
+- Versions: package.json + app.json → 5.2.1.
+- WhatsNewDialog: SEEN_KEY → tsf.whatsNew.v5_2_1; the bulletin is THE
+  HARDENING PASS (honest bullets: the real crate actions, the 10-second
+  fetch ceiling, the tested fallback engine, bounded caches, the integrity-
+  gated decipher + the narrowed WebView origins); the headline updated;
+  the v5.1.0-era release law (wave_v510_memory_layer_locks) rolled forward
+  to pin THIS release — its intent (the bulletin names the CURRENT
+  release) preserved, caught RED by the suite before the tag.
+- docs/CHANGELOG.md: the full v5.2.1 entry — all 25 fixes across 4 waves,
+  the honest ledger (1,163/5,246 three-run-identical, 91 new locks, 55
+  mutations all RED), and the known limits stated plainly (B4 render-side
+  proof stays with the E2E lab; B6's live-ledger half not reproducible in
+  bun; coldStartDeltaMs's device half enforced by the E2E gate; B1
+  ReplayGain still DORMANT until a bake carries loudness).
+- README: the QA row finalized at the measured numerals (1,163 tests =
+  573 replay [the 44 pre-arc files, measured] + 590 arc & hardening locks
+  · 5,246 assertions); the latest-release line advanced.
+- scripts/verify_v521_apk.py: the deep verifier (Hermes string-table
+  parser, exact-membership checks) — 35 executed checks pinned by the
+  self-inventory: versionName 5.2.1, every retained regression bar, the
+  honesty-wave markers (the real toasts ride, the fake literals are GONE),
+  the fetch-ceiling error string, the jnn-pa origin, the BoundedMap law,
+  the v5.2.1 bulletin, mock hygiene. The B1/DORMANT lesson honored: B/C/D
+  fixes without user-visible strings are asserted by the bun locks, not
+  invented APK markers.
+- FINAL GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test
+  runs 1,163/0 (5,246 / 5,246 / 5,246 expects, 89 files) — byte-identical.

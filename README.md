@@ -180,11 +180,11 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v5.2.0** (THE IMPROVEMENT ARC — Waves A–D: the covers breathe with the scroll (±20px native-driver parallax, gated by viewability/Reduce Motion/Data Saver), ✨ Surprise Me, full-text search over your own notes, a 3,000-word Hindi mood lexicon, genre-aware haptics, the offline queue that survives a killed app, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screen splitting — plus the v5.2.0 mock-hygiene fix. In-place upgrades, same keystore since v2.0) |
+| Latest release | **v5.2.1** (THE IMPROVEMENT ARC — Waves A–D: the covers breathe with the scroll (±20px native-driver parallax, gated by viewability/Reduce Motion/Data Saver), ✨ Surprise Me, full-text search over your own notes, a 3,000-word Hindi mood lexicon, genre-aware haptics, the offline queue that survives a killed app, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screen splitting — plus the v5.2.0 mock-hygiene fix. In-place upgrades, same keystore since v2.0) |
 | Audio | Up to 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | Multi-source aggregation on-device — primary catalog + supplemental sources + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 1,143 tests (573 replay suite + 570 improvement-arc & hardening locks) · 5,217 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 1,163 tests (573 replay suite + 590 improvement-arc & hardening locks) · 5,246 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 

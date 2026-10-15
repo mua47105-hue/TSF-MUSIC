@@ -1,5 +1,144 @@
 # Changelog
 
+## v5.2.1 — 2026-10-15 — COMPREHENSIVE HARDENING (every forensic-audit finding)
+
+A hostile audit of v5.2.0 ran 16 adversarial mutations against the full
+suite; 8 SURVIVED — house laws that existed in code but not in tests. It
+also found a P0 theatre assertion, three honesty-violating fake toasts, an
+untested fallback engine, unbounded caches and a doc layer that claimed
+enforcement it never had. All of it is fixed here, wave by wave, every fix
+locked with a test that goes RED on regression, every lock mutation-proven
+(55 mutations across the four waves, all RED, all restored byte-exact).
+No architectural change, no new runtime dependencies.
+
+### Wave A — P0 + critical P1s (honesty, timeouts, theatre)
+
+- **A1 · The theatre assertion (P0)** — `godmode_locks.test.ts:101` accessed
+  `.not.toHaveBeenCalled` as a PROPERTY (missing parentheses): the
+  sleep-timer "never fires on cancel" guarantee was unprotected while
+  appearing protected. The matcher is now invoked against a call-tracked
+  mock, and a repo-wide scan law makes the theatre form a RED anywhere in
+  the suite.
+- **A2 · The fake crate toasts (P1, honesty)** — CollectionScreen's heart
+  and download buttons fired "ADDED TO YOUR CRATES" / "DOWNLOADING CRATE…"
+  and did nothing. Now: a real batch-like through the provider (only the
+  not-yet-loved rows — the pure core `pickUnfavorited` is locked), a real
+  per-track download with the honest count ("CRATE DOWNLOADED · N SONGS" /
+  "CRATE PARTIAL · x/y SAVED"), and toasts only AFTER the work completes.
+- **A3 · The fake pin toast (P1, honesty)** — PlaylistScreen's "PINNED TO
+  YOUR CRATES" pinned nothing. Pinning is real now: `Playlist.pinnedAt`
+  persists (serialized store write), the Library lists pinned crates first
+  with a PINNED marker, the heart fills when pinned, and the round-trip
+  (pin → fresh read → still pinned → unpin → gone) is locked.
+- **A4 · Unbounded provider fetches (P1)** — saavn.ts:35, youtube.ts:143/
+  252/781 and itunes.ts:34 awaited bare `fetch` — a hung CDN socket stalled
+  a track start forever. New seam `src/api/fetchWithTimeout.ts`: every
+  provider fetch carries a 10 s ceiling (the tuning number lives in
+  constants.ts — house law 4), a settle-once guarantee (the caller's
+  promise resolves even against a fetch that ignores aborts), and caller
+  signals honored end-to-end. Wired through youtube's `setYtFetch` seam so
+  the stub discipline survives.
+- **A5 · The itunes typed lie (P1)** — `searchItunes` accepted `_signal`
+  and silently ignored it. The signal is threaded now; aborting mid-search
+  cancels end-to-end (behaviorally locked against a never-resolving
+  fetch).
+
+### Wave B — lock-the-survivors (8 house laws get teeth)
+
+- **B1 · AppState single-owner gate (Law 3)** — the provider/service
+  transition-ownership contract is the pure law `trackOwnership.ts`;
+  a dual-owner simulation proves EXACTLY one ledger write per transition
+  in either app state; source laws pin both call sites.
+- **B2 · sanitizeArtistImage host law (Law 9)** — the path substring check
+  let `https://evil.com/artists/x.jpg` through; only
+  `https://c.saavncdn.com/artists/…` passes now (four-case lock).
+- **B3 · SEATBELT final-paint guard (Law 13)** — the "a late zero can't
+  unsee rows" guarantee is the pure law `seatbelt.ts`, behaviorally locked,
+  wiring pinned.
+- **B4 · track-row testID (Law 12)** — bun-level presence lock on the
+  testID the Maestro flows tap (the render-side proof stays with the E2E
+  lab — dragging PlayerProvider+sqlite mocks into bun to read one
+  attribute would recreate the v5.2.0 leak class; stated honestly).
+- **B5 · Cross-source recording reconciliation (Law 6)** — verifySet's S2
+  merged pool deduped by ID only; the same recording under two provider
+  ids both survived. The merged pool now runs `reconcileRecordings` —
+  RESCUE-AWARE: a rescued row can never evict its playable organic twin
+  (the pre-existing L-P0-2 contract caught the naive version; both laws
+  now coexist by design).
+- **B6 · Kill-switch gates (M12/M12b)** — all 15 audited
+  `intelligenceDisabled` surfaces enumerated and locked: disabled ⇒ honest
+  empty, never data, never a throw. Per-method body laws make a single
+  gate removal a RED (the first draft's count law was too weak — proven by
+  its mutation surviving, then fixed).
+- **B7 · YouTube disabled-source error:true (Law 7)** — the transport-
+  failure contract is locked (`error: true` preserves the caller's
+  continuation semantics; `reason: 'disabled'` on the stream path).
+- **B8 · Mixed wall+video verdict (M14b)** — `ytResolveStream` no longer
+  calls `noteYtSuccess()` on a verdict that observed a LOGIN_REQUIRED:
+  the mixed verdict is NEUTRAL, the kill-switch streak survives (trip-
+  arithmetic lock with a positive control).
+
+### Wave C — the untested fallback engine + structural fixes
+
+- **C1 · engine.ts + mixes/daylist/ontherise/shuffle get tests (P1)** —
+  five modules with ZERO test imports (the fallback path users get when
+  intelligence is off) now carry 16 behavioral locks over the real
+  `buildProfile` fixture: weights, caps, honest empties, the kill-switch
+  fallback chain (mindbeat.radio disabled → [] AND engine.getRadio →
+  non-empty), the ≤30% yesterday-repeat law, queue healing, honest nulls.
+- **C2 · lrclib originCache bounded (P1)** — the doc claimed "LRU-30";
+  there was no cap. A true LRU (`BoundedMap`) now bounds it at 30.
+- **C3 · artists photo caches bounded (P1)** — photoCache +
+  namePhotoCache ride the same LRU at 300.
+- **C4 · PERF_BUDGETS comment lies (P1)** — the comment claimed all 7
+  budgets were enforced by perf.test.ts; 2 never were. Now they are
+  (aiPlaylistEndToEndMs measured end-to-end; coldStartDeltaMs for the
+  bun-measurable init slice, with the on-device half honestly attributed
+  to the E2E gate), all 7 budgets are referenced BY NAME from the table,
+  and a lock greps perf.test.ts code for every key.
+- **C5 · Unscoped saavn mock (P1)** — hygiene_behavioral_locks' fixture
+  override leaked into later files (the v5.0.1 class); the mock is
+  file-scoped now (afterAll restores the real module) and a canary in a
+  later-loaded file proves it.
+
+### Wave D — documentation, P2s, cleanup
+
+- **D1 · README QA row (P2)** — the row carried interleaved stale
+  fragments from three edits; it is one honest line now, with the
+  measured numerals, and the docs-truth law pins them.
+- **D2 · 160 KB dead fonts (P2)** — six Figtree TTFs eagerly loaded with
+  zero consumers are off the cold start (files kept).
+- **D3 · AIScreen static lazy import (P2)** — the AI deep-link route
+  statically imported MindbeatWireScreen, defeating the Wave A A3 split;
+  it rides a local React.lazy + Suspense now.
+- **D4 · AmbientBackdrop documented but never rendered (P2)** — deleted
+  (code + the doc claim), not mounted: shipping an unverifiable
+  full-screen visual change in a hardening release would trade honesty
+  for spectacle.
+- **D5 · Comment lies (P2)** — deps.ts's "safety-filtered" claim on a
+  function that never filtered; surfaces.test.ts's claimed Mixes v2
+  coverage. Corrected. The decadeRadio/moodJourney reconcileRecordings
+  claims VERIFIED TRUE (the audit misread) and now backed by per-body
+  source laws.
+- **D6 · Cipher-cache integrity (P2, security)** — the cached decipher
+  program was restored from AsyncStorage and eval'd with NO integrity
+  check (tampered storage = arbitrary code execution). An FNV-1a body
+  hash is stamped at save and gated at load: tampered or legacy entries
+  degrade to the fresh fetch, never to `new Function`.
+- **D7 · WebView origin surface (P2)** — ytPoToken's `originWhitelist`
+  narrowed from `['*']` to the three Google origins the minter needs.
+
+### The honest ledger
+
+- Suite: **1,163 tests / 5,246 expects** (three consecutive identical
+  runs at the release cut), tsc strict 0 — up from v5.2.0's 1,072/4,814.
+- 91 new locks across the four waves; 55 mutations, all RED, all
+  restored byte-exact (`git status --porcelain` clean after each).
+- Known limits, stated: B4's render-side proof stays with the E2E lab;
+  B6's "live ledger" half is not reproducible in bun (no sqlite); the
+  coldStartDeltaMs on-device half is enforced by the E2E perf gate, not
+  bun; B1's ReplayGain remains DORMANT until a bake carries loudness.
+
 ## v5.2.0 — 2026-10-12 — THE IMPROVEMENT ARC (Waves A–D) + the mock-leak fix
 
 Four gauntleted waves of improvement — performance, audio intelligence,

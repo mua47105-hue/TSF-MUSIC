@@ -134,15 +134,15 @@ describe('WAVE 1 · the release announces itself', () => {
 
   test('SEEN_KEY is the CURRENT release key (the bulletin shows once, then never again)', () => {
     // the ACTIVE key is the const line; the file also carries the
-    // release-key history comment (v5_0_1 … v5_1_0) — history stays,
-    // the const moves forward. (v5.2.0: reconciled when the bulletin
-    // advanced to THE IMPROVEMENT ARC — the durable concern is that the
+    // release-key history comment (v5_0_1 … v5_2_0) — history stays,
+    // the const moves forward. (v5.2.1: reconciled when the bulletin
+    // advanced to THE HARDENING PASS — the durable concern is that the
     // key names THIS release, never a previous one.)
-    expect(dialog).toMatch(/const SEEN_KEY = 'tsf\.whatsNew\.v5_2_0'/);
-    expect(dialog).not.toMatch(/const SEEN_KEY = 'tsf\.whatsNew\.v5_1_0'/);
+    expect(dialog).toMatch(/const SEEN_KEY = 'tsf\.whatsNew\.v5_2_1'/);
+    expect(dialog).not.toMatch(/const SEEN_KEY = 'tsf\.whatsNew\.v5_2_0'/);
   });
 
   test('the headline names THIS release', () => {
-    expect(dialog).toContain('TSF MUSIC 5.2.0 — THE IMPROVEMENT ARC');
+    expect(dialog).toContain('TSF MUSIC 5.2.1 — THE HARDENING PASS');
   });
 });

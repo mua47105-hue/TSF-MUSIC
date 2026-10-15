@@ -15,20 +15,18 @@ import { colors, fonts } from '../theme';
 //   'tsf.whatsNew.v5_0_1' (THE VERIFICATION ROUND) ·
 //   'tsf.whatsNew.v5_0_2' (THE STABILITY PATCH) ·
 //   'tsf.whatsNew.v5_1_0' (THE MEMORY LAYER) ·
-//   'tsf.whatsNew.v5_2_0' (THE IMPROVEMENT ARC — current).
-const SEEN_KEY = 'tsf.whatsNew.v5_2_0';
+//   'tsf.whatsNew.v5_2_1' (THE HARDENING PASS — current).
+const SEEN_KEY = 'tsf.whatsNew.v5_2_1';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── v5.2.0 — THE IMPROVEMENT ARC (waves A–D) ──
-  'THE COVERS BREATHE — album art drifts subtly with the scroll (a ±20px parallax rendered entirely on the UI thread, so scrolling stays 60fps even on modest phones). It sits still under Reduce Motion or Data Saver.',
-  '✨ SURPRISE ME — one tap in the player serves a track that fits the current vibe but comes from an artist you barely play and a genre outside your top five. Same session, same moment, same pick — never a rerun of the algorithm.',
-  'SEARCH FINDS YOUR OWN WORDS — your song stories and memory tags are now full-text searchable right from the search screen, with the matching line shown under the result.',
-  'THE MOOD ENGINE READS HINDI — the lyric mood detector learned 3,000+ more Hindi words (the IITB sentiment wordnet, weight-matched), so desi lyrics read as honestly as English ones.',
-  'HAPTICS THAT HEAR THE GENRE — EDM lands heavy on the downbeat, classical stays soft, lofi goes still. Auto, uniform or off, right beside the existing haptics setting.',
-  'YOUR QUEUE SURVIVES THE REAPER — kill the app mid-session and come back within 24 hours: the queue wakes up intact (up to 50 tracks; stream links re-resolve fresh — nothing stale is ever replayed).',
-  'FASTER UNDER THE HOOD — the library\'s hot queries ride real SQLite indexes, heavy screens load on demand instead of at boot, and the YouTube engine caches its decipher program so a cold start stops re-downloading it.',
+  // ── v5.2.1 — THE HARDENING PASS (every forensic-audit finding) ──
+  'FAKE BUTTONS NOW DO REAL WORK — the collection heart adds every song you don\'t already love (and says exactly how many); the download button downloads the crate and reports the honest count; the crate pin REALLY pins — pinned crates list first in your library and survive restarts.',
+  'NOTHING HANGS FOREVER — every catalog request now carries a 10-second ceiling: a stalled connection becomes a fast, honest error instead of a frozen track start. Cancel requests actually cancel (the iTunes fallback was silently ignoring them).',
+  'SMART SHUFFLE, RADIO AND THE CRATES ARE BULLETPROOF — the recommendation fallback engine (what plays when intelligence is off) is now fully tested, every kill-switch surface degrades gracefully, and one bad YouTube verdict can no longer reset the source\'s health streak.',
+  'MEMORY THAT STAYS LEAN — the lyrics and artist-photo caches are bounded now, so a long session can\'t quietly eat your RAM.',
+  'SAFER UNDER THE HOOD — the YouTube decipher program verifies its integrity before it ever runs (tampered storage can\'t inject code), the sign-in WebView talks only to the three Google origins it needs, and ~160 KB of unused fonts are off the cold start.',
   'As always: memories, bookmarks and taste live in the on-device database only — zero servers, zero accounts, zero telemetry.',
 ];
 
@@ -72,7 +70,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 5.2.0 — THE IMPROVEMENT ARC
+            TSF MUSIC 5.2.1 — THE HARDENING PASS
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

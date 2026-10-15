@@ -92,9 +92,9 @@ describe('FIX-D1 — the QA row is one honest line, not interleaved fragments', 
 
   test('the row carries the measured numerals (docs-truth law)', () => {
     const readme = readRepo('README.md');
-    expect(readme).toContain('1,143 tests');
-    expect(readme).toContain('5,217 assertions');
-    expect(readme).toContain('573 replay suite + 570 improvement-arc & hardening locks');
+    expect(readme).toContain('1,163 tests');
+    expect(readme).toContain('5,246 assertions');
+    expect(readme).toContain('573 replay suite + 590 improvement-arc & hardening locks');
   });
 });
 
