@@ -220,12 +220,12 @@ def main():
 
         # ── V521-M: the bounded-cache law (FIX-C2/C3) ───────────────────
         check("V521-M1 the BoundedMap construction law (FIX-C2/C3)",
-              "BoundedMap cap must be a positive integer" in sset)
+              "BoundedMap cap must be a positive integer, got " in sset)
 
         # ── V521-G: the bulletin announces THIS release ─────────────────
         check("V521-G1 v5.2.1 bulletin key", "tsf.whatsNew.v5_2_1" in sset)
         check("V521-G2 THE HARDENING PASS bulletin", "TSF MUSIC 5.2.1 — THE HARDENING PASS" in sset)
-        check("V521-G3 a sampled hardening bullet", "FAKE BUTTONS NOW DO REAL WORK" in sset)
+        check("V521-G3 a sampled hardening bullet", "FAKE BUTTONS NOW DO REAL WORK \u2014 the collection heart adds every song you don't already love (and says exactly how many); the download button downloads the crate and reports the honest count; the crate pin REALLY pins \u2014 pinned crates list first in your library and survive restarts." in sset)
         check("V521-G4 the old bulletin key is retired", "tsf.whatsNew.v5_2_0" not in sset)
 
         # ── V521-H: mock hygiene (retained law) ─────────────────────────
@@ -238,8 +238,11 @@ def main():
     # running and the run stayed ALL GREEN. The executed-check count is
     # pinned; a check quietly removed or added anywhere is a RED.)
     PINNED_CHECK_COUNT = 35
+    # (this line is the 35th executed check — the call-site args evaluate
+    # BEFORE check() increments, so the condition is count+1 and the
+    # detail shows the post-inventory number)
     check("V521-S the verifier executed its full pinned inventory",
-          checks_run == PINNED_CHECK_COUNT, f"{checks_run}/{PINNED_CHECK_COUNT}")
+          checks_run + 1 == PINNED_CHECK_COUNT, f"{checks_run + 1}/{PINNED_CHECK_COUNT}")
     if failures:
         print(f"v5.2.1 verify: {len(failures)} FAILURE(S): {failures}")
         return 1

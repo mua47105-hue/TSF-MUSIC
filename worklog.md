@@ -2885,3 +2885,32 @@ Work Log:
   invented APK markers.
 - FINAL GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test
   runs 1,163/0 (5,246 / 5,246 / 5,246 expects, 89 files) — byte-identical.
+
+---
+Task ID: V5.2.1-VERIFY
+Agent: Super Z (main agent)
+Task: verify the published v5.2.1 APK with the deep verifier; the
+honest-marker discipline (third release running).
+
+Work Log:
+- CI: Native Android on the v5.2.1 tag (97ac87e) = SUCCESS; the release
+  app-release.apk (83,187,684 bytes) published.
+- FIRST verify run: 3 FAILURES — two markers were INVENTED from
+  assumptions (the M1 cap-law string and the G3 bullet: both exist in the
+  bundle as LONGER entries; exact set-membership needs the full entry)
+  plus the self-inventory off-by-one (the S check's args evaluate before
+  check() increments). THE v4.3/v5.2.0 LESSON, RE-LEARNED A THIRD TIME:
+  pin the VERIFIED strings, never the assumed ones.
+- scripts/probe_v521_strings.py: dumps the real string table around each
+  marker; both corrected entries pinned byte-exact from the REAL bundle.
+- Self-inventory fixed (post-increment semantics) and the M5 law proven
+  LIVE: deleting a marker line → 34/35 RED (the silent-loosening law
+  bites).
+- FINAL verify: ALL GREEN 35/35 against the real released APK.
+- Discriminator: verify_v52_apk.py against the v5.2.1 APK fails EXACTLY
+  the 3 release-identity bars (versionName + bulletin key + headline) —
+  every retained bar green.
+
+Stage Summary:
+- v5.2.1 APK published and deep-verified 35/35; the release discriminates
+  from v5.2.0 on exactly the identity bars.
