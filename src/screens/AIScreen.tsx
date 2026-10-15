@@ -5,16 +5,22 @@
  * header, rendering the exact same PULSE dispatch desk.
  */
 
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { Suspense } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { MindbeatWireScreen } from './MindbeatWireScreen';
 import { Brutal } from '../components/Brutal';
 import { colors } from '../theme';
 import type { RootStackParamList } from './navigation';
+
+// v5.2.1 FIX-D3: the Wire rides a LAZY import here too — the static import
+// pulled the whole MindbeatWireScreen chunk into the eager bundle and
+// defeated the Wave A A3 split for this deep-link route.
+const MindbeatWireScreen = React.lazy(() =>
+  import('./MindbeatWireScreen').then((m) => ({ default: m.MindbeatWireScreen })),
+);
 
 export function AIScreen() {
   const insets = useSafeAreaInsets();
@@ -27,7 +33,15 @@ export function AIScreen() {
         </Brutal>
       </View>
       <View style={{ flex: 1, paddingTop: insets.top - 2 }}>
-        <MindbeatWireScreen />
+        <Suspense
+          fallback={
+            <View style={styles.fallback}>
+              <ActivityIndicator size="large" color={colors.orange} />
+            </View>
+          }
+        >
+          <MindbeatWireScreen />
+        </Suspense>
       </View>
     </View>
   );
@@ -35,6 +49,7 @@ export function AIScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  fallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backBar: {
     position: 'absolute',
     left: 0,

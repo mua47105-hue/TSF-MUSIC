@@ -5,7 +5,9 @@
  *    survive to output), Hinglish parses, artist cap 5, no 3-consecutive,
  *    20-prompt corpus produces ≥18-track playlists
  *  ✓ Radio v2: 2-hour scripted listen → zero 7-day repeats
- *  ✓ Mixes v2: 60/25/15 split + ≤30% yesterday repeat
+ *  (Mixes v2 is NOT tested here — its 60/25/15 split + ≤30% yesterday
+ *   repeat law lives in tests/fix_v521_waveC_locks.test.ts. v5.2.1 FIX-D5:
+ *   this header used to claim coverage this file never had.)
  *  ✓ Safety (B10): the dodge corpus (12 variants per blocked term) is
  *    filtered by the transliteration-tolerant matcher
  *  ✓ Vibe Search: typo + "songs like X" resolve

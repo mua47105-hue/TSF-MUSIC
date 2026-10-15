@@ -323,7 +323,9 @@ export function YtPoTokenBridge(): JSX.Element | null {
         opacity: 0.01,
       }}
       testID="yt-po-token-webview"
-      originWhitelist={['*']}
+      // v5.2.1 FIX-D7: the three Google origins the minter actually needs —
+      // ['*'] was wider than the challenge surface.
+      originWhitelist={['https://www.youtube.com', 'https://youtube.com', 'https://jnn-pa.googleapis.com']}
       javaScriptEnabled
       domStorageEnabled
       onMessage={handleMessage}

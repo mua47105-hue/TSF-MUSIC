@@ -1,0 +1,85 @@
+/**
+ * Surface layer shared context — dependency-injected catalog access.
+ *
+ * Surfaces never import the saavn API directly: they receive a CatalogApi.
+ * The app injects the real JioSaavn adapter; replay tests inject fixture
+ * fakes. That keeps the whole surface layer runnable in Node (§11.1).
+ */
+
+import type { Track } from '../../types';
+import { estimateFeatures } from '../core/features';
+import type { Candidate, SessionState, SourceSurface, TasteProfile } from '../core/types';
+import type { ListenRecord } from '../core/types';
+
+export interface CatalogApi {
+  search(query: string, limit?: number): Promise<Track[]>;
+  artistTracks(artist: string, limit?: number): Promise<Track[]>;
+  trending(limit?: number): Promise<Track[]>;
+}
+
+export interface SurfaceCtx {
+  api: CatalogApi;
+  profile: TasteProfile;
+  session: SessionState;
+  now: number;
+  /** Recent graded listens (7–180d) for dedup + trust stats. */
+  listens: ListenRecord[];
+  /** Phase 3 — the bandit arm map (optional; absent = pre-hydration). */
+  banditArms?: ReadonlyMap<string, import('../core/bandit').Arm>;
+  /** Emit REC_EXPOSURE for every served recommendation (survivorship-safe §5.1). */
+  onExposure?: (trackId: string, surface: SourceSurface, rankInPool: number, exploration: boolean) => void;
+}
+
+/** Track → engine candidate (proxy features attached). */
+export function toCandidate(track: Track, pool: Candidate['pool']): Candidate {
+  return {
+    trackId: track.id,
+    artist: track.artist,
+    artistId: track.artistId,
+    language: track.language,
+    genre: track.genre,
+    features: estimateFeatures({ artist: track.artist, title: track.title, album: track.album }),
+    pool,
+  };
+}
+
+/** Candidates from a search — RAW. v5.2.1 FIX-D5: the old comment claimed
+ *  "safety-filtered, playable, non-preview", which this function never did
+ *  (no filterClean, no preview drop). Filtering is the CALLER's law. */
+export async function searchCandidates(
+  api: CatalogApi,
+  query: string,
+  pool: Candidate['pool'],
+  limit = 20,
+): Promise<Candidate[]> {
+  try {
+    const tracks = await api.search(query, limit);
+    return tracks.map((t) => toCandidate(t, pool));
+  } catch {
+    return [];
+  }
+}
+
+export async function artistCandidates(
+  api: CatalogApi,
+  artist: string,
+  pool: Candidate['pool'],
+  limit = 14,
+): Promise<Candidate[]> {
+  try {
+    const tracks = await api.artistTracks(artist, limit);
+    return tracks.map((t) => toCandidate(t, pool));
+  } catch {
+    return [];
+  }
+}
+
+/** Distinct (artist, title) filter applied to final track outputs. */
+export function distinctTracks<T extends { id: string }>(tracks: T[]): T[] {
+  const seen = new Set<string>();
+  return tracks.filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+}

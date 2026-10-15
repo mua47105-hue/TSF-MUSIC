@@ -43,7 +43,9 @@ export function toCandidate(track: Track, pool: Candidate['pool']): Candidate {
   };
 }
 
-/** Safety-filtered, playable, non-preview candidates from a search. */
+/** Candidates from a search — RAW. v5.2.1 FIX-D5: the old comment claimed
+ *  "safety-filtered, playable, non-preview", which this function never did
+ *  (no filterClean, no preview drop). Filtering is the CALLER's law. */
 export async function searchCandidates(
   api: CatalogApi,
   query: string,

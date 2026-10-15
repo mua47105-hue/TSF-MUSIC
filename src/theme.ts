@@ -82,7 +82,8 @@ export const fonts = {
   // legacy aliases (pre-v4 call sites) — both resolve to display
   extrabold: 'ArchivoBlack-400',
   black: 'ArchivoBlack-400',
-  // legacy Figtree (kept loaded; fallbacks only)
+  // legacy Figtree (v5.2.1 FIX-D2: NOT loaded — zero consumers; the
+  // family names stay reserved in case a future surface adopts them)
   figtreeRegular: 'Figtree-400',
   figtreeBold: 'Figtree-700',
   figtreeBlack: 'Figtree-900',

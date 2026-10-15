@@ -2784,3 +2784,69 @@ Stage Summary:
 - Wave C shipped: 5 modules that had ZERO tests now carry 28 locks, two
   caches are bounded, the budget table's enforcement map is true, and the
   mock-leak class has a standing canary. Zero regressions.
+
+---
+Task ID: V5.2.1-WAVE-D
+Agent: Super Z (main agent)
+Task: GAUNTLET LOOP — Wave D (FIX-D1…D7): documentation truth, P2s, cleanup.
+
+Work Log:
+- FIX-D1 (P2): the README QA row's interleaved stale fragments are GONE —
+  one honest line with the MEASURED numerals (1,143 tests = 573 replay
+  [the 44 pre-v4.3.1 files, measured by running exactly that file set] +
+  570 arc/hardening locks · 5,217 assertions). THE ONE RULE note: the
+  mission's suggested string ("1,072 tests (885 replay + 187 arc) · 4,814
+  expects") was the audit-time truth, already stale — measured numbers
+  win. The docs-truth law pins the numerals + the absence of the
+  interleaving; the row is re-verified against the final 3× run at the
+  release cut.
+- FIX-D2 (P2): the six Figtree TTFs (~160 KB) are OUT of App.tsx's eager
+  loadAsync (zero consumers — grep-verified); the files stay in assets/,
+  theme.ts keeps the reserved family names with an honest comment. Laws:
+  no Figtree in the load list; the reserved names survive.
+- FIX-D3 (P2): AIScreen's STATIC MindbeatWireScreen import (which pulled
+  the Wire chunk into the eager bundle and defeated Wave A A3 on this
+  route) is now a LOCAL React.lazy + Suspense fallback. Laws: no top-level
+  import; lazy + Suspense present.
+- FIX-D4 (P2): the AmbientBackdrop component (documented "sits behind the
+  tab screens", rendered NOWHERE) is DELETED — code + the doc bullet.
+  Honest choice over mounting: mounting ships a full-screen visual change
+  in a hardening release with no device-lab verification; deletion ships
+  the truth. Laws: no AmbientBackdrop/AmbientLayer in code; the header no
+  longer claims the wash.
+- FIX-D5 (P2): deps.ts's "Safety-filtered, playable, non-preview" claim
+  (a function that never filtered) is corrected to RAW; surfaces.test.ts's
+  header no longer claims Mixes v2 coverage it never had (the coverage now
+  lives in fix_v521_waveC_locks — the header says so). THE AUDIT PARTIALLY
+  MISREAD: decadeRadio.ts/moodJourney.ts's reconcileRecordings claims are
+  TRUE (mindbeat.ts's facade bodies DO call it — verified) — so instead of
+  deleting true claims, per-body source laws now BACK them. lrclib's
+  "LRU-30" became true in FIX-C2.
+- FIX-D6 (P2, security): the cipher cache carries an FNV-1a body hash.
+  saveCipherCache stamps it; loadCipherCache GATES on it before the body
+  can ever reach `new Function` — a tampered KV value (the
+  arbitrary-code-execution class) or a legacy hash-less entry degrades to
+  the fresh fetch. Behavioral locks: untouched body round-trips; tampered
+  body refused; legacy entry refused; wrong path still refused.
+- FIX-D7 (P2): ytPoToken's WebView originWhitelist: ['*'] → the three
+  Google origins the minter needs. Law pins the exact array.
+- MUTATIONS (14, driver scripts/mutations_waved.py, sha256-verified
+  restores): M-D1-1 interleaving back → 2 RED; M-D1-2 stale numerals →
+  1 RED; M-D2-1 Figtree rides again → 1 RED; M-D2-2 reserved names gone →
+  1 RED; M-D3-1 eager import back → 2 RED; M-D3-2 Suspense severed →
+  1 RED; M-D4-1 dead component back → 1 RED; M-D4-2 doc claim back →
+  1 RED; M-D5-1 the lie back → 1 RED; M-D5-2 false coverage claim back →
+  1 RED; M-D6-1 gate gone → 3 RED; M-D6-2 stamp lies → 2 RED; M-D7-1
+  wildcard back → 1 RED; M-D7-2 origin dropped → 1 RED. TWO first-draft
+  survivors, both honest-law bugs: M-D3-2's rename still contained the
+  checked substring; M-D5-1 exposed that doc-truth laws MUST read raw
+  source (a stripped law cannot see a comment lie — the comment is the
+  product for D5). Both laws fixed, both mutations re-proven RED.
+- GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test runs
+  1,163/0 (5,246 / 5,246 / 5,246 expects, 89 files) — byte-identical.
+
+Stage Summary:
+- Wave D shipped: docs tell the measured truth, 160 KB off the cold path,
+  the Wire is lazy on its last eager route, dead code deleted, the cipher
+  eval is integrity-gated, the WebView surface is minimal. 20 new locks.
+  Zero regressions.

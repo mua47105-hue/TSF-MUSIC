@@ -144,12 +144,9 @@ export default function App() {
       'ArchivoBlack-400': require('./assets/fonts/ArchivoBlack-400.ttf'),
       'SpaceMono-400': require('./assets/fonts/SpaceMono-400.ttf'),
       'SpaceMono-700': require('./assets/fonts/SpaceMono-700.ttf'),
-      'Figtree-400': require('./assets/fonts/Figtree-400.ttf'),
-      'Figtree-500': require('./assets/fonts/Figtree-500.ttf'),
-      'Figtree-600': require('./assets/fonts/Figtree-600.ttf'),
-      'Figtree-700': require('./assets/fonts/Figtree-700.ttf'),
-      'Figtree-800': require('./assets/fonts/Figtree-800.ttf'),
-      'Figtree-900': require('./assets/fonts/Figtree-900.ttf'),
+      // v5.2.1 FIX-D2: the six Figtree TTFs (~160 KB) are OUT of the eager
+      // load — fonts.figtree* has zero consumers (theme.ts keeps the family
+      // names as reserved fallbacks only). The files stay in assets/.
     })
       .then(() => {
         setFontsReady(true);

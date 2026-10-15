@@ -184,7 +184,7 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 | Audio | Up to 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | Multi-source aggregation on-device — primary catalog + supplemental sources + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 1,072 tests (885 replay suite + 187 improvement-arc 1,071 tests (885 replay suite + 186 improvement-arc & wave locks) · 4,808 assertions wave locks) · 4,811 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 1,143 tests (573 replay suite + 570 improvement-arc & hardening locks) · 5,217 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 

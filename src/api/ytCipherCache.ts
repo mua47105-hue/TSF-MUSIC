@@ -20,8 +20,9 @@
  *    single owner is mindbeat), and AsyncStorage must never enter the
  *    youtube.ts import chain (suite + cold-path hygiene).
  *  - Every failure degrades to the fetch: a miss, an expired entry, a
- *    corrupt payload, or a body that refuses to eval can only cost the
- *    old path, never become a new failure mode.
+ *    corrupt payload, a TAMPERED BODY (v5.2.1 FIX-D6: FNV-1a integrity
+ *    gate), or a body that refuses to eval can only cost the old path,
+ *    never become a new failure mode.
  *  - Deterministic keying: FNV-1a over the player-JS path — same path
  *    ⇒ same key across boots, no Math.random, no Date in the key.
  *
@@ -39,6 +40,9 @@ export interface CipherCacheEntry {
   body: string;
   /** Absolute expiry (deps.now() + TTL at save time). */
   expiresAt: number;
+  /** FNV-1a over `body` — v5.2.1 FIX-D6: the KV is untrusted storage; a
+   *  tampered body must never reach `new Function` (arbitrary-code class). */
+  bodyHash: string;
 }
 
 export interface CipherCacheDeps {
@@ -49,11 +53,13 @@ export interface CipherCacheDeps {
 
 export const CIPHER_CACHE_TTL_MS = YT_CIPHER.ttlMs;
 
-/** FNV-1a (32-bit) — tiny, deterministic, stable across boots/runtimes. */
-function hashPath(jsPath: string): string {
+/** FNV-1a (32-bit) — tiny, deterministic, stable across boots/runtimes.
+ *  Used for BOTH the cache key (over the player-JS path) and the body
+ *  integrity hash (v5.2.1 FIX-D6). */
+function fnv1a(s: string): string {
   let h = 2166136261;
-  for (let i = 0; i < jsPath.length; i += 1) {
-    h ^= jsPath.charCodeAt(i);
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return (h >>> 0).toString(16);
@@ -61,7 +67,7 @@ function hashPath(jsPath: string): string {
 
 /** The KV key for one player-JS path — "URL path hash", per the bar. */
 export function cipherCacheKey(jsPath: string): string {
-  return `tsf.ytCipher.${hashPath(jsPath)}`;
+  return `tsf.ytCipher.${fnv1a(jsPath)}`;
 }
 
 /** Persist the parsed program (6h TTL). Empty inputs are an honest no-op. */
@@ -75,6 +81,7 @@ export async function saveCipherCache(
     jsPath,
     body,
     expiresAt: deps.now() + CIPHER_CACHE_TTL_MS,
+    bodyHash: fnv1a(body),
   };
   await deps.setRaw(cipherCacheKey(jsPath), JSON.stringify(entry));
 }
@@ -106,6 +113,10 @@ export async function loadCipherCache(
   if (!(typeof entry.expiresAt === 'number') || deps.now() >= entry.expiresAt) {
     return null; // expired → a fresh fetch, exactly the bar
   }
+  // v5.2.1 FIX-D6 — INTEGRITY GATE: the stored body must match its hash.
+  // A tampered AsyncStorage value (or a legacy entry without a hash) never
+  // reaches `new Function` — the caller degrades to the fresh fetch.
+  if (entry.bodyHash !== fnv1a(entry.body)) return null;
   return entry;
 }
 
