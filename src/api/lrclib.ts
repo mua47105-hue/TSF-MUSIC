@@ -11,6 +11,8 @@
  * the catalog call itself).
  */
 
+import { BoundedMap } from './boundedMap';
+
 const LRU_MAX = 100;
 const NULL_TTL_MS = 60 * 1000; // failures tombstone briefly (P1-8 fix)
 const HIT_TTL_MS = 30 * 60 * 1000;
@@ -160,13 +162,18 @@ export function fetchSyncedLyrics(
 
 // ── S1 · fragment resolution ───────────────────────────────────────────
 
+/** v5.2.1 FIX-C2 — the origin cache's hard ceiling (the documented LRU-30). */
+export const ORIGIN_CACHE_CAP = 30;
+
 export interface LyricOrigin {
   title: string;
   artist: string;
   line: string;
 }
 
-const originCache = new Map<string, { at: number; origin: LyricOrigin | null }>();
+// v5.2.1 FIX-C2: the cache is BOUNDED now - the doc's "LRU-30" claim is
+// finally true (it never was: this Map grew forever).
+const originCache = new BoundedMap<string, { at: number; origin: LyricOrigin | null }>(ORIGIN_CACHE_CAP);
 
 /**
  * Resolve WHICH SONG a lyric fragment belongs to (S1): one free-form

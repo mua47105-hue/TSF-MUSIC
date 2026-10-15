@@ -2715,3 +2715,72 @@ Stage Summary:
   tests/fix_v521_waveB_locks.test.ts), 16 mutations all RED, zero
   regressions — including the live-fire proof that the B5 law had to
   learn the L-P0-2 rescue contract (the suite defended itself).
+
+---
+Task ID: V5.2.1-WAVE-C
+Agent: Super Z (main agent)
+Task: GAUNTLET LOOP — Wave C (FIX-C1…C5): the untested fallback engine, the
+unbounded caches, the lying budget comment, the unscoped saavn mock.
+
+Work Log:
+- FIX-C1 (P1): the fallback engine is tested. engine.ts (getTopArtists
+  weights, getRadio seed-exclusion + honest-empty on catalog death,
+  getRecommendations per-artist cap 2 + seed exclusion, getDailyMixes cold
+  empty + cache round-trip) and all four v2 surfaces over the REAL
+  buildProfile(fourCommunityLedger()) fixture: mixes (cluster-crossed cards
+  with reasons, ≤30% yesterday-repeat law under a maximal-yesterday stress,
+  the refresh cadence), daylist (block-tagged card, cold → honest null,
+  per-ctx determinism), ontherise (viaArtist chains, discovery-outside-top
+  law, cold → honest null), shuffle (planFor ratios, reasoned recs, healing
+  away from the skipped artist) — 16 behavioral locks. THE KILL-SWITCH
+  FALLBACK CHAIN locked: mindbeat.radio(disabled)=[] AND engine.getRadio
+  non-empty — the service.ts:199 contract never starves.
+  - Harness notes: the saavn seam is a spread-real fixture module with a
+    mutable per-test seam holder (reset in finally) + afterAll real-module
+    restoration; the AsyncStorage mock is a real in-memory Map (the first
+    draft returned null from getItem — NOTHING could persist; caught by
+    the tests themselves and fixed).
+  - Honest nulls: buildOnTheRise/buildNowSound return null on cold profiles
+    (the surfaces REFUSE to fabricate); under an everything-yesterday day
+    mixes honestly builds NOTHING rather than breach the ≤30% law — the
+    lock accepts exactly the two honest outcomes and the M-C1-2 mutation
+    (cap dead) proves the teeth (mixes then build breaching → RED).
+- FIX-C2 (P1): src/api/boundedMap.ts — a true LRU (get refreshes recency,
+  set evicts oldest beyond cap, cap<1 is a construction error). lrclib's
+  originCache rides it at 30 — the doc's "LRU-30" claim is finally TRUE
+  (flagged for D5 as now-true).
+- FIX-C3 (P1): artists.ts photoCache + namePhotoCache ride BoundedMap at
+  300 (source law pins BOTH call sites).
+- FIX-C4 (P1): the PERF_BUDGETS comment no longer lies. aiPlaylistEndToEndMs
+  now asserted in perf.test.ts (p95 over the prompt corpus, measured);
+  coldStartDeltaMs asserted for the bun-measurable slice (the synchronous
+  init work — the X6 tripwire) with the on-device half honestly attributed
+  to the E2E gate (scripts/e2e/parse_perf.py cold_start bar); all 7 budgets
+  now referenced BY NAME from the PERF_BUDGETS table in perf.test.ts
+  (single source of truth); the C4 lock greps every budget key in
+  perf.test.ts CODE (line-comment-aware — the first draft passed on a
+  comment, caught and hardened).
+- FIX-C5 (P1): hygiene_behavioral_locks.test.ts's getArtistTracks fixture
+  override is FILE-SCOPED (afterAll restores the real module) — the
+  v5.0.1/v5.2.0 leak class closed a third time. The canary lives in this
+  file (loads after hygiene): getArtistTracks('arctic monkeys') must carry
+  NO hyg-fx-* rows; the source law pins the restoration text.
+- MUTATIONS (13, driver scripts/mutations_wavec.py, sha256-verified
+  restores): M-C1-1 seed self-radio → 2 RED; M-C1-2 yesterday cap dead →
+  2 RED; M-C1-3 name fabricated empty → 2 RED; M-C1-4 insert rhythm broken
+  → 2 RED; M-C1-5 honest chain dropped → 2 RED; M-C2-1 eviction gone →
+  4 RED; M-C2-2 lrclib unbounded → 2 RED; M-C3-1 photoCache unbounded →
+  2 RED; M-C3-2 LRU→FIFO → 2 RED; M-C4-1 budget unlinked → 2 RED;
+  M-C4-2 init-slice unasserted → 2 RED; M-C5-1 restoration gone → canary
+  2 RED; M-C5-2 wrong restore → 2 RED.
+  Three first-draft mutations (M-C1-3/5 as guard-deletions, M-C4-2 vs a
+  line comment) were NEUTRALIZED — defense-in-depth guards and comment-
+  straining laws absorbed them; each was REDESIGNED to a real behavioral
+  break and re-proven. Survivors reported as survivors, then fixed.
+- GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test runs
+  1,143/0 (5,217 / 5,217 / 5,217 expects, 88 files) — byte-identical.
+
+Stage Summary:
+- Wave C shipped: 5 modules that had ZERO tests now carry 28 locks, two
+  caches are bounded, the budget table's enforcement map is true, and the
+  mock-leak class has a standing canary. Zero regressions.

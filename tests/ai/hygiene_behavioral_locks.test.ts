@@ -36,7 +36,7 @@
  * earlier injection with null) — focusPicks only needs the gate to pass.
  */
 
-import { describe, expect, test, mock } from 'bun:test';
+import { describe, expect, test, afterAll, mock } from 'bun:test';
 import { rnMockSurface } from '../helpers/rnMockSurface';
 
 // bun hoists static imports above runtime mocks → dynamic imports below.
@@ -113,6 +113,16 @@ mock.module('../../src/api/saavn', () => ({
   getArtistTracks: async (artistName: string) =>
     ARTIST_ROWS[artistName] ?? realSaavn.getArtistTracks(artistName),
 }));
+
+// v5.2.1 FIX-C5 — the mock-leak law (the v5.0.1 class, and the reason the
+// rnMockSurface exists): this file's getArtistTracks override is
+// FILE-SCOPED. bun's mock.module registry is process-global, so without
+// this restoration every LATER-loaded file would inherit the fixture
+// rows. The lock in tests/fix_v521_waveC_locks.test.ts loads after this
+// file and canaries exactly that.
+afterAll(() => {
+  mock.module('../../src/api/saavn', () => realSaavn);
+});
 
 const { loadFeatureTable } = await import('../../src/ai/core/featureTable');
 await loadFeatureTable(); // the baked gate is REAL — 7MB parse, ~130ms in the lab

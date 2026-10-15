@@ -140,6 +140,16 @@ export const RETENTION = {
 } as const;
 
 // ── Performance budgets (§10.3) — enforced by tests/ai/perf.test.ts ────
+// v5.2.1 FIX-C4 — the honest enforcement map (the old comment claimed all
+// 7 were asserted here; 2 never were):
+//   • decisionQueryMs, profileReadMs, coplayLookupMs,
+//     ledgerWriteAmortizedMs, profileRebuildMs, aiPlaylistEndToEndMs —
+//     asserted in tests/ai/perf.test.ts against measured values.
+//   • coldStartDeltaMs — the SYNCHRONOUS JS slice of the intelligence init
+//     is asserted in perf.test.ts (the bun lab's measurable share); the
+//     full on-device boot is enforced by the E2E perf gate
+//     (scripts/e2e/parse_perf.py, cold_start bar) — a bun unit test
+//     cannot see a device boot, and pretending otherwise was the lie.
 export const PERF_BUDGETS = {
   decisionQueryMs: 150, // p95, post-candidates, in-memory
   profileReadMs: 50, // full read + lazy decay

@@ -21,6 +21,12 @@
  */
 
 import { saavnGet } from './saavn';
+import { BoundedMap } from './boundedMap';
+
+/** v5.2.1 FIX-C3 — the photo caches' hard ceiling: 300 artists is far
+ *  beyond any session's working set, and the LRU keeps the hot rails
+ *  instant. (The audit: these Maps grew forever.) */
+export const ARTIST_PHOTO_CACHE_CAP = 300;
 
 export interface ArtistInfo {
   name: string;
@@ -164,7 +170,8 @@ export async function searchSaavnArtists(query: string, limit = 24): Promise<Art
   return out;
 }
 
-const photoCache = new Map<string, string>();
+// v5.2.1 FIX-C3: bounded — a long session can no longer leak photo memory.
+const photoCache = new BoundedMap<string, string>(ARTIST_PHOTO_CACHE_CAP);
 
 /** Artist photo by JioSaavn artistId (cached; '' when unavailable). */
 export async function getArtistPhoto(artistId?: string): Promise<string> {
@@ -238,7 +245,8 @@ async function autocompleteArtistImage(name: string): Promise<string> {
 
 /** Name-level memo — popular rails re-resolve on every reload; a '' is
  *  a REAL negative result (honest initials) and is cached as such. */
-const namePhotoCache = new Map<string, string>();
+// v5.2.1 FIX-C3: bounded — the same law as photoCache.
+const namePhotoCache = new BoundedMap<string, string>(ARTIST_PHOTO_CACHE_CAP);
 
 /**
  * Photo by artist NAME — seeds first (instant), then the deep scan
