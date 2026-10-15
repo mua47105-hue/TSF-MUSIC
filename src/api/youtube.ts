@@ -946,8 +946,11 @@ export async function ytResolveStream(videoId: string, signal?: AbortSignal): Pr
     noteYtFailure();
     return { ok: false, reason: 'bot-walled', trail };
   }
-  if (videoVerdict > 0) {
-    // live video-specific verdicts: the source is healthy, THIS row is bad
+  if (videoVerdict > 0 && wallCount === 0) {
+    // live video-specific verdicts: the source is healthy, THIS row is bad.
+    // v5.2.1 FIX-B8: a MIXED verdict (wall observed on another rung) stays
+    // NEUTRAL — noteYtSuccess() here reset the streak despite an observed
+    // LOGIN_REQUIRED, teaching the switch to trust a bot-walled source.
     noteYtSuccess();
     return { ok: false, reason: 'no-audio', trail };
   }

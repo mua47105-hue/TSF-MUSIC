@@ -15,6 +15,7 @@
 
 import type { Track } from '../types';
 import { clusterKey, normalizeQuery } from './normalize';
+import { reconcileRecordings } from '../api/recording';
 import { fetchPlainLyrics } from '../api/lrclib';
 import type { SearchPlan } from './plan';
 
@@ -186,6 +187,21 @@ export function verifySet(
   pools: Array<{ pool: string; tracks: Track[] }>,
 ): VerifiedSet {
   const merged = mergePools(pools);
-  const clustered = clusterVersions(merged);
+  // v5.2.1 FIX-B5: the S2 merge deduped by ID only — the SAME RECORDING
+  // under a different provider id (saavn row + YT row) all survived. The
+  // merged pool now runs the R8-P4b recording law — RESCUE-AWARE: a
+  // rescued row can never EVICT its playable organic twin (the L-P0-2
+  // contract: the rescue answers the query at rank 1 via the engine's
+  // re-injection, while the playable organic row stays in the body).
+  // Reconcile therefore runs organic-first; the original merge order is
+  // restored afterwards so ranking/clustering see the same order as before.
+  const isRescue = (t: Track) => !!(t as Track & { rescued?: boolean; rescueRung?: string }).rescued
+    || !!(t as Track & { rescueRung?: string }).rescueRung;
+  const organicRows = merged.filter((t) => !isRescue(t));
+  const rescuedRows = merged.filter(isRescue);
+  const reconciled = reconcileRecordings([...organicRows, ...rescuedRows]);
+  const keptIds = new Set(reconciled.map((t) => t.id));
+  const ordered = merged.filter((t) => keptIds.has(t.id));
+  const clustered = clusterVersions(ordered);
   return { rows: clustered, clusters: clustered.length };
 }

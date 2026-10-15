@@ -1,0 +1,1051 @@
+/**
+ * PlayerProvider v2 — wraps react-native-track-player into the app-level
+ * player API. Beyond v1 (queue, shuffle, repeat, likes), it adds:
+ *
+ *  • playNext / addToQueue / removeFromQueue  (real queue control)
+ *  • Smart Shuffle — injects AI recommendations between upcoming tracks
+ *  • Autoplay radio toggle (the endless extension itself runs in the
+ *    background service so it keeps working when the UI is killed)
+ *  • Play-count tracking that powers the AI listening graph
+ *  • Toast feedback for every queue mutation
+ *
+ * Design notes (gauntlet-inherited):
+ *  - setup failures are never cached — next interaction retries cleanly
+ *  - the RNTP queue is the single source of truth; React mirrors it
+ *  - progress is NOT in this context so playback doesn't re-render rows
+ */
+
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { AppState, PermissionsAndroid, Platform, StyleSheet, View } from 'react-native';
+import TrackPlayer, {
+  Capability,
+  RepeatMode,
+  usePlaybackState,
+  useActiveTrack,
+  AppKilledPlaybackBehavior,
+  type Track as RNTrack,
+} from 'react-native-track-player';
+import type { Track } from '../types';
+import { resolveStreamUrl, getSongById } from '../api/saavn';
+import { resolveSaavnRow, saavnRescueId } from './saavnRescue';
+import { ytStreamUrlForTrack, ytLastDiagnostics } from '../api/youtube';
+import { YtPoTokenBridge } from '../api/ytPoToken';
+import { playbackService } from './service';
+import { getRecommendations } from '../ai/engine';
+import { mindbeat } from '../ai/mindbeat';
+import type { SourceSurface } from '../ai/core/types';
+import { useToast } from '../components/Toast';
+import {
+  getAutoplay,
+  getDownloadIndex,
+  getFavorites,
+  getSmartShuffleSetting,
+  incrementPlayCount,
+  pushRecent,
+  setAutoplay as persistAutoplay,
+  setSmartShuffleSetting as persistSmartShuffle,
+  toggleFavorite as storeToggleFavorite,
+} from '../storage/store';
+import { perfMark } from '../perf/perf';
+import { initDataSaver } from './audioQuality';
+import { initMetaOverrides } from '../storage/metaOverrides';
+import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
+import { applyReplayGainForTrack } from './replayGain';
+import { providerOwnsTransition } from './trackOwnership';
+import { initCrossfade, resetCrossfadeRamp } from './crossfade';
+import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
+import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
+import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queueOptimizer';
+import { QUEUE_VIBE, SESSION_MEMORY } from '../ai/core/constants';
+// WAVE A (A4) — the queue survives the kill: debounced persistence + boot restore.
+import { createQueueSaver, loadQueue, makeAsyncStorageDeps } from './queuePersistence';
+import { shouldSnapshot } from '../ai/sessionMemory';
+import { getAppTables } from '../storage/appTables';
+import { primeImagePrewarm, refreshNetworkKind } from './imagePrewarm';
+
+let setupPromise: Promise<void> | null = null;
+let notifAsked = false;
+
+async function askNotificationPermission(): Promise<void> {
+  if (notifAsked) return;
+  notifAsked = true;
+  if (Platform.OS === 'android' && Platform.Version >= 33) {
+    try {
+      await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    } catch {
+      /* denied → playback still works, controls just won't show */
+    }
+  }
+}
+
+async function ensureSetup(): Promise<void> {
+  if (!setupPromise) {
+    setupPromise = (async () => {
+      TrackPlayer.registerPlaybackService(() => playbackService);
+      try {
+        await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
+      } catch (e: any) {
+        // "already initialized" is fine; anything else must be retryable.
+        if (!String(e?.message ?? '').includes('already')) throw e;
+      }
+      await TrackPlayer.updateOptions({
+        android: {
+          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+        },
+        capabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
+        ],
+        notificationCapabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
+        ],
+        compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
+        progressUpdateEventInterval: 1,
+      });
+    })();
+    setupPromise.catch(() => {
+      setupPromise = null;
+    });
+  }
+  return setupPromise;
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+interface PlayerState {
+  active: Track | null;
+  /** Optimistic plant (Task 29): the tapped row shows in the mini bar
+   *  the instant it is pressed, BEFORE the stream resolves. Cleared when
+   *  the real track mounts, on failure, or after 8s. */
+  optimistic: Track | null;
+  isPlaying: boolean;
+  loading: boolean;
+  queue: Track[];
+  shuffle: boolean;
+  smartShuffle: boolean;
+  autoplay: boolean;
+  repeat: 'off' | 'queue' | 'track';
+  favorites: Set<string>;
+  playQueue: (tracks: Track[], startIndex?: number, surface?: SourceSurface) => Promise<number>;
+  togglePlay: () => Promise<void>;
+  next: () => Promise<void>;
+  prev: () => Promise<void>;
+  seek: (seconds: number) => Promise<void>;
+  setShuffle: (on: boolean) => Promise<void>;
+  setSmartShuffle: (on: boolean) => Promise<void>;
+  setAutoplay: (on: boolean) => Promise<void>;
+  cycleRepeat: () => Promise<void>;
+  toggleLike: (track: Track) => Promise<void>;
+  playNext: (track: Track) => Promise<void>;
+  addToQueue: (track: Track) => Promise<void>;
+  /** Vibe shift (Task 28): batch-insert recommended tracks after the current
+   *  one with a single toast (the caller owns the copy). Returns count queued. */
+  queueVibeShift: (tracks: Track[]) => Promise<number>;
+  removeFromQueue: (trackId: string) => Promise<void>;
+  refreshQueue: () => Promise<void>;
+  /** MAGNUM OPUS F13 — reorder the UPCOMING queue by energy nearest-
+   *  neighbor. USER-INITIATED ONLY (the queue sheet's button). Returns
+   *  { count, largestStep, honest } — honest=false means the realized
+   *  largest step exceeded the AI-mix bound (the caller toasts it). */
+  optimizeQueueByVibe: () => Promise<{ count: number; largestStep: number; honest: boolean }>;
+}
+
+const PlayerContext = createContext<PlayerState | null>(null);
+
+export function PlayerProvider({ children }: { children: ReactNode }) {
+  const toast = useToast();
+  const [queue, setQueue] = useState<Track[]>([]);
+  // INSTANT TAP (Task 29): the row the user last asked to play, planted
+  // BEFORE any network work so the mini bar answers the tap immediately.
+  const [optimistic, setOptimistic] = useState<Track | null>(null);
+  // F13 — tracks explicitly queued via "play next" are PINNED: the vibe
+  // walk never moves them. Cleared when the walk consumes the arrangement.
+  const pinnedIdsRef = useRef<Set<string>>(new Set());
+  // F15 — when the current listening session began (for the snapshot).
+  const sessionStartRef = useRef<number | null>(null);
+  // the 8s stale-plant timer (critic IT-3): cleared before every new plant
+  const staleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shuffle, setShuffleState] = useState(false);
+  const [smartShuffle, setSmartShuffleState] = useState(false);
+  const [autoplay, setAutoplayState] = useState(true);
+  const [repeat, setRepeat] = useState<'off' | 'queue' | 'track'>('off');
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const originalQueue = useRef<Track[]>([]);
+  const recentPushed = useRef<string>('');
+  const booted = useRef(false);
+  const surfaceRef = useRef<SourceSurface>('user_queue');
+  const pendingSkip = useRef(false);
+  // WAVE A (A4) — the boot restore handoff: the id of the row that was
+  // ACTIVE when the app last died. togglePlay consumes it ONCE (play
+  // resumes at the same song), then it is gone — never a stale target.
+  const restoredActiveIdRef = useRef<string | null>(null);
+  // the A4 saver is created on FIRST USE (never during provider mount —
+  // the boot path gains nothing) and lives for the provider's lifetime
+  const queueSaverRef = useRef<ReturnType<typeof createQueueSaver> | null>(null);
+  const getQueueSaver = () => {
+    if (!queueSaverRef.current) queueSaverRef.current = createQueueSaver(makeAsyncStorageDeps());
+    return queueSaverRef.current;
+  };
+
+  const refreshQueue = useCallback(async () => {
+    try {
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      if (rntpQueue.length) setQueue(rntpQueue);
+      else setQueue([]);
+    } catch {
+      /* player not ready */
+    }
+  }, []);
+
+  // Boot: rehydrate queue from RNTP (app-kill-relaunch continuity) + settings.
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+    (async () => {
+      try {
+        await ensureSetup();
+        await refreshQueue();
+        // WAVE A (A4) — if the ENGINE came up empty (a real app kill, not
+        // just a backgrounded service), the persisted queue answers: the
+        // sheet mirrors the saved room and togglePlay resumes at the SAME
+        // song via the restored-active handoff. If RNTP still held the
+        // queue (service survived the kill), the engine wins — never a
+        // duplicated or clobbered queue.
+        const engineQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+        if (!engineQueue.length) {
+          const saved = await loadQueue(makeAsyncStorageDeps());
+          if (saved) {
+            restoredActiveIdRef.current = saved.activeId;
+            setQueue(saved.tracks);
+          }
+        }
+      } catch {
+        /* first cold start: empty queue */
+      }
+    })();
+    // MINDBEAT boots behind the UI (cold-start budget §10.3): store opens,
+    // partial listens recover, profile builds async, sessions start.
+    void mindbeat.init();
+    // v4.2.0 — heavy tables (baked features, bandit, lyric cache) load
+    // AFTER first paint, never on the cold-start path (law ⑦).
+    void mindbeat.warmHeavyTables();
+    getFavorites().then((list) => setFavorites(new Set(list.map((t) => t.id))));
+    getSmartShuffleSetting().then(setSmartShuffleState);
+    getAutoplay().then(setAutoplayState);
+    initDataSaver(); // sync bridge for the stream resolver (Task 28)
+    void refreshNetworkKind(true); // FIX-B3: the real network kind, fetched once at setup (lazy expo-network)
+    initMetaOverrides(); // THE TEN F5 — sync cache for render-time corrections
+    // THE TEN wave 1 — playback-engine settings load once, fire-and-forget
+    // (the audioQuality pattern: nothing here blocks play or first paint).
+    initSmartVolume();
+    initCrossfade();
+    initPlaybackRate();
+  }, [refreshQueue]);
+
+  // The background service may extend the queue with radio tracks while the
+  // UI is backgrounded — resync whenever the app comes back.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        // F15 — a new session begins when the app comes back with music
+        sessionStartRef.current ??= Date.now();
+        void refreshQueue();
+        void mindbeat.appActive();
+      } else if (state === 'background') {
+        void mindbeat.appBackground();
+        // WAVE A (A4) — a backgrounding flushes the pending debounced save:
+        // the OS may kill the process before the 500ms fuse burns.
+        void getQueueSaver().flush().catch(() => undefined);
+        // MAGNUM OPUS F15 — SESSION MEMORY: snapshot on background, only
+        // when the session carried ≥ SESSION_MEMORY.minTracks tracks
+        // (a 2-song drive is not a session worth remembering). FIFO cap
+        // 3 lives in the pure service (sessionMemory.ts).
+        void (async () => {
+          try {
+            // the ONLY gate is the pure law: ≥ SESSION_MEMORY.minTracks (3).
+            // (The blind critic caught a pre-gate at QUEUE_VIBE.minTracks=4
+            // that silently made 3-song sessions unrememberable.)
+            if (!shouldSnapshot(queue.length)) return;
+            const now = Date.now();
+            const tables = await getAppTables();
+            await tables.sessions.save({
+              vibeLabel: mindbeat.sessionReadout().vibe,
+              seedTrackIds: queue.slice(0, SESSION_MEMORY.maxSeedTracks).map((t) => t.id),
+              startedAt: sessionStartRef.current ?? now,
+              endedAt: now,
+            });
+          } catch {
+            /* a failed snapshot must never block the background transition */
+          } finally {
+            sessionStartRef.current = null; // the next foreground starts a fresh session
+          }
+        })();
+      }
+    });
+    return () => sub.remove();
+  }, [refreshQueue, queue]);
+
+  const playback = usePlaybackState();
+  const activeRN = useActiveTrack();
+
+  const active: Track | null = useMemo(() => {
+    if (!activeRN) return null;
+    return activeRN as unknown as Track;
+  }, [activeRN]);
+
+  // MAGNUM OPUS F1/F3 — prime the upcoming tracks (stream URLs + art)
+  // once the authoritative queue is known. Fire-and-forget, keyed on the
+  // ACTIVE id inside the prewarm modules (a seek never re-primes).
+  const primeWave1 = useCallback(async (activeId: string) => {
+    try {
+      const q = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const idx = q.findIndex((x) => x.id === activeId);
+      if (idx >= 0) {
+        primePrewarm(q, idx);
+        primeImagePrewarm(q, idx);
+      }
+    } catch {
+      /* player not ready — the next transition primes */
+    }
+  }, []);
+
+  // Record play history + play counts (sanitized — no stream URLs in storage)
+  // + the graded MINDBEAT listen (L1 ledger: the previous track finalizes,
+  // the new one starts, surface-tagged).
+  const prevTrackId = useRef<string>('');
+  useEffect(() => {
+    // INSTANT TAP: a real track mounting means the plant is obsolete —
+    // clear it no matter which song won (covers retry + service starts)
+    if (active?.id) setOptimistic((cur) => (cur ? null : cur));
+    if (!active?.id || active.id === prevTrackId.current) return;
+    // THE TEN F1 — Smart Volume: the new track's BAKED energy sets the
+    // stream multiplier through the volume bus (composes with any fade;
+    // off/unknown ⇒ 1.0). Runs BEFORE the foreground gate so background
+    // transitions (service-owned) get the smoothing too.
+    applySmartVolumeForTrack(mindbeat.bakedEnergyFor({ title: active.title, artist: active.artist }));
+    // WAVE B B1 — ReplayGain: the track's baked LUFS sets the PERSISTENT
+    // gain factor through the same bus (composes ×, never races; missing
+    // column/row ⇒ factor exactly 1.0 — the honest no-op until a bake
+    // carries loudness). Runs BEFORE the foreground gate so background
+    // transitions get the same normalization contract.
+    applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: active.title, artist: active.artist }));
+    perfMark('track-active', String(active.id));
+    // SINGLE-OWNER RULE (mirror of the service gate) — v5.2.1 FIX-B1: the
+    // decision is the pure law in trackOwnership.ts (dual-owner behavioral
+    // lock + source law); the provider instruments foreground transitions
+    // only, the service owns the rest — never both.
+    if (!providerOwnsTransition(AppState.currentState, active.id, prevTrackId.current)) {
+      prevTrackId.current = active.id; // stay in sync; service owns grading
+      return;
+    }
+    const prevId = prevTrackId.current;
+    prevTrackId.current = active.id;
+
+    // Finalize the in-flight listen (skip vs jump distinction captured by
+    // pendingSkip; grading itself is ratio-driven so it stays honest).
+    if (prevId) {
+      void mindbeat.trackFinished(pendingSkip.current, pendingSkip.current ? 'skip' : 'jump');
+      pendingSkip.current = false;
+    }
+
+    if (active.id !== recentPushed.current) {
+      recentPushed.current = active.id;
+      const { url, localUri, ...meta } = active as any;
+      void localUri;
+      void url;
+      pushRecent(meta as Track).catch(() => undefined);
+      incrementPlayCount(meta as Track).catch(() => undefined);
+    }
+    void mindbeat.trackStarted(active as Track, surfaceRef.current);
+    // MAGNUM OPUS F1/F3 — prime ONLY on a real transition (prevId set):
+    // the very first active-set is either a boot restore (queue just
+    // rehydrated, URLs as fresh as the kill) or a first tap (playQueue
+    // JUST resolved every row) — prewarming then spends network for
+    // nothing, and races the data-saver boot read. Blind-critic P2-b.
+    if (prevId) void primeWave1(active.id);
+  }, [active?.id, primeWave1]);
+
+  const state = playback?.state;
+  const isPlaying = state === 'playing';
+  const loading = state === 'loading' || state === 'buffering';
+
+  // [TSF-PERF] fires on every pause/resume→playing transition; the lab pairs
+  // the first unconsumed one after each play/skip request into the
+  // time-to-audio and skip-latency metrics (scripts/e2e/parse_perf.py).
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    const now = state === 'playing';
+    if (now && !wasPlayingRef.current) perfMark('audio-playing', String(active?.id ?? ''));
+    wasPlayingRef.current = now;
+  }, [state, active?.id]);
+
+  // WAVE A (A4) — EVERY queue mutation lands here (playQueue, add/remove,
+  // shuffle, vibe walk, service resync — they all converge on `queue`),
+  // plus every engine auto-advance (the active row moved — the restore
+  // target moved with it). Debounced 500ms: a burst of taps costs ONE
+  // write. The empty guard is the saver's own law — a blank queue is
+  // never persisted, so the boot restore can never be overwritten by a
+  // pre-hydration empty state.
+  useEffect(() => {
+    if (!queue.length) return;
+    getQueueSaver().save(queue, active?.id ?? null);
+  }, [queue, active?.id]);
+
+  async function buildPlayable(tracks: Track[]): Promise<RNTrack[]> {
+    const downloads = await getDownloadIndex();
+    const byId = new Map(downloads.map((d) => [d.id, d]));
+    // YOUTUBE SOURCE: resolve stream URLs BEFORE queue construction
+    // (RNTP needs a real url per item). Concurrency-limited (4) so a
+    // 25-row YT queue costs ~ceiling(25/4) probes; the module's LRU
+    // makes repeats free. Failures drop the row — never stall the queue.
+    const ytUrls = new Map<string, string | null>();
+    const ytTracks = tracks.filter((t) => t.source === 'youtube');
+    if (ytTracks.length > 0) {
+      let cursor = 0;
+      const CONCURRENCY = 4;
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, ytTracks.length) }, async () => {
+          while (cursor < ytTracks.length) {
+            const t = ytTracks[cursor];
+            cursor += 1;
+            // MAGNUM OPUS F1 — a prewarmed URL (resolved seconds ago at
+            // the last track start) outranks the row's build-time URL.
+            const pre = await consumePrewarm(t);
+            const url = pre?.url ?? t.streamUrl ?? (await ytStreamUrlForTrack(t).catch(() => null));
+            ytUrls.set(t.id, url);
+          }
+        }),
+      );
+    }
+    const playable: RNTrack[] = [];
+    for (const t of tracks) {
+      const local = byId.get(t.id);
+      // MAGNUM OPUS F1 (blind-critic P1-1): the batch map ALREADY holds
+      // the freshest URL for a YT row (prewarmed > just-resolved), so it
+      // is consulted BEFORE the row's build-time streamUrl — the old
+      // order consumed a parked URL and then discarded it for the stale
+      // one. "Fresh beats stale" is needsPrewarm's locked design.
+      const url =
+        t.source === 'youtube'
+          ? ytUrls.get(t.id) || t.streamUrl || null
+          : local?.localUri || t.localUri || resolveStreamUrl(t);
+      // THE TEN F4 — the smart crates (and stats' top tracks) reconstruct
+      // rows from the ledger, which stores NO stream URLs. A URL-less
+      // saavn row gets ONE by-id rescue (provider song.getDetails, via
+      // src/player/saavnRescue.ts) before being dropped — the same honest
+      // contract as the YouTube retry ladder. Failures drop the row and
+      // are negative-cached for the session; they never stall the queue.
+      if (!url && t.source === 'saavn') {
+        // MAGNUM OPUS F1 — the rescue may already be parked by the
+        // prewarm prime (same ladder, zero double network spend).
+        const pre = await consumePrewarm(t);
+        const fresh = pre?.row ?? (await resolveSaavnRow(t, getSongById));
+        const freshUrl = pre?.url ?? (fresh ? resolveStreamUrl(fresh) : null);
+        if (fresh && freshUrl) {
+          playable.push({
+            id: t.id,
+            url: freshUrl,
+            title: t.title,
+            artist: t.artist,
+            artwork: fresh.artwork || t.artwork,
+            duration: t.duration || 0,
+            source: t.source,
+            saavnId: fresh.saavnId ?? saavnRescueId(t) ?? '',
+            encryptedUrl: fresh.encryptedUrl,
+            has320: fresh.has320,
+            album: fresh.album ?? t.album,
+            artistId: t.artistId,
+            explicit: t.explicit,
+            isRecommended: t.isRecommended,
+            reason: (t as Track).reason,
+            reasonCode: (t as Track).reasonCode,
+            language: (t as Track).language,
+            year: (t as Track).year,
+            // provenance + preview ride through the rescue too — a
+            // rescued row that lost its stream keeps its honest flag
+            rescued: (t as Track).rescued,
+            rescueRung: (t as Track).rescueRung,
+            previewUrl: fresh.previewUrl,
+            exploration: (t as Track).exploration,
+            localUri: local?.localUri || t.localUri,
+          } as unknown as RNTrack);
+          continue;
+        }
+      }
+      if (!url) continue;
+      playable.push({
+        id: t.id,
+        url,
+        title: t.title,
+        artist: t.artist,
+        artwork: t.artwork,
+        duration: t.duration || 0,
+        source: t.source,
+        saavnId: t.saavnId,
+        encryptedUrl: t.encryptedUrl,
+        youtubeId: t.youtubeId,
+        previewUrl: t.previewUrl,
+        previewOnly: t.previewOnly,
+        has320: t.has320,
+        album: t.album,
+        albumId: t.albumId,
+        artistId: t.artistId,
+        explicit: t.explicit,
+        isRecommended: t.isRecommended,
+        reason: (t as Track).reason,
+        reasonCode: (t as Track).reasonCode,
+        exploration: (t as Track).exploration,
+        language: (t as Track).language,
+        year: (t as Track).year,
+        // THE TEN F4 — the SIG rescue provenance rides through the queue so
+        // the Recently Rescued crate can see the played row's true origin.
+        rescued: (t as Track).rescued,
+        rescueRung: (t as Track).rescueRung,
+        localUri: local?.localUri || t.localUri,
+      } as unknown as RNTrack);
+    }
+    return playable;
+  }
+
+  async function playQueue(tracks: Track[], startIndex = 0, surface: SourceSurface = 'user_playlist'): Promise<number> {
+    // returns the number of rows that actually made it into the engine —
+    // 0 on every honest-failure path (blind-critic P0-2: a caller that
+    // promises a room must be able to hear silence)
+    surfaceRef.current = surface;
+    // MAGNUM OPUS F1 — a fresh queue makes every parked URL obsolete
+    // (the prewarm store re-primes on the first transition).
+    resetPrewarm();
+    // INSTANT TAP (Task 29, critic IT-1): answer the press BEFORE any await
+    // — ensureSetup/notification-permission must never sit between the tap
+    // and the mini bar's TUNING IN.
+    const planted = tracks[startIndex];
+    if (planted?.id) {
+      if (staleTimer.current) clearTimeout(staleTimer.current);
+      setOptimistic(planted);
+      staleTimer.current = setTimeout(() => {
+        // stale plant = honest reset (resolution never came back)
+        setOptimistic((cur) => (cur?.id === planted.id ? null : cur));
+      }, 8000);
+    }
+    try {
+      await ensureSetup();
+      await askNotificationPermission();
+      const wantedId = tracks[startIndex]?.id;
+      perfMark('play-request', String(wantedId));
+      const playable = await buildPlayable(tracks);
+      if (!playable.length || !wantedId) {
+        // HONEST FAILURE (no more blank player): if the tapped row was a
+        // YouTube row that the ladder could not resolve, say so with the
+        // diagnostics trail instead of silently doing nothing.
+        const wanted = tracks[startIndex];
+        if (wanted?.source === 'youtube') {
+          const trail = ytLastDiagnostics().slice(0, 5).join(' | ');
+          toast.show({
+            message: 'YouTube stream unavailable right now — retrying via secure resolver in a moment',
+            icon: 'alert-outline',
+          });
+          // second chance: the PO-token bridge may need one warm-up round
+          await new Promise((r) => setTimeout(r, 1200));
+          const retry = await buildPlayable(tracks);
+          if (retry.length && retry.some((m) => m.id === wantedId)) {
+            const startAt2 = Math.max(0, retry.findIndex((t) => t.id === wantedId));
+            const mapped2 = retry as unknown as Track[];
+            setQueue(mapped2);
+            originalQueue.current = tracks.filter((t) => mapped2.some((m) => m.id === t.id));
+            await TrackPlayer.reset();
+            await TrackPlayer.add(retry);
+            await TrackPlayer.skip(startAt2);
+            await TrackPlayer.play();
+            setOptimistic(null); // the real track takes over from the plant
+            return retry.length;
+          }
+          // P1-3: the retry promise gets a FINAL honest answer, never silence
+          toast.show({ message: 'That YouTube track is unavailable right now', icon: 'alert-outline' });
+          if (__DEV__) console.warn('[yt] resolve failed:', trail);
+        }
+        setOptimistic(null); // honest failure: the plant comes down
+        return 0;
+      }
+      // the WANTED row itself dropped (others survived) — never start on a
+      // different song than the user asked for (P2-3: ALL sources, not
+      // just YouTube — a dropped saavn row must not fall through to
+      // startAt=0 and play some other song)
+      if (!playable.some((m) => m.id === wantedId)) {
+        toast.show({
+          message:
+            tracks[startIndex]?.source === 'youtube'
+              ? 'That YouTube track is unavailable right now'
+              : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        setOptimistic(null); // honest failure: the plant comes down
+        return 0;
+      }
+      const startAt = Math.max(0, playable.findIndex((t) => t.id === wantedId));
+      const mapped = playable as unknown as Track[];
+      setQueue(mapped);
+      originalQueue.current = tracks.filter((t) => mapped.some((m) => m.id === t.id));
+      await TrackPlayer.reset();
+      await TrackPlayer.add(playable);
+      await TrackPlayer.skip(startAt);
+      await TrackPlayer.play();
+      void reapplyPlaybackRate(); // THE TEN F3 — a queue reset resets the engine rate
+      // THE TEN F2 — a fresh queue starts from a clean ramp (no stale fade)
+      resetCrossfadeRamp();
+      if (staleTimer.current) clearTimeout(staleTimer.current);
+      setOptimistic(null); // the real track takes over from the plant
+      perfMark('queue-started', String(wantedId));
+      if (smartShuffle) {
+        void injectRecommendations(startAt);
+      }
+      return playable.length;
+    } catch {
+      /* transient setup/network failure — next tap retries */
+      if (staleTimer.current) clearTimeout(staleTimer.current);
+      setOptimistic(null); // honest failure: the plant comes down
+      return 0;
+    }
+  }
+
+  /**
+   * Smart Shuffle v2 (§9.1): per-slot Decision Engine picks with
+   * vibe-lock, truthful reasons and hygiene — via MINDBEAT. Falls back to
+   * the v2.1 artist-mix engine when the intelligence layer is unavailable
+   * (fallback ladder §10.4: never dumber than v2.1).
+   */
+  async function injectRecommendations(currentIdx: number, healFrom: Track | null = null): Promise<void> {
+    try {
+      await ensureSetup();
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const base = rntpQueue.filter((t) => !t.isRecommended);
+      if (base.length < 2 && !healFrom) return;
+      const upcoming = rntpQueue.slice(currentIdx + 1);
+
+      let recs: Track[] = await mindbeat.shuffleRecs(upcoming, healFrom);
+      if (!recs.length) {
+        recs = await getRecommendations(base.slice(currentIdx, currentIdx + 10), 6);
+      }
+      if (!recs.length) return;
+
+      // Remove stale recs when healing so the reseed replaces them.
+      if (healFrom) {
+        const removeIdx = rntpQueue
+          .map((t, i) => (t.isRecommended && i > currentIdx ? i : -1))
+          .filter((i) => i >= 0)
+          .sort((a, b) => b - a);
+        for (const i of removeIdx) await TrackPlayer.remove(i).catch(() => undefined);
+      }
+
+      let insertAt = currentIdx + 1;
+      for (const rec of recs.slice(0, 6)) {
+        const playable = await buildPlayable([{ ...rec, isRecommended: true }]);
+        if (playable.length) {
+          await TrackPlayer.add(playable, insertAt);
+          insertAt += 2;
+        }
+      }
+      await refreshQueue();
+    } catch {
+      /* recommendations are best-effort */
+    }
+  }
+
+  async function togglePlay(): Promise<void> {
+    try {
+      await ensureSetup();
+      const current = await TrackPlayer.getActiveTrackIndex();
+      if (current == null) {
+        if (queue.length) {
+          // WAVE A (A4) — a restored queue resumes at the SONG the listener
+          // left (the one-shot boot handoff), never at a random position.
+          // The rows ride the EXISTING buildPlayable ladder (their stream
+          // fields were stripped before persisting — house rule 14 — so
+          // resolution answers fresh, exactly like any rebuilt queue).
+          const idx = restoredActiveIdRef.current
+            ? queue.findIndex((t) => t.id === restoredActiveIdRef.current)
+            : 0;
+          restoredActiveIdRef.current = null;
+          await playQueue(queue, Math.max(0, idx));
+        }
+        return;
+      }
+      if (isPlaying) await TrackPlayer.pause();
+      else await TrackPlayer.play();
+    } catch {
+      /* retry next tap */
+    }
+  }
+
+  async function next(): Promise<void> {
+    // Queue healing (§9.1): skipping a RECOMMENDED track immediately
+    // re-seeds the remaining rec slots away from what was rejected.
+    perfMark('skip-request');
+    try {
+      const idx = await TrackPlayer.getActiveTrackIndex();
+      if (idx != null) {
+        const current = (await TrackPlayer.getTrack(idx)) as unknown as Track | null;
+        mindbeat.markPendingSkip();
+        pendingSkip.current = true;
+        if (current?.isRecommended && smartShuffle) {
+          void mindbeat.trackFinished(true, 'skip');
+          void injectRecommendations(idx, current as Track);
+          await TrackPlayer.skipToNext().catch(() => undefined);
+          return;
+        }
+      }
+    } catch {
+      /* fall through to plain skip */
+    }
+    await TrackPlayer.skipToNext().catch(() => undefined);
+  }
+
+  async function prev(): Promise<void> {
+    try {
+      const pos = (await TrackPlayer.getProgress()).position;
+      if (pos > 3) {
+        await TrackPlayer.seekTo(0);
+        return;
+      }
+      await TrackPlayer.skipToPrevious();
+    } catch {
+      await TrackPlayer.seekTo(0).catch(() => undefined);
+    }
+  }
+
+  async function seek(seconds: number): Promise<void> {
+    try {
+      const pos = (await TrackPlayer.getProgress().catch(() => null))?.position ?? 0;
+      void mindbeat.seek(pos * 1000, Math.max(0, seconds) * 1000);
+    } catch {
+      /* seek evidence is best-effort */
+    }
+    await TrackPlayer.seekTo(Math.max(0, seconds)).catch(() => undefined);
+  }
+
+  /**
+   * Classic shuffle reorders only the UPCOMING tracks — never restarts
+   * the current song.
+   */
+  async function setShuffle(on: boolean): Promise<void> {
+    setShuffleState(on);
+    try {
+      await ensureSetup();
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      if (currentIdx == null || !rntpQueue.length) return;
+
+      const currentId = rntpQueue[currentIdx]?.id;
+      const upcoming = rntpQueue.filter((_, i) => i !== currentIdx);
+      const reordered = on
+        ? shuffleArray(upcoming)
+        : originalQueue.current.filter((t) => t.id !== currentId);
+      // MAGNUM OPUS F1 — the order changed; parked positions are lies now.
+      resetPrewarm();
+
+      const removeIndices = rntpQueue
+        .map((_, i) => i)
+        .filter((i) => i !== currentIdx)
+        .sort((a, b) => b - a);
+      if (removeIndices.length) await TrackPlayer.remove(removeIndices);
+
+      if (reordered.length) {
+        const playable = await buildPlayable(reordered);
+        if (playable.length) await TrackPlayer.add(playable);
+      }
+
+      const full = [rntpQueue[currentIdx], ...reordered].filter(Boolean) as Track[];
+      setQueue(full);
+    } catch {
+      /* keep UI state anyway */
+    }
+  }
+
+  /**
+   * Smart Shuffle (Spotify-style): AI recommendations are interleaved
+   * between upcoming tracks, badged with a sparkle in the queue UI.
+   */
+  async function setSmartShuffle(on: boolean): Promise<void> {
+    setSmartShuffleState(on);
+    persistSmartShuffle(on).catch(() => undefined);
+    toast.show({
+      message: on ? 'Smart Shuffle on — TSF AI is mixing in picks' : 'Smart Shuffle off',
+      icon: 'sparkles',
+    });
+    try {
+      await ensureSetup();
+      if (!on) {
+        const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+        const removeIndices = rntpQueue
+          .map((t, i) => (t.isRecommended ? i : -1))
+          .filter((i) => i >= 0)
+          .sort((a, b) => b - a);
+        if (removeIndices.length) await TrackPlayer.remove(removeIndices);
+        await refreshQueue();
+        return;
+      }
+      const currentIdx = (await TrackPlayer.getActiveTrackIndex()) ?? 0;
+      await injectRecommendations(currentIdx);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  async function toggleAutoplay(on: boolean): Promise<void> {
+    setAutoplayState(on);
+    persistAutoplay(on).catch(() => undefined);
+    toast.show({
+      message: on ? 'Autoplay on — radio keeps the music going' : 'Autoplay off',
+      icon: on ? 'radio-outline' : 'pause',
+    });
+  }
+
+  async function cycleRepeat(): Promise<void> {
+    const order: Array<'off' | 'queue' | 'track'> = ['off', 'queue', 'track'];
+    const nextMode = order[(order.indexOf(repeat) + 1) % order.length];
+    setRepeat(nextMode);
+    const mode =
+      nextMode === 'queue' ? RepeatMode.Queue : nextMode === 'track' ? RepeatMode.Track : RepeatMode.Off;
+    await TrackPlayer.setRepeatMode(mode).catch(() => undefined);
+  }
+
+  async function toggleLike(track: Track): Promise<void> {
+    const { url, localUri, ...meta } = track as any;
+    void url;
+    void localUri;
+    const nowFav = await storeToggleFavorite(meta as Track);
+    setFavorites((prev) => {
+      const nextSet = new Set(prev);
+      if (nowFav) nextSet.add(track.id);
+      else nextSet.delete(track.id);
+      return nextSet;
+    });
+    // Heart evidence into the ledger (+4.0, slowest-decaying tier §5.2).
+    if (nowFav) void mindbeat.liked(track, surfaceRef.current);
+    else void mindbeat.unliked(track);
+    toast.show({
+      message: nowFav ? 'Added to Liked Songs' : 'Removed from Liked Songs',
+      icon: nowFav ? 'heart' : 'heart-dislike-outline',
+    });
+  }
+
+  async function playNext(track: Track): Promise<void> {
+    try {
+      await ensureSetup();
+      const playable = await buildPlayable([track]);
+      if (!playable.length) {
+        toast.show({
+          message: track.source === 'youtube' ? 'That YouTube track is unavailable right now' : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        return;
+      }
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      await TrackPlayer.add(playable, (currentIdx ?? -1) + 1);
+      pinnedIdsRef.current.add(track.id); // F13: explicitly queued next = pinned, never moves
+      await refreshQueue();
+      void mindbeat.queueAdded(track, surfaceRef.current);
+      toast.show({ message: `Playing next: ${track.title}`, icon: 'play' });
+    } catch {
+      toast.show({ message: 'Could not queue that song', icon: 'alert-outline' });
+    }
+  }
+
+  async function addToQueue(track: Track): Promise<void> {
+    try {
+      await ensureSetup();
+      const playable = await buildPlayable([track]);
+      if (!playable.length) {
+        toast.show({
+          message: track.source === 'youtube' ? 'That YouTube track is unavailable right now' : 'Could not queue that song',
+          icon: 'alert-outline',
+        });
+        return;
+      }
+      await TrackPlayer.add(playable);
+      await refreshQueue();
+      toast.show({ message: `Added to queue: ${track.title}`, icon: 'add' });
+    } catch {
+      toast.show({ message: 'Could not queue that song', icon: 'alert-outline' });
+    }
+  }
+
+  async function removeFromQueue(trackId: string): Promise<void> {
+    try {
+      pinnedIdsRef.current.delete(trackId); // a removed track can't stay pinned (F13)
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const idx = rntpQueue.findIndex((t) => t.id === trackId);
+      if (idx >= 0) {
+        const wasRec = !!rntpQueue[idx]!.isRecommended;
+        await TrackPlayer.remove(idx);
+        await refreshQueue();
+        // Removing a recommendation is a negative signal (§5.1 QUEUE_REMOVE).
+        void mindbeat.queueRemoved(trackId, wasRec);
+        toast.show({ message: 'Removed from queue', icon: 'remove' });
+      }
+    } catch {
+      /* noop */
+    }
+  }
+
+  /** Vibe shift batch insert (Task 28): all picks land after the current
+   * track IN ORDER with no per-track toasts — the caller toasts once. */
+  async function queueVibeShift(tracks: Track[]): Promise<number> {
+    try {
+      if (!tracks.length) return 0;
+      await ensureSetup();
+      const playable = await buildPlayable(tracks);
+      if (!playable.length) return 0;
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      await TrackPlayer.add(playable, (currentIdx ?? -1) + 1);
+      await refreshQueue();
+      for (const t of playable) void mindbeat.queueAdded(t as unknown as Track, surfaceRef.current);
+      return playable.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * MAGNUM OPUS F13 — SHUFFLE BY VIBE. Reorders only the UPCOMING tracks
+   * (never restarts the current song, mirrors setShuffle's engine dance)
+   * with the greedy nearest-neighbor walk from queueOptimizer.ts. PINNED
+   * tracks — anything explicitly queued via playNext — never move. The
+   * seed is the PLAYING track's energy so the walk starts where the
+   * wrist already is. NEVER called automatically: the only call site is
+   * the queue sheet's button.
+   */
+  async function optimizeQueueByVibe(): Promise<{ count: number; largestStep: number; honest: boolean }> {
+    try {
+      await ensureSetup();
+      const rntpQueue = (await TrackPlayer.getQueue()) as unknown as Track[];
+      const currentIdx = await TrackPlayer.getActiveTrackIndex();
+      if (currentIdx == null || !rntpQueue.length) return { count: 0, largestStep: 0, honest: true };
+      const current = rntpQueue[currentIdx];
+      const upcoming = rntpQueue.filter((_, i) => i !== currentIdx);
+      if (upcoming.length < QUEUE_VIBE.minTracks) return { count: 0, largestStep: 0, honest: true };
+
+      // energies via the facade (law ②) — the baked row when the table
+      // has it, the estimator when it doesn't; the walk never invents one
+      const features: Record<string, number> = {};
+      for (const t of upcoming) {
+        const f = mindbeat.featuresForTrack(t);
+        features[t.id] = f.energy;
+      }
+      const seedFeats = current ? mindbeat.featuresForTrack(current) : null;
+      const pinned = upcoming.filter((t) => pinnedIdsRef.current.has(t.id)).map((t) => t.id);
+      const { order, largestStep } = optimizeVibeWalk(upcoming, features, pinned, seedFeats?.energy);
+      // the walk consumed the pinned bookkeeping — the new order IS the
+      // user's arrangement now (no stale pins survive the reorder)
+      pinnedIdsRef.current.clear();
+
+      // the setShuffle engine dance: remove upcoming, re-add reordered
+      resetPrewarm();
+      const removeIndices = rntpQueue.map((_, i) => i).filter((i) => i !== currentIdx).sort((a, b) => b - a);
+      if (removeIndices.length) await TrackPlayer.remove(removeIndices);
+      const playable = await buildPlayable(order);
+      if (playable.length) await TrackPlayer.add(playable);
+      // the queue state reflects what the ENGINE actually holds —
+      // unresolvable tracks dropped by buildPlayable are a real (small)
+      // loss and the toast must not claim them (blind-critic P2)
+      setQueue([current, ...playable].filter(Boolean) as Track[]);
+      return { count: playable.length, largestStep, honest: stepWithinBound(largestStep) };
+    } catch {
+      return { count: 0, largestStep: 0, honest: true };
+    }
+  }
+
+  const value: PlayerState = useMemo(
+    () => ({
+      active,
+      optimistic,
+      isPlaying,
+      loading,
+      queue,
+      shuffle,
+      smartShuffle,
+      autoplay,
+      repeat,
+      favorites,
+      playQueue,
+      togglePlay,
+      next,
+      prev,
+      seek,
+      setShuffle,
+      setSmartShuffle,
+      setAutoplay: toggleAutoplay,
+      cycleRepeat,
+      toggleLike,
+      playNext,
+      queueVibeShift,
+      addToQueue,
+      removeFromQueue,
+      refreshQueue,
+      optimizeQueueByVibe,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [active, optimistic, isPlaying, loading, queue, shuffle, smartShuffle, autoplay, repeat, favorites],
+  );
+
+  return (
+    <PlayerContext.Provider value={value}>
+      {children}
+      {/* hidden BotGuard PO-token minter — the YouTube attested rung.
+
+          R7 HOST WRAPPER — the v3.4.0–v3.4.3 half-screen bug: the bridge's
+          WebView library renders its own container View, and whatever that
+          container's style ends up being (v14: flex:1 IN-FLOW unless the
+          caller passes containerStyle), an in-flow sibling under the app
+          root splits the screen 50/50 in Yoga. Hosting the bridge inside
+          an absolute, sub-pixel, touch-transparent View makes that entire
+          failure class structurally impossible — for ANY webview version
+          or future refactor of the bridge. */}
+      <View style={styles.poTokenHost} pointerEvents="none">
+        <YtPoTokenBridge />
+      </View>
+    </PlayerContext.Provider>
+  );
+}
+
+export function usePlayer(): PlayerState {
+  const ctx = useContext(PlayerContext);
+  if (!ctx) throw new Error('usePlayer outside PlayerProvider');
+  return ctx;
+}
+
+const styles = StyleSheet.create({
+  /** Absolute, sub-pixel, touch-transparent host for the hidden PO-token
+   *  WebView — see the R7 comment at the mount site. Out-of-flow by
+   *  construction: it can never take part in the app's flex layout. */
+  poTokenHost: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    top: 0,
+    left: 0,
+    opacity: 0.01,
+  },
+});

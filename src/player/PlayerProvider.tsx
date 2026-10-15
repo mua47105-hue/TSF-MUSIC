@@ -60,6 +60,7 @@ import { initDataSaver } from './audioQuality';
 import { initMetaOverrides } from '../storage/metaOverrides';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
 import { applyReplayGainForTrack } from './replayGain';
+import { providerOwnsTransition } from './trackOwnership';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
@@ -352,11 +353,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // transitions get the same normalization contract.
     applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: active.title, artist: active.artist }));
     perfMark('track-active', String(active.id));
-    // SINGLE-OWNER RULE (mirror of the service gate): the provider owns
-    // track transitions only while FOREGROUNDED; the background service
-    // owns them otherwise — otherwise both instrument the same change and
-    // the second finalize manufactures a phantom 0ms INSTANT_REJECT.
-    if (AppState.currentState !== 'active') {
+    // SINGLE-OWNER RULE (mirror of the service gate) — v5.2.1 FIX-B1: the
+    // decision is the pure law in trackOwnership.ts (dual-owner behavioral
+    // lock + source law); the provider instruments foreground transitions
+    // only, the service owns the rest — never both.
+    if (!providerOwnsTransition(AppState.currentState, active.id, prevTrackId.current)) {
       prevTrackId.current = active.id; // stay in sync; service owns grading
       return;
     }

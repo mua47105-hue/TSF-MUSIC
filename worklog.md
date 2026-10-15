@@ -2640,3 +2640,78 @@ Stage Summary:
   12 mutations all RED, zero regressions against the 1,072 baseline, honest
   numbers only. CODEBASE-DEEP-DIVE.md does not exist in this repo (noted for
   the final report); the mission's inline per-fix specs were the work order.
+
+---
+Task ID: V5.2.1-WAVE-B
+Agent: Super Z (main agent)
+Task: GAUNTLET LOOP — Wave B (lock-the-survivors, FIX-B1…B8): the 8 audit
+mutations that survived the v5.2.0 suite get behavioral teeth.
+
+Work Log:
+- BASELINE: Wave A state (1,091/0/4,859, tsc 0) carried forward clean.
+- FIX-B1 (Law 3, M5): the single-owner rule is now the pure law
+  src/player/trackOwnership.ts (providerOwnsTransition + serviceOwnsTransition);
+  PlayerProvider wires the provider half (AppState gate → providerOwnsTransition),
+  the service half pinned by a source law (gate BEFORE its trackStarted).
+  Behavioral lock: dual-owner simulation — background ⇒ exactly one write
+  (service), foreground ⇒ exactly one write (provider), no-id/unchanged-id ⇒ zero.
+- FIX-B2 (Law 9, M2b): sanitizeArtistImage is host-lawful —
+  ^https://c.saavncdn.com/ required (manual host parse; no WHATWG-URL
+  dependency on Hermes). 4-case lock: valid artist URL upgrades, evil host
+  falls, placeholder/share-image fall, http/non-artists fall.
+- FIX-B3 (Law 13, M8): the SEATBELT is the pure law src/search/seatbelt.ts
+  (seatbeltPaint); SearchScreen wires it; late-zero-keeps-early-rows locked,
+  real-late-replaces locked, both-empty honest, wiring source law.
+- FIX-B4 (Law 12, M3): bun-level presence lock on testID="track-row".
+  HONEST DEVIATION (stated in the lock): bun has no RN renderer and
+  dragging PlayerProvider+sqlite+expo mocks into a render to read one
+  attribute recreates the v5.2.0 mock-leak class — the literal JSX
+  attribute is source-law pinned; the behavioral side stays with the
+  Maestro E2E lab, which renders it.
+- FIX-B5 (Law 6, M7b): verifySet now runs reconcileRecordings on the S2
+  merged pool — RESCUE-AWARE: organic-first ordering so a rescued row can
+  never evict its playable organic twin (the pre-existing L-P0-2 contract
+  caught the first naive version RED — the two laws now coexist by design:
+  rescue answers the query at rank 1 via the engine's re-injection, the
+  playable twin stays in the body). Cross-source dedupe locked; mergePools
+  alone proven blind (the law lives in verifySet); primary-path wiring
+  source law (searchSaavn → dedupeRecordings → reconcileRecordings).
+- FIX-B6 (M12/M12b): THE AUDITED 15 kill-switch surfaces enumerated exactly
+  (radio, shuffleRecs, surprisePick, vibeShift, focusPicks, moodJourney,
+  resumeSession, decadeRadio, feedSongQueries, soundAlike, searchVibeContext,
+  dailyMixes, weeklyCrate, nowSound, onTheRise) — disabled=true ⇒ all return
+  the honest empty shape, none throw (wrapped() deliberately excluded: its
+  cold-ledger THROW is the documented unavailable≠empty contract, and its
+  data is the user's own history). First lock version (count ≥15
+  this.disabled) was WEAK — M-B6-1 survived it (the file carries ~25
+  references; one gate removal is invisible in a count). Replaced with
+  per-method body laws (each audited surface's own body must carry its
+  gate) — both B6 mutations then RED. The bun lab has no live ledger
+  (sqlite); the "live ledger" half of the audit bar is documented as not
+  reproducible here — the disabled-path + gate-law pairing is the bun-true
+  teeth.
+- FIX-B7 (Law 7, M14): disabled YouTube keeps the transport contract —
+  ytSearchMusicMore → {tracks:[], error:true}, ytResolveStream → reason
+  'disabled'; the flag stays honest on an available source.
+- FIX-B8 (M14b): youtube.ts:949 — the mixed wall+video verdict is NEUTRAL
+  (`videoVerdict > 0 && wallCount === 0`): noteYtSuccess() no longer resets
+  the streak on a verdict that observed a LOGIN_REQUIRED. Behavioral lock
+  uses the trip arithmetic (2 strikes + mixed + 1 wall ⇒ disabled) with a
+  positive control (video-only verdict still resets).
+- MUTATIONS (16, driver scripts/mutations_waveb.py, sha256-verified
+  restores, zero residue): M-B1-1 gate block deleted → 2 RED; M-B1-2 law
+  inverted → 4 RED; M-B2-1 host law gone → 4 RED; M-B2-2 path law gone →
+  2 RED; M-B3-1 seatbelt gone → 2 RED; M-B3-2 unwired → 2 RED; M-B4-1
+  renamed → 2 RED; M-B4-2 removed → 2 RED; M-B5-1 reconcile gone → 2 RED;
+  M-B5-2 rescue evicts twin → L-P0-2 RED (4); M-B6-1 radio gate gone →
+  2 RED (after the law fix); M-B6-2 decadeRadio gate gone → 4 RED;
+  M-B7-1 flag gone → 2 RED; M-B7-2 reason lies → 2 RED; M-B8-1 mixed
+  resets → 2 RED; M-B8-2 video reset gone → 2 RED.
+- GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test runs
+  1,115/0 (4,953 / 4,953 / 4,953 expects, 87 files) — byte-identical.
+
+Stage Summary:
+- Wave B shipped: 8 house laws got teeth (24 new locks in
+  tests/fix_v521_waveB_locks.test.ts), 16 mutations all RED, zero
+  regressions — including the live-fire proof that the B5 law had to
+  learn the L-P0-2 rescue contract (the suite defended itself).

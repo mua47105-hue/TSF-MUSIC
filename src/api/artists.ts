@@ -28,9 +28,14 @@ export interface ArtistInfo {
   image?: string;
 }
 
-/** Accept only genuine artist photography; upgrade to 500x500. */
+/** Accept only genuine artist photography; upgrade to 500x500.
+ *  v5.2.1 FIX-B2: the gate is now HOST-lawful — the path substring alone
+ *  let `https://evil.com/artists/x.jpg` through. Only
+ *  https://c.saavncdn.com/artists/… photos pass. */
 export function sanitizeArtistImage(url?: string): string {
   if (!url) return '';
+  const hostMatch = /^https:\/\/([^/]+)\//.exec(url);
+  if (!hostMatch || hostMatch[1] !== 'c.saavncdn.com') return ''; // wrong host (or not https) — rejected
   if (!url.includes('/artists/')) return ''; // placeholder / album art / share image
   if (url.includes('artist-default') || url.includes('share-image')) return '';
   return url.replace('150x150', '500x500').replace('50x50', '500x500');

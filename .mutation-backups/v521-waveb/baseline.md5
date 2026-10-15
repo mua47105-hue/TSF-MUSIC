@@ -1,0 +1,9 @@
+7502739578ef08fef5b4232953004ca0  src/player/trackOwnership.ts
+8325fbccb210b273ade19c10e9bd494a  src/player/PlayerProvider.tsx
+c183d7da1fc17832267a1cfa55a9cca0  src/api/artists.ts
+dc0e9de672118d96b85bbe67e1bdfdc2  src/search/seatbelt.ts
+9f007b55dfbaf93dbd0f1fc564b4b15f  src/screens/SearchScreen.tsx
+23f0a492fa5655874304c2c60b76ed52  src/search/verify.ts
+ace743d7d70f437f32b5945a8bfbb3cd  src/components/TrackRow.tsx
+2dfe5a2e6c8a2163463ff343d2447b0f  src/ai/mindbeat.ts
+a60016fce7b8ebe82f7d03b0af8e5cf6  src/api/youtube.ts

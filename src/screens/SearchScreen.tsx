@@ -45,6 +45,7 @@ import { YtAppendController, YT_END_NOTE } from '../search/ytAppend';
 import { useStableField } from '../hooks/useStableField';
 import { vibeSearch } from '../ai/surfaces/search';
 import { mindbeat } from '../ai/mindbeat';
+import { seatbeltPaint } from '../search/seatbelt';
 import { searchSaavn, searchSaavnClean, mergeUniqueTracks, searchHasMore, getTrending, getAutocomplete, collectionIsClean, type AutocompleteBundle } from '../api/saavn';
 import { browseColumnsFor } from '../ui/windowing';
 import { planSearch } from '../search/plan';
@@ -520,12 +521,12 @@ export function SearchScreen() {
           // SEATBELT (Android E2E lab, round 8): the same generation's
           // final paint must never regress below its own early paint —
           // a late zero can't unsee rows the user can already read.
+          // v5.2.1 FIX-B3: the law is the pure seatbeltPaint() (behaviorally
+          // locked); the wiring is pinned by a source law.
           setResults((prev) => {
-            if (finalTracks.length === 0 && prev.length > 0) {
-              resultsRef.current = prev; // keep bookkeeping aligned with the screen
-              return prev;
-            }
-            return finalTracks;
+            const next = seatbeltPaint(finalTracks, prev);
+            if (next === prev) resultsRef.current = prev; // the seatbelt held — keep bookkeeping aligned
+            return next;
           });
           setMeta({
             degraded: res.degraded,
