@@ -243,7 +243,9 @@ describe('WAVE A · A2 — wiring locks (getDecipherer + the cold-boot hook)', (
     const fnBody = src.slice(fnStart, fnEnd);
     expect(fnBody).toContain('loadCipherCache');
     expect(fnBody.indexOf('decipherCache && decipherCache.jsPath === jsPath')).toBeLessThan(fnBody.indexOf('loadCipherCache'));
-    expect(fnBody.indexOf('loadCipherCache')).toBeLessThan(fnBody.indexOf("ytFetch(`https://www.youtube.com${jsPath}`)"));
+    const fetchAt = fnBody.indexOf('fetchWithTimeout(`https://www.youtube.com${jsPath}`'); // v5.2.1 FIX-A4: the fetch rides the bounded seam now
+    expect(fetchAt).toBeGreaterThan(-1); // the bounded expression is still the fetch marker
+    expect(fnBody.indexOf('loadCipherCache')).toBeLessThan(fetchAt); // the ORDER the lock pins: RAM → KV → fetch
     expect(fnBody).toContain('saveCipherCache'); // save lives in the same fn (after the parse)
   });
 

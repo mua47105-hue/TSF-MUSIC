@@ -20,6 +20,8 @@ import { groupTracksByDecade } from '../ai/artistTimeline';
 import { ARTIST_TIMELINE } from '../ai/core/constants';
 import { lookupArtistPhoto } from '../api/artists';
 import { usePlayer } from '../player/PlayerProvider';
+import { pickUnfavorited } from '../player/likeBatch';
+import { downloadTrack, isDownloaded } from '../storage/downloads';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
 import { ShelfCard } from '../components/Shelf';
@@ -36,7 +38,7 @@ export function CollectionScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Collection'>>();
   const insets = useSafeAreaInsets();
   const toast = useToast();
-  const { playQueue } = usePlayer();
+  const { playQueue, favorites, toggleLike } = usePlayer();
   const { collection, tracks: routeTracks } = route.params;
 
   // An EMPTY route array (e.g. a crates album row that has no stored
@@ -165,6 +167,42 @@ export function CollectionScreen() {
     nav.navigate('Player');
   };
 
+  // ── v5.2.1 FIX-A2 — the honest crate actions ────────────────────────
+  // The old heart + download buttons fired "ADDED TO YOUR CRATES" and
+  // "DOWNLOADING CRATE…" toasts that wrote nothing and downloaded
+  // nothing. In an app whose brand is "never fabricate", fake actions
+  // are unforgivable: both buttons now do the REAL work, and their
+  // summary toast fires only AFTER the action completes — never before.
+  const likeAll = async () => {
+    if (!tracks?.length) return;
+    // The pure core (locked): only rows not already in the crates, so
+    // toggle semantics never UN-like a favorited track by accident.
+    const fresh = pickUnfavorited(tracks, favorites);
+    if (!fresh.length) {
+      toast.show({ message: 'ALREADY IN YOUR CRATES', icon: 'heart-outline' });
+      return;
+    }
+    for (const t of fresh) await toggleLike(t); // real store write + ledger evidence per row
+    toast.show({ message: `ADDED ${fresh.length} TO YOUR CRATES`, icon: 'heart' });
+  };
+
+  const downloadCrate = async () => {
+    if (!tracks?.length) return;
+    let ok = 0;
+    for (const t of tracks) {
+      try {
+        if (await isDownloaded(t.id) || (await downloadTrack(t))) ok += 1;
+      } catch {
+        /* counted below — the summary tells the truth about partials */
+      }
+    }
+    toast.show(
+      ok === tracks.length
+        ? { message: `CRATE DOWNLOADED · ${ok} SONGS`, icon: 'checkmark-circle-outline' }
+        : { message: `CRATE PARTIAL · ${ok}/${tracks.length} SAVED`, icon: 'alert-outline' },
+    );
+  };
+
   // Artist pages wear the ARTIST's photo — never the first track's album
   // art (the old `tracks[0].artwork ||` chain put an unrelated cover on
   // artist pages). Loading state falls to the initials stamp via Artwork.
@@ -224,10 +262,10 @@ export function CollectionScreen() {
             {tracks && tracks.length ? (
               <View style={styles.actions}>
                 <View style={styles.actionLeft}>
-                  <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'ADDED TO YOUR CRATES', icon: 'heart' })} style={styles.sqBtn}>
+                  <Brutal haptic shadow={2} onPress={() => void likeAll()} style={styles.sqBtn} testID="collection-like-all">
                     <Ionicons name="heart-outline" size={18} color={colors.ink} />
                   </Brutal>
-                  <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'DOWNLOADING CRATE…', icon: 'arrow-down-circle-outline' })} style={styles.sqBtn}>
+                  <Brutal haptic shadow={2} onPress={() => void downloadCrate()} style={styles.sqBtn} testID="collection-download-crate">
                     <Ionicons name="arrow-down-outline" size={18} color={colors.ink} />
                   </Brutal>
                 </View>

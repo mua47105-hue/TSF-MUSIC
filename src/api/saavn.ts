@@ -12,6 +12,7 @@ import type { Collection, Track } from '../types';
 import { filterClean, isClean } from '../safety';
 import { recordingKey, reconcileRecordings } from './recording';
 import { dataSaverActive } from '../player/audioQuality';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 const API = 'https://www.jiosaavn.com/api.php';
 const DES_KEY = CryptoJS.enc.Utf8.parse('38346591');
@@ -32,7 +33,9 @@ export async function saavnGet(
     ctx: 'web6dot0',
     ...params,
   });
-  const res = await fetch(`${API}?${qs.toString()}`, {
+  // v5.2.1 FIX-A4: bounded — a hung CDN socket degrades to a clean
+  // error here (every caller already catches), it never stalls forever.
+  const res = await fetchWithTimeout(`${API}?${qs.toString()}`, {
     headers: BROWSER_HEADERS,
     signal,
   });

@@ -272,6 +272,25 @@ export async function removeTrackFromPlaylist(playlistId: string, trackId: strin
   });
 }
 
+/**
+ * v5.2.1 FIX-A3 — REAL crate pinning. PlaylistScreen's heart used to fire
+ * a "PINNED TO YOUR CRATES" toast that wrote nothing (honesty violation).
+ * The write happens here: serialized against the other playlist mutations,
+ * persisted as `pinnedAt` (epoch ms; absent = unpinned), and surfaced by
+ * the Library (sortPlaylistsPinnedFirst). Survives restarts — getPlaylists
+ * re-reads AsyncStorage on every call, so there is no session-only state.
+ */
+export async function setPlaylistPinned(playlistId: string, pinned: boolean): Promise<void> {
+  await serialized(async () => {
+    const list = await getPlaylists();
+    const pl = list.find((p) => p.id === playlistId);
+    if (!pl) return;
+    if (pinned) pl.pinnedAt = Date.now();
+    else delete pl.pinnedAt;
+    await savePlaylists(list);
+  });
+}
+
 // ── Downloads index (files managed by storage/downloads.ts) ────────────
 
 export async function getDownloadIndex(): Promise<Track[]> {

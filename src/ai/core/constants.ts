@@ -1048,3 +1048,12 @@ export const PARALLAX = {
    *  artwork runs parallax (only visible rows get a native transform). */
   itemVisiblePercentThreshold: 15,
 } as const;
+
+// ── PROVIDER NETWORK DISCIPLINE — v5.2.1 FIX-A4 ─────────────────────────
+
+/** Every provider fetch is bounded: a hung CDN socket must degrade to a
+ *  clean error (the caller's existing catch ladder answers), never stall
+ *  a track start indefinitely. Rationale (10s): slower than any healthy
+ *  CDN handshake+headers on a 3G potato phone, faster than a user's
+ *  patience — the old behavior (no timeout at all) was the bug. */
+export const PROVIDER_FETCH_TIMEOUT_MS = 10_000;

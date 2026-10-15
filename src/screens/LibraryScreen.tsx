@@ -36,6 +36,7 @@ import {
   renamePlaylist,
 } from '../storage/store';
 import { verifyDownloads } from '../storage/downloads';
+import { sortPlaylistsPinnedFirst } from '../storage/libraryOrder';
 import { mindbeat } from '../ai/mindbeat';
 import { PARALLAX } from '../ai/core/constants';
 import type { SmartFolders } from '../ai/smartFolders';
@@ -251,25 +252,26 @@ export function LibraryScreen() {
       seed: 'stats',
       kind: 'stats',
     });
-    playlists
-      .slice()
-      .sort((a, b) =>
-        sortRecent
-          ? (b.createdAt ?? 0) - (a.createdAt ?? 0)
-          : a.name.localeCompare(b.name),
-      )
-      .forEach((p) =>
-        items.push({
-          key: p.id,
-          title: p.name,
-          subtitle: `${p.aiGenerated ? 'MINDBEAT · ' : 'Playlist · '}${p.tracks.length} songs`,
-          artwork: p.tracks[0]?.artwork,
-          seed: p.id,
-          kind: p.aiGenerated ? 'ai' : 'playlist',
-          playlistId: p.id,
-          tracks: p.tracks,
-        }),
-      );
+    sortPlaylistsPinnedFirst(
+      playlists
+        .slice()
+        .sort((a, b) =>
+          sortRecent
+            ? (b.createdAt ?? 0) - (a.createdAt ?? 0)
+            : a.name.localeCompare(b.name),
+        ),
+    ).forEach((p) =>
+      items.push({
+        key: p.id,
+        title: p.name,
+        subtitle: `${p.pinnedAt ? 'PINNED · ' : ''}${p.aiGenerated ? 'MINDBEAT · ' : 'Playlist · '}${p.tracks.length} songs`,
+        artwork: p.tracks[0]?.artwork,
+        seed: p.id,
+        kind: p.aiGenerated ? 'ai' : 'playlist',
+        playlistId: p.id,
+        tracks: p.tracks,
+      }),
+    );
   } else if (chip === 'artists') {
     const seen = new Set<string>();
     [...recents, ...favorites].forEach((t) => {

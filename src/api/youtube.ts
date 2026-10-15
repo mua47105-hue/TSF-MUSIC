@@ -25,6 +25,8 @@ import type { Track } from '../types';
 import { recordingKey, reconcileRecordings } from './recording';
 // WAVE A (A2) — the cold-boot cipher cache (parsed base.js program).
 import { loadCipherCache, saveCipherCache, makeAsyncStorageDeps } from './ytCipherCache';
+// v5.2.1 FIX-A4 — every provider fetch bounded (10s ceiling, signals honored).
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 // ── client registry (ONE place to update when YouTube rotates shapes) ──
 // Refreshed 2026-02 against the OSS playback ecosystem (yt-dlp PO-Token-Guide
@@ -140,7 +142,8 @@ async function ensureSession(): Promise<string> {
   if (sessionInFlight) return sessionInFlight;
   sessionInFlight = (async () => {
   try {
-    const res = await ytFetch(`${YTI}/visitor_id?prettyPrint=false`, {
+    // v5.2.1 FIX-A4: bounded — the bootstrap POST can hang too.
+    const res = await fetchWithTimeout(`${YTI}/visitor_id?prettyPrint=false`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -158,7 +161,7 @@ async function ensureSession(): Promise<string> {
           },
         },
       }),
-    });
+    }, { fetchImpl: ytFetch });
     const j = await res.json();
     const v = j?.responseContext?.visitorData ?? '';
     if (v) {
@@ -249,7 +252,9 @@ async function innertube(endpoint: string, client: YtClient, body: Record<string
   }
   const host = client.musicOrigin ? 'https://music.youtube.com/youtubei/v1' : YTI;
   const keyQ = client.apiKey ? `key=${client.apiKey}&` : '';
-  const res = await ytFetch(`${host}/${endpoint}?${keyQ}prettyPrint=false`, {
+  // v5.2.1 FIX-A4: bounded — the caller's signal (when one is threaded)
+  // is honored end-to-end AND the 10s ceiling applies either way.
+  const res = await fetchWithTimeout(`${host}/${endpoint}?${keyQ}prettyPrint=false`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -262,7 +267,7 @@ async function innertube(endpoint: string, client: YtClient, body: Record<string
     },
     body: JSON.stringify({ context, ...body }),
     signal,
-  });
+  }, { fetchImpl: ytFetch });
   if (!res.ok) throw new Error(`yt ${client.name} http ${res.status}`);
   return res.json();
 }
@@ -778,7 +783,8 @@ async function getDecipherer(jsPath: string): Promise<(s: string) => string> {
   } catch {
     /* cache read/eval failure → the fetch path answers, as always */
   }
-  const res = await ytFetch(`https://www.youtube.com${jsPath}`);
+  // v5.2.1 FIX-A4: bounded — the ~300KB player-JS fetch hangs too.
+  const res = await fetchWithTimeout(`https://www.youtube.com${jsPath}`, {}, { fetchImpl: ytFetch });
   if (!res.ok) throw new Error(`player js http ${res.status}`);
   const js = await res.text();
   const fnMatch = js.match(/([\w$]{1,8})\s*=\s*function\(\s*([\w$]+)\s*\)\s*\{\s*\2\s*=\s*\2\.split\(\s*["']{2}\s*\)/);

@@ -99,6 +99,9 @@ export interface Playlist {
   /** True when the playlist was produced by the AI generator */
   aiGenerated?: boolean;
   prompt?: string;
+  /** v5.2.1 FIX-A3: the crate is pinned — Library lists it first.
+   *  The epoch ms of the pin; absent = unpinned. Persists across restarts. */
+  pinnedAt?: number;
 }
 
 export interface DailyMix {

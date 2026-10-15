@@ -12,7 +12,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Track } from '../types';
-import { getPlaylists, removeTrackFromPlaylist } from '../storage/store';
+import { getPlaylists, removeTrackFromPlaylist, setPlaylistPinned } from '../storage/store';
 import { usePlayer } from '../player/PlayerProvider';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
@@ -40,6 +40,7 @@ export function PlaylistScreen() {
     tracks: Track[];
     aiGenerated?: boolean;
     prompt?: string;
+    pinnedAt?: number;
   } | null>(null);
 
   React.useEffect(() => {
@@ -62,6 +63,22 @@ export function PlaylistScreen() {
     },
     [playlistId, toast],
   );
+
+  // ── v5.2.1 FIX-A3 — the heart REALLY pins now ──────────────────────
+  // The old button fired "PINNED TO YOUR CRATES" and pinned nothing (an
+  // honesty violation). The pin persists via setPlaylistPinned (restart-
+  // proof) and surfaces in the Library (pinned crates list first). The
+  // toast only fires AFTER the write succeeds, and says the truth both ways.
+  const togglePin = async () => {
+    if (!playlist) return;
+    const next = !playlist.pinnedAt;
+    await setPlaylistPinned(playlistId, next);
+    toast.show({
+      message: next ? 'PINNED TO YOUR CRATES' : 'REMOVED FROM YOUR CRATES',
+      icon: next ? 'heart' : 'heart-outline',
+    });
+    setDataVersion((v) => v + 1); // reload → filled heart + truthful state
+  };
 
   if (!playlist) {
     return (
@@ -145,8 +162,12 @@ export function PlaylistScreen() {
             {/* brutal action row */}
             <View style={styles.actions}>
               <View style={styles.actionLeft}>
-                <Brutal haptic shadow={2} onPress={() => toast.show({ message: 'PINNED TO YOUR CRATES', icon: 'heart' })} style={styles.sqBtn}>
-                  <Ionicons name="heart-outline" size={18} color={colors.ink} />
+                <Brutal haptic shadow={2} onPress={() => void togglePin()} style={styles.sqBtn} testID="crate-pin">
+                  <Ionicons
+                    name={playlist.pinnedAt ? 'heart' : 'heart-outline'}
+                    size={18}
+                    color={colors.ink}
+                  />
                 </Brutal>
               </View>
               <View style={styles.actionRight}>

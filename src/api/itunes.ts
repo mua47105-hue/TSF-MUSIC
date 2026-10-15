@@ -6,6 +6,7 @@
  */
 
 import type { Track } from '../types';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 const ITUNES = 'https://itunes.apple.com/search';
 
@@ -24,14 +25,17 @@ interface ITunesResult {
 export async function searchItunes(
   query: string,
   limit = 20,
-  _signal?: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<Track[]> {
   const qs = new URLSearchParams({
     term: query,
     media: 'music',
     limit: String(limit),
   });
-  const res = await fetch(`${ITUNES}?${qs.toString()}`);
+  // v5.2.1 FIX-A5: the signal is now HONORED end-to-end (it used to be
+  // accepted as `_signal` and silently dropped — a typed lie), and the
+  // request is bounded by the 10s provider ceiling (FIX-A4).
+  const res = await fetchWithTimeout(`${ITUNES}?${qs.toString()}`, { signal });
   if (!res.ok) return [];
   const data: { results?: ITunesResult[] } = await res.json();
   return (data.results ?? [])

@@ -15,7 +15,7 @@
  *      an honest empty array when intelligence is unavailable.
  */
 
-import { describe, expect, test, beforeAll, mock } from 'bun:test';
+import { describe, expect, test, beforeAll, beforeEach, mock } from 'bun:test';
 import { rnMockSurface } from '../helpers/rnMockSurface';
 
 const setVolumeCalls: number[] = [];
@@ -25,9 +25,12 @@ mock.module('react-native-track-player', () => ({
     async setVolume(v: number) {
       setVolumeCalls.push(v);
     },
-    async pause() {
+    // v5.2.1 FIX-A1: a TRACKED mock — the old plain function could only be
+    // "asserted" with the theatre form (the matcher was never invoked);
+    // the real assertion (`not.toHaveBeenCalled()`) needs call history.
+    pause: mock(async () => {
       paused = true;
-    },
+    }),
   },
   State: { None: 'none', Ready: 'ready', Playing: 'playing', Paused: 'paused' },
   Event: {
@@ -66,6 +69,12 @@ mock.module('expo-sqlite', () => ({
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// FIX-A1: call history resets per test — the cancel test asserts pause
+// was never called IN THAT TEST, not since process start.
+beforeEach(() => {
+  mock.clearAllMocks();
+});
+
 // ── 1 + 2. sleep timer ──────────────────────────────────────────────────
 describe('sleep timer (godmode)', () => {
   test('arm → countdown state; fire → pause + volume restore + disarm', async () => {
@@ -98,7 +107,7 @@ describe('sleep timer (godmode)', () => {
     cancelSleepTimer();
     expect(getSleepTimerState().endAt).toBeNull();
     expect(getSleepTimerState().minutes).toBeNull();
-    expect(TP.pause).not.toHaveBeenCalled; // still armed-cancelled, never fired
+    expect(TP.pause).not.toHaveBeenCalled(); // still armed-cancelled, never fired
   });
 });
 

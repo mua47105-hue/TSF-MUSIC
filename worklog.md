@@ -2566,3 +2566,77 @@ Stage Summary:
   Wave D device crash the E2E lab caught — root-caused to the Android
   VirtualizedList invariant, fixed with Animated.FlatList, locked, and
   proven green on the emulator. Verdict: SHIP IT.
+
+---
+Task ID: V5.2.1-WAVE-A
+Agent: Super Z (main agent)
+Task: GAUNTLET LOOP — Wave A of the comprehensive hardening (FIX-A1…A5): the
+P0 theatre assertion, two honesty-violation fake toasts, unbounded provider
+fetches, the itunes typed-lie signal.
+
+Work Log:
+- STATE TRUTH first: local clone was stale at v5.0.2 (51cf33e) while the
+  remote main sat at 3679a09 (v5.2.0) — fetched, fast-forwarded 21 commits,
+  verified clean. The mission's premise (repo at 3679a09) then held.
+- BASELINE (measured): tsc 0; bun test 1,072 pass / 0 fail / 4,814 expects
+  / 85 files — the audit's arithmetic reproduced exactly.
+- FIX-A1 (P0): godmode_locks.test.ts:101 `expect(TP.pause).not.toHaveBeenCalled;`
+  was theatre (matcher accessed, never invoked). Added the `()` AND made it
+  meaningful: the TP mock's pause is now a bun `mock()` (call-tracked) with
+  per-test `mock.clearAllMocks()` — the assertion now REALLY fails if a
+  cancel ever pauses. Repo-wide scan lock added: no test file may access a
+  toHaveBeenCalled* matcher as a property (the structure check the mission
+  demanded — it goes RED when the parens are removed again).
+- FIX-A2 (P1 honesty): CollectionScreen's fake "ADDED TO YOUR CRATES" /
+  "DOWNLOADING CRATE…" toasts replaced with REAL actions: likeAll batch-likes
+  through the real toggleLike (store + ledger + UI state) for exactly the
+  not-yet-favorited rows (pure core: src/player/likeBatch.ts pickUnfavorited),
+  downloadCrate runs real downloadTrack/isDownloaded per row and reports the
+  honest count ("CRATE DOWNLOADED · N SONGS" / "CRATE PARTIAL · x/y SAVED").
+  Toasts fire only AFTER the action completes. Source laws: fake literals
+  gone, no toast fired directly from an onPress.
+- FIX-A3 (P1 honesty): PlaylistScreen's fake "PINNED TO YOUR CRATES" now
+  REALLY pins: Playlist.pinnedAt (types), setPlaylistPinned (serialized store
+  write, restart-proof), Library surfaces pins (sortPlaylistsPinnedFirst pure
+  law + "PINNED · " marker). Round-trip lock: pin → fresh read (restart
+  simulation) → still pinned → unpin → gone.
+- FIX-A4 (P1): src/api/fetchWithTimeout.ts — every provider fetch bounded
+  (PROVIDER_FETCH_TIMEOUT_MS = 10s, house law 4, in constants.ts). Settle-once
+  guarantee: hung fetch settles with a clean timeout error EVEN IF the inner
+  fetch ignores its abort signal; caller signals honored end-to-end (combined
+  controller). Wired: saavnGet, youtube visitor_id + innertube + player-js
+  (through the setYtFetch seam — stubs keep working), itunes.
+- FIX-A5 (P1): itunes.ts `_signal` typed lie fixed — the signal is threaded
+  into fetchWithTimeout; abort mid-search now cancels end-to-end (behavioral
+  lock with a never-resolving global fetch, restored even on RED).
+- THE STRIPPER INCIDENT (self-caught theatre): the lock file's first
+  stripComments (one regex) was ITSELF a vacuous lock — saavn.ts's MIME
+  literal ("application/json, text/plain, */*") contains BOTH comment
+  delimiters inside a string; the regex paired them and swallowed hundreds
+  of real lines, so the no-bare-fetch law passed on a MUTATED tree. Caught
+  live during M-A4-2 (0 fails on a mutation = the worst kind of wrong).
+  Replaced with a string-aware mini-lexer (quote frames + template
+  interpolation stack); the incident is documented in the lock file and the
+  mutation re-proven RED.
+- CONFLICTING-LOCK RECONCILIATION (no check weakened): waveA_a2_cipher_cache
+  pinned the ladder order using the literal old fetch expression; the marker
+  updated to the bounded seam expression — the ORDER the lock pins (RAM →
+  KV → fetch) is unchanged and still enforced.
+- MUTATIONS (12, backups .mutation-backups/v521-wavea/, md5-verified
+  restores, `git status --porcelain` empty-of-residue after each):
+  M-A1-1 parens removed → scan+literal RED; M-A1-2 theatre injected in
+  another file → scan RED; M-A2-1 fake toast restored → 2 source laws RED;
+  M-A2-2 favorite filter dropped → 2 behavioral RED; M-A3-1 pin write gone
+  → round-trip RED; M-A3-2 sort pass-through → ordering RED; M-A3-3 toast
+  before await → law RED; M-A4-1 timer unarmed → hung-fetch RED;
+  M-A4-2 saavn bare fetch → law RED; M-A4-3 innertube bare ytFetch → law
+  RED; M-A5-1 _signal lie → behavioral+law RED; M-A5-2 outer signal dropped
+  → 2 behavioral RED.
+- GATES (measured): bunx tsc --noEmit 0; THREE consecutive bun test runs
+  1,091/0 (4,859 / 4,859 / 4,859 expects, 86 files) — byte-identical counts.
+
+Stage Summary:
+- Wave A shipped: 19 new locks (tests/fix_v521_waveA_locks.test.ts), 5 fixes,
+  12 mutations all RED, zero regressions against the 1,072 baseline, honest
+  numbers only. CODEBASE-DEEP-DIVE.md does not exist in this repo (noted for
+  the final report); the mission's inline per-fix specs were the work order.
