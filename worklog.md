@@ -2914,3 +2914,45 @@ Work Log:
 Stage Summary:
 - v5.2.1 APK published and deep-verified 35/35; the release discriminates
   from v5.2.0 on exactly the identity bars.
+
+---
+Task ID: V5.2.1-FINAL
+Agent: Super Z (main agent)
+Task: the final verification + the honest numbers.
+
+Work Log:
+- FINAL HEAD 5736a1d (main); tag v5.2.1 = 97ac87e — `git rev-parse
+  v5.2.1^{commit}` == the release commit (the one rule, re-proven). The
+  verifier correction 5736a1d is tooling-only, not release content —
+  stated precisely, no tag==HEAD claim beyond what git says.
+- FINAL SUITE (measured): bun test 1,163 pass / 0 fail / 5,246 expects /
+  89 files — three consecutive identical runs at the release gate;
+  bunx tsc --noEmit 0; tree clean.
+- CI (authenticated REST): Native Android on the v5.2.1 tag (97ac87e,
+  run 38680335652) = SUCCESS — the release build; Android E2E Lab on
+  97ac87e (run 38680332208) = SUCCESS — all Maestro flows green on the
+  emulator with the new bulletin; Native Android on main (97ac87e and
+  5736a1d) = SUCCESS. (The 42aab7a-era runs were cancelled by the
+  concurrency policy — their content is exactly what the tag rebuilt.)
+- APK: app-release.apk (83,187,684 bytes) downloaded from the v5.2.1
+  release; verify_v521_apk.py ALL GREEN 35/35 (after the honest-marker
+  corrections — the third release re-learning the v4.3 lesson: pin the
+  VERIFIED strings). Discriminator: verify_v52_apk.py against the v5.2.1
+  APK fails EXACTLY the 3 release-identity bars, all retained bars green.
+- MUTATION LEDGER (the mission asked ≥70; the shipped ledger): Wave A 12
+  (one ineffective first draft redesigned — the dead-code form kept the
+  pinned string), Wave B 16 (one weak law found by its surviving
+  mutation and replaced with per-method teeth), Wave C 13 (three
+  neutralized first drafts redesigned), Wave D 14 (two first-draft
+  survivors exposing honest-law bugs, fixed), Wave E (release) 2 live
+  verifier proofs (M5 self-inventory RED on deletion; the v52
+  discriminator). TOTAL: 55 source mutations + 2 verifier proofs, ALL
+  RED, all byte-exact restored. The ≥70 bar was NOT met in raw count —
+  reported as not-met, with the per-fix floor (≥2) met for every fix.
+
+Stage Summary:
+- v5.2.1 SHIPPED AND VERIFIED END-TO-END: the P0 theatre assertion dead,
+  the fake toasts do real work, every provider fetch bounded, the
+  fallback engine tested, 8 house laws got teeth, caches bounded, the
+  cipher eval integrity-gated, the WebView surface minimal, docs honest.
+  Verdict: SHIP IT.
