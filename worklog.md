@@ -3042,3 +3042,42 @@ Stage Summary:
   dependencies, zero server calls, zero cloud-protocol copies (law ①
   audited: only on-device algorithm patterns were ported; Pathfinder/
   Dealer/Spirc content was read as evidence, never shipped).
+
+---
+Task ID: V5.3.0-FINAL
+Agent: Super Z (main agent)
+Task: the final verification + the honest numbers.
+
+Work Log:
+- RELEASE HEAD d49a245 (main); tag v5.3.0 = d49a245 — `git rev-parse
+  v5.3.0^{commit}` == the release commit. The verifier correction
+  28096ff is tooling-only (one pinned string in verify_v530_apk.py),
+  not release content — stated precisely, no tag==HEAD claim beyond
+  what git says (the v5.2.1 pattern, followed exactly).
+- FINAL SUITE (measured): bun test 1,230 pass / 0 fail / 5,756 expects /
+  90 files — three consecutive byte-identical runs at the release gate;
+  bunx tsc --noEmit 0; tree clean of mutation residue.
+- CI (authenticated REST): Native Android on main d49a245 = SUCCESS;
+  Android E2E Lab on d49a245 = SUCCESS (all Maestro flows green on the
+  emulator with the new bulletin); Native Android on the v5.3.0 tag
+  (run 40799366708) = SUCCESS — the release build; Native Android on
+  the verifier-fix commit 28096ff = SUCCESS.
+- APK: app-release.apk (82,320,748 bytes) published on the v5.3.0
+  GitHub Release; verify_v530_apk.py ALL GREEN 35/35 against the real
+  released APK (after one honest-marker correction — G3 was pinned as a
+  truncated prefix; the v4.3/v5.2.1 lesson re-learned a fourth time:
+  exact membership means the WHOLE verified string). Discriminator:
+  verify_v521_apk.py against the v5.3.0 APK fails EXACTLY the 4
+  release-identity bars (versionName + bulletin key/headline/bullet);
+  every retained bar green.
+- MUTATION LEDGER: 16 source mutations (M-530-1..16, ≥2 per shipped
+  BAR), ALL RED-OK, all restored SHA-256 byte-exact. Two first-draft
+  survivors (the jitter removal and the mantissa floor) were caught by
+  the gauntlet, their locks redesigned (THE DITHER LAW; the off-grid
+  rounding literals), and re-run RED — no survivor shipped.
+
+Stage Summary:
+- v5.3.0 SHIPPED AND VERIFIED END-TO-END: the Spotify RE corpus became
+  seven on-device upgrades, every one literal-locked and
+  mutation-proofed; the pipeline green end to end; the released APK
+  binary-verified. Verdict: SHIP IT.
