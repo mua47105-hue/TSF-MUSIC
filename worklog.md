@@ -2956,3 +2956,89 @@ Stage Summary:
   fallback engine tested, 8 house laws got teeth, caches bounded, the
   cipher eval integrity-gated, the WebView surface minimal, docs honest.
   Verdict: SHIP IT.
+
+---
+Task ID: V5.3.0-SPOTIFY-RE
+Agent: Super Z (main agent)
+Task: v5.3.0 "Spotify RE Intelligence & Audio Lift" — port the 7 high-ROI,
+100% on-device upgrades from the spotify-re-investigation corpus (client
+1.2.95.453 RE, reports 00–06 + MASTER blueprint + 3 clean-room
+reconstructions) under gauntlet discipline with mutation testing.
+
+Work Log:
+- PHASE 0: corpus ingested (9 investigation docs + 3 reconstructions read
+  in full); baseline v5.2.1 verified green (1,163/0, 5,248 expects, 89
+  files) on the fresh clone; gauntlet/V53-SPOTIFY-RE-BARS.md written
+  (BAR 1–8, every port tier-cited).
+- BAR 1 [P0] SHIPPED: bake_features.py 1.1.0 adds l (LUFS 1dp), t (BPM
+  int), a/s/i (acousticness/speechiness/instrumentalness 2dp) — the
+  honest trade: tail breadth (153,415 → 71,750 keys) for DSP depth,
+  inside the 2.5 MB gzip law (measured 2,041,xxx bytes < 2,621,440; the
+  bake's own tail-cut loop chose it). featureTable/mindbeat carry
+  bakedTempoFor/bakedAcousticFor; replayGain.ts gains ALBUM MODE
+  (computeAlbumGain = target − mean(present LUFS), ±6 dB clamp, ONE gain
+  per album — Spotify default_album_normalization_params semantics);
+  PlayerProvider applies album gain when isSingleAlbumQueue.
+- BAR 2 [P0] SHIPPED: src/player/spreadShuffle.ts (pure port of the
+  validated reconstruction — group Fisher–Yates + weighted interleave,
+  weight = since × remaining × jitter(0.5+rng())); PlayerProvider.setShuffle
+  now seeds mulberry32(hash32(ids|bucket)) — Math.random is GONE from the
+  shuffle path (the v5.2.1 shuffleArray used it; law ⑤ closed at the
+  player layer). Locked: adjacency 0 over 300 seeded runs (vs the
+  reconstruction's 13.89% Fisher–Yates baseline), mean artist gap ≥ 75%
+  of ideal, THE DITHER LAW (artist sequence varies across seeds). The
+  2-strike retreat: mindbeat counts consecutive early-skipped recs; at
+  SHUFFLE_RETREAT.strikeThreshold=2 the shuffle surface tightens the
+  vibe lock ×0.5 and halves injection cadence until a rec completes.
+- BAR 3 [P1] SHIPPED: Arm gains ts; decayArm α' = 1+(α−1)·0.5^(Δt/τ),
+  τ = HALF_LIFE.banditArm 30d, applied on hydrate + flush; the decayed
+  arm carries ts = now (exponents add — sequential decays compound
+  exactly, proven by lock). Context shelf arms s:<shelf>:<block>;
+  mindbeat.rankHomeShelves (seeded Thompson per day-block, cold ⇒ input
+  order byte-identical), noteShelfEngagement (reward 1 opened / 0 others
+  of the pass), bounded IPS ring (cap 200) + homeShelfIpsValue;
+  HomeScreen renders the 4 AI shelves through ranked anchors with the
+  identity ⇒ v5.2.1-layout fallback.
+- BAR 4 [P1] SHIPPED: prewarm.ts rangePrewarmUrl — one GET
+  Range: bytes=0-65535 on the RESOLVED next URL (the head-file pattern,
+  http_64k_latency SLO), gated wifi && !dataSaver ('unknown' = NOT-wifi,
+  the conservative law), single-flight per 30s TTL, LRU cap 8, wired
+  into the parked-promise resolution.
+- BAR 5 [P2] SHIPPED: similarity.ts quantizeE4M3/dequantizeE4M3 (full
+  256-code grid law, round-to-nearest mantissa, −0 keeps its sign bit),
+  quantizedFeatureVector ([e,v,d,a,s,i] → six E4M3 bytes; any column
+  missing ⇒ null ⇒ v5.2.1 ordering), quantizedCosine; rankSoundAlike
+  breaks exact tag-score ties by cosine-to-seed (both qvecs present),
+  else the v5.2.1 id order.
+- BAR 6 [P2] SHIPPED: crossfade fadeCurveFactor — equal-power cosine
+  cos(p·π/2) default, zero-slope start (the cliff removal), 'linear'
+  selectable and byte-identical to v5.2.1; 0 s stays an exact no-op.
+  The wave-1 lock literals updated to the cosine values with the math
+  shown in-line (12 assertions re-pinned).
+- BAR 7 [P2] SHIPPED: SINGALONG_DWELL ledger event + profile artist bump
+  (SINGALONG_DWELL.weight 1.0 — attention evidence, between LATE_SKIP
+  0.5 and COMPLETED 2.0) + bandit α on track/artist arms; mindbeat
+  tracks the synced-lyrics view's open window per track
+  (noteSingAlongVisible from PlayerScreen), folds at trackFinished:
+  grade COMPLETED && openRatio ≥ 0.5 ⇒ one weak positive signal.
+- BAR 8: tests/wave_v530_spotify_re_locks.test.ts — 66 tests / 497
+  assertions across all 7 BARs + the house-law sweep (laws ③④⑤⑧⑩).
+  scripts/mutations_v530.py — 16 source mutations, ALL RED-OK, all
+  restored SHA-256 byte-exact, zero residue: M-530-1..3 (album gain),
+  4..6 (spread + retreat), 7..10 (decay + shelves), 11..12 (range
+  warm), 13 (crossfade curve, vs wave-1 locks), 14..15 (E4M3), 16
+  (dwell weight). Two first-draft survivors (M-530-4 jitter, M-530-14
+  mantissa floor) were GREEN-SURVIVED → their locks redesigned (THE
+  DITHER LAW; the off-grid rounding literals) → RED on re-run. The
+  gauntlet law held: no survivor shipped.
+- GATE (measured): bun test 1,230 pass / 0 fail / 5,756 expect() calls /
+  90 files — three consecutive byte-identical runs; bunx tsc --noEmit
+  exit 0; package.json + app.json 5.3.0; README QA line + release
+  history updated (v5.2.1 backfilled); CHANGELOG entry appended.
+
+Stage Summary:
+- v5.3.0 SHIPPED: 7 corpus ports, all literal-locked, 16/16 mutations
+  RED, all 12 house laws re-swept over the new surface. Zero new npm
+  dependencies, zero server calls, zero cloud-protocol copies (law ①
+  audited: only on-device algorithm patterns were ported; Pathfinder/
+  Dealer/Spirc content was read as evidence, never shipped).

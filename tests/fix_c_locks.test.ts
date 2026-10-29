@@ -45,8 +45,10 @@ describe('FIX-C1 · the F17 docs describe the shipped decade timeline', () => {
     // v5.2.0 FIX 3 — same law, next generation: the 899 TOTAL badge
     // survived the whole improvement arc stale (the suite hit 1,071);
     // the total badge now pins the measured number too.
+    // v5.3.0 — same law, next generation: the total badge advances to
+    // the measured 1,230 (the Spotify-RE locks).
     expect(readme).toContain('replay_tests-885_passing'); // the badge (the replay core is still 885)
-    expect(readme).toContain('total_tests-1072_passing'); // the total badge (measured at v5.2.0)
+    expect(readme).toContain('total_tests-1230_passing'); // the total badge (measured at v5.3.0)
     expect(readme).toContain('# 885 replay tests incl. latency budgets'); // the quick-start comment
     // the stale counts are gone everywhere — matched as COUNT CLAIMS,
     // not raw substrings (the v5.2.0 lesson: "4,807 assertions" legally

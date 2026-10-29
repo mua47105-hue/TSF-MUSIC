@@ -27,7 +27,8 @@ export type EventType =
   | 'PLAYLIST_SAVE_AI'
   | 'AI_REGENERATE'
   | 'NOT_FOR_ME'
-  | 'STATION_ENDED';
+  | 'STATION_ENDED'
+  | 'SINGALONG_DWELL';
 
 /** Enumerated source surfaces — never free-text. */
 export type SourceSurface =

@@ -83,6 +83,7 @@ const {
 const {
   clampCrossfadeSeconds,
   fadeFactorFor,
+  fadeCurveFactor,
   crossfadeTick,
   resetCrossfadeRamp,
   setCrossfadeSeconds,
@@ -288,13 +289,35 @@ describe('wave1 · F2 crossfade (clamp + curve + engine contract)', () => {
     expect(clampCrossfadeSeconds({ junk: true })).toBe(0);
   });
 
-  test('fade curve: linear ramp inside the window, 1.0 outside', () => {
+  test('fade curve: equal-power cosine inside the window, 1.0 outside (v5.3.0 BAR 6)', () => {
     expect(fadeFactorFor(0, 200, 10)).toBe(1.0); // far from the end
-    expect(fadeFactorFor(90, 100, 10)).toBe(1.0); // exactly at the window edge
-    expect(fadeFactorFor(95, 100, 10)).toBe(0.5);
-    expect(fadeFactorFor(92.5, 100, 10)).toBe(0.75);
-    expect(fadeFactorFor(100, 100, 10)).toBe(0);
+    expect(fadeFactorFor(90, 100, 10)).toBe(1.0); // exactly at the window edge (p=0 ⇒ cos(0)=1)
+    // v5.3.0 BAR 6: the ramp is EQUAL-POWER COSINE. Mid-window p=0.5 ⇒
+    // cos(π/4) = 0.7071067811865476 (the v5.2.1 linear value was 0.5 —
+    // the cliff at ramp-start is what BAR 6 removed).
+    expect(fadeFactorFor(95, 100, 10)).toBeCloseTo(0.7071067811865476, 15);
+    // p=0.25 ⇒ cos(π/8) = 0.9238795325112867 (linear was 0.75)
+    expect(fadeFactorFor(92.5, 100, 10)).toBeCloseTo(0.9238795325112867, 15);
+    expect(fadeFactorFor(100, 100, 10)).toBe(0); // p=1 ⇒ cos(π/2)=0 (clamped)
     expect(fadeFactorFor(105, 100, 10)).toBe(0); // overrun clamps
+  });
+
+  test('fade curve: the LINEAR ramp is selectable and byte-identical to v5.2.1', () => {
+    // BAR 6's legacy selector — the exact v5.2.1 ramp, pinned:
+    expect(fadeCurveFactor(0, 'linear')).toBe(1);
+    expect(fadeCurveFactor(0.5, 'linear')).toBe(0.5);
+    expect(fadeCurveFactor(0.25, 'linear')).toBe(0.75);
+    expect(fadeCurveFactor(1, 'linear')).toBe(0);
+    // and the curve literals themselves (law ⑩):
+    expect(fadeCurveFactor(0, 'cosine')).toBe(1);
+    expect(fadeCurveFactor(0.5, 'cosine')).toBeCloseTo(0.7071067811865476, 15);
+    expect(fadeCurveFactor(1, 'cosine')).toBe(0);
+    // equal-power: cos²(p·π/2) + sin²(p·π/2) = 1 at every quarter point
+    for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+      const c = fadeCurveFactor(p, 'cosine');
+      const s = Math.sin((p * Math.PI) / 2);
+      expect(c * c + s * s).toBeCloseTo(1, 12);
+    }
   });
 
   test('fade curve guards: fadeSeconds 0 and unknown duration NEVER fade', () => {
@@ -323,7 +346,8 @@ describe('wave1 · F2 crossfade (clamp + curve + engine contract)', () => {
     volumeWrites.length = 0;
     void setCrossfadeSeconds(10);
     crossfadeTick(95, 100);
-    expect(volumeWrites[volumeWrites.length - 1]).toBe(0.5); // 10s fade active
+    // p=0.5 on the cosine curve ⇒ cos(π/4) ≈ 0.7071 (v5.3.0 BAR 6)
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.7071067811865476, 15); // 10s fade active
     void setCrossfadeSeconds(0); // the listener switches OFF
     expect(volumeWrites[volumeWrites.length - 1]).toBe(1.0); // ramp released
     crossfadeTick(97, 100);
@@ -336,7 +360,8 @@ describe('wave1 · F2 crossfade (clamp + curve + engine contract)', () => {
     volumeWrites.length = 0;
     void setCrossfadeSeconds(10);
     crossfadeTick(96, 100);
-    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.4, 12);
+    // p=0.6 ⇒ cos(0.6·π/2) = cos(0.3π) = 0.5877852522924731 (v5.3.0 BAR 6)
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.5877852522924731, 12);
     crossfadeTick(1, 220); // the next track landed
     expect(activeFadeOwner()).toBe(null); // ramp released, fresh 1.0
     expect(volumeWrites[volumeWrites.length - 1]).toBe(1.0);
@@ -349,13 +374,14 @@ describe('wave1 · F2 crossfade (clamp + curve + engine contract)', () => {
     resetCrossfadeForTests();
     volumeWrites.length = 0;
     void setCrossfadeSeconds(10);
-    crossfadeTick(98, 100); // track A near its end → 0.2
-    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.2, 12);
+    crossfadeTick(98, 100); // track A near its end → p=0.8 ⇒ cos(0.4π) = 0.30901699437494745
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.30901699437494745, 12);
     // a REWIND (not a new track — duration 5 means the old numbers are gone
     // too): the backstop must release the ramp BEFORE re-deriving the factor
     crossfadeTick(1, 5);
     expect(volumeWrites[volumeWrites.length - 2]).toBe(1.0); // the release happened
-    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.4, 12); // then the new curve
+    // 5s track at 1s, 10s fade: p=1−4/10=0.6 ⇒ cos(0.3π) = 0.5877852522924731
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(0.5877852522924731, 12); // then the new curve
   });
 
   test('BAR: persisted read — the boot restore re-applies the saved seconds (critic P0-2)', async () => {
@@ -366,9 +392,10 @@ describe('wave1 · F2 crossfade (clamp + curve + engine contract)', () => {
     initCrossfade();
     await new Promise((r) => setTimeout(r, 0)); // let the boot read land
     expect(crossfadeSeconds()).toBe(7);
-    // the restored value is LIVE: 6s remaining sits inside the 7s window
+    // the restored value is LIVE: 6s remaining of a 7s window ⇒ p=1/7,
+    // cos(π/14) = 0.9749279121818236 (v5.3.0 BAR 6 cosine curve)
     crossfadeTick(94, 100);
-    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(6 / 7, 12);
+    expect(volumeWrites[volumeWrites.length - 1]).toBeCloseTo(Math.cos((Math.PI * (1 - 6 / 7)) / 2), 12);
   });
 
   test('persisted write: the setting lands in tsf.crossfade.v1', async () => {

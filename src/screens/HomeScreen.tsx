@@ -14,7 +14,7 @@
  * safety-filtered; editorial shelves render through collectionIsClean.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -98,6 +98,46 @@ export function HomeScreen() {
   const [onTheRise, setOnTheRise] = useState<OnTheRiseCard | null>(null);
   const [newAlbums, setNewAlbums] = useState<Collection[]>([]);
   const [featured, setFeatured] = useState<Collection[]>([]);
+  // V5.3.0 BAR 3 — the ranked AI shelf order (null = the v5.2.1 fixed
+  // layout; set only when the context bandit actually REORDERS).
+  const [shelfOrder, setShelfOrder] = useState<string[] | null>(null);
+
+  // V5.3.0 BAR 3 — rank the AI shelves once per shelf-data settle. The
+  // presence signature (not the data itself) keys the pass: only a REAL
+  // shelf change re-ranks, re-renders never do. Identity ranking (cold
+  // arms / kill switch) keeps shelfOrder null — the byte-exact v5.2.1
+  // layout.
+  const aiPresence = useMemo(
+    () =>
+      [
+        crate ? 1 : 0,
+        mixes && mixes.length ? 1 : 0,
+        onTheRise && onTheRise.tracks.length > 2 ? 1 : 0,
+        because.length ? 1 : 0,
+      ].join(''),
+    [crate, mixes, onTheRise, because.length],
+  );
+  useEffect(() => {
+    if (aiPresence === '0000') {
+      setShelfOrder(null);
+      return;
+    }
+    let alive = true;
+    const ids = (['crate', 'mixes', 'onTheRise', 'because'] as const).filter((id, i) =>
+      aiPresence[i] === '1',
+    );
+    mindbeat
+      .rankHomeShelves([...ids])
+      .then((ranked) => {
+        if (!alive) return;
+        const identity = ranked.length === ids.length && ranked.every((id, i) => id === ids[i]);
+        setShelfOrder(identity ? null : ranked);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [aiPresence]);
   const [popularArtists, setPopularArtists] = useState<ArtistInfo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -548,6 +588,7 @@ export function HomeScreen() {
             onGoAI={onGoAI}
             parallaxScrollY={scrollY}
             parallaxVisible={headerParallaxOn}
+            shelfOrder={shelfOrder}
           />
         }
         ListFooterComponent={
@@ -729,6 +770,7 @@ const HomeHeader = React.memo(function HomeHeader({
   onGoAI,
   parallaxScrollY,
   parallaxVisible,
+  shelfOrder,
 }: {
   chip: Chip;
   setChip: (c: Chip) => void;
@@ -757,6 +799,9 @@ const HomeHeader = React.memo(function HomeHeader({
   /** Wave D · D1 — shared native scroll value + viewability gate. */
   parallaxScrollY: Animated.Value;
   parallaxVisible: boolean;
+  /** V5.3.0 BAR 3 — the ranked AI shelf order (null = the v5.2.1 fixed
+   *  layout, byte-exact: kill switch, cold arms, or identity ranking). */
+  shelfOrder: string[] | null;
 }) {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // The header's shelf covers breathe while the first feed row reports
@@ -870,6 +915,133 @@ const HomeHeader = React.memo(function HomeHeader({
     } else {
       onGoAI();
     }
+  };
+
+  // ── V5.3.0 BAR 3 — THE RANKED AI SHELVES ─────────────────────────────
+  // The four AI shelves (crate / mixes / onTheRise / because) keep their
+  // four layout anchors; the context bandit's ranked order decides which
+  // shelf fills which anchor. `shelfOrder === null` (kill switch, cold
+  // arms, or the input order itself) renders EXACTLY the v5.2.1 fixed
+  // layout — the byte-exact fallback. Engagement (a shelf's collection
+  // opened) is the bandit reward (noteShelfEngagement).
+  const engageShelf = (id: string) => {
+    void mindbeat.noteShelfEngagement(id);
+  };
+  const aiShelfById: Record<string, ReactNode> = {
+    crate:
+      crate && showAI ? (
+        <Shelf
+          kicker={userName ? `MADE FOR ${userName.toUpperCase()} · NEW EVERY MONDAY` : 'MADE FOR YOU · NEW EVERY MONDAY'}
+          title="The Weekly Crate"
+        >
+          <ShelfCard
+            title={crate.title}
+            subtitle={crate.subtitle}
+            artwork={crate.artwork}
+            seed={crate.id}
+            size={275}
+            onPress={() => {
+              engageShelf('crate');
+              openTrackCollection('The Weekly Crate', crate.tracks);
+            }}
+            {...par}
+          />
+        </Shelf>
+      ) : null,
+    mixes:
+      hasMixes && showAI ? (
+        <Shelf kicker={userName ? `MADE FOR ${userName.toUpperCase()}` : 'MADE FOR YOU'} title="Daily Mixes">
+          {mixes!.map((mix) => (
+            <ShelfCard
+              key={mix.id}
+              title={mix.title}
+              subtitle={mix.subtitle}
+              artwork={mix.artwork}
+              seed={mix.id}
+              size={150}
+              onPress={() => {
+                engageShelf('mixes');
+                openTrackCollection(mix.title, mix.tracks);
+              }}
+              {...par}
+            />
+          ))}
+          <AICreateCard onPress={() => nav.navigate('AI')} />
+        </Shelf>
+      ) : null,
+    onTheRise:
+      onTheRise && onTheRise.tracks.length > 2 && showAI ? (
+        <Shelf kicker="DISCOVERY DESK" title="On The Rise">
+          {onTheRise.tracks.slice(0, 10).map((t) => {
+            const key = cleanArtistName(t.artist) || t.artist;
+            const railArt = popularArtists.find((a) => a.name === t.artist)?.image;
+            return (
+              <ArtistCard
+                key={t.id}
+                name={t.artist}
+                meta={`via ${t.viaArtist}`}
+                artwork={railArt ?? riseArt[key]}
+                seed={`rise-${t.id}`}
+                onPress={() => {
+                  engageShelf('onTheRise');
+                  openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[]);
+                }}
+              />
+            );
+          })}
+        </Shelf>
+      ) : null,
+    because:
+      because.length > 0 ? (
+        <>
+          {because.map(({ artist, seedTrack }) => (
+            <Shelf key={artist} kicker={`FROM THE ${artist.toUpperCase()} LEDGER`} title="Because You Listened">
+              <ArtistCard
+                name={artist}
+                meta="Artist radio"
+                artwork={popularArtists.find((a) => a.name === artist)?.image}
+                seed={`because-${artist}`}
+                onPress={() => {
+                  engageShelf('because');
+                  openArtist(artist);
+                }}
+              />
+              {seedTrack ? (
+                <ShelfCard
+                  title={seedTrack.title}
+                  subtitle={seedTrack.artist}
+                  artwork={seedTrack.artwork}
+                  seed={`because-${seedTrack.id}`}
+                  size={150}
+                  onPress={() => {
+                    engageShelf('because');
+                    nav.navigate('Collection', {
+                      collection: {
+                        id: `artist-${artist}`,
+                        title: artist,
+                        subtitle: 'Artist radio',
+                        artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
+                        kind: 'artist',
+                        query: primaryArtistName(artist) || artist,
+                      },
+                    });
+                  }}
+                  {...par}
+                />
+              ) : null}
+            </Shelf>
+          ))}
+        </>
+      ) : null,
+  };
+  // Ranked mode: fill the anchors top-down with the ranked, present
+  // shelves. Fallback mode: each shelf at its own anchor (v5.2.1 exact).
+  const rankedAiNodes = (shelfOrder ?? [])
+    .map((id) => aiShelfById[id])
+    .filter((n): n is ReactNode => n !== null && n !== undefined);
+  const aiSlot = (i: number): ReactNode => {
+    if (shelfOrder) return rankedAiNodes[i] ?? null;
+    return [aiShelfById.crate, aiShelfById.mixes, aiShelfById.onTheRise, aiShelfById.because][i] ?? null;
   };
 
   return (
@@ -992,40 +1164,12 @@ const HomeHeader = React.memo(function HomeHeader({
         <ShelfSkeleton />
       ) : (
         <>
-          {crate && showAI ? (
-            <Shelf
-              kicker={userName ? `MADE FOR ${userName.toUpperCase()} · NEW EVERY MONDAY` : 'MADE FOR YOU · NEW EVERY MONDAY'}
-              title="The Weekly Crate"
-            >
-              <ShelfCard
-                title={crate.title}
-                subtitle={crate.subtitle}
-                artwork={crate.artwork}
-                seed={crate.id}
-                size={275}
-                onPress={() => openTrackCollection('The Weekly Crate', crate.tracks)}
-                {...par}
-              />
-            </Shelf>
-          ) : null}
+          {/* V5.3.0 BAR 3 — AI shelf anchor 1 (crate in the v5.2.1 layout;
+            the ranked order's #1 shelf when the bandit is warm). */}
+          {aiSlot(0)}
 
-          {hasMixes && showAI ? (
-            <Shelf kicker={userName ? `MADE FOR ${userName.toUpperCase()}` : 'MADE FOR YOU'} title="Daily Mixes">
-              {mixes!.map((mix) => (
-                <ShelfCard
-                  key={mix.id}
-                  title={mix.title}
-                  subtitle={mix.subtitle}
-                  artwork={mix.artwork}
-                  seed={mix.id}
-                  size={150}
-                  onPress={() => openTrackCollection(mix.title, mix.tracks)}
-                  {...par}
-                />
-              ))}
-              <AICreateCard onPress={() => nav.navigate('AI')} />
-            </Shelf>
-          ) : null}
+          {/* AI shelf anchor 2 (mixes). */}
+          {aiSlot(1)}
 
           {recents.length > 0 ? (
             <Shelf kicker="THE REWIND DESK" title="Jump Back In">
@@ -1082,60 +1226,11 @@ const HomeHeader = React.memo(function HomeHeader({
             </Shelf>
           ) : null}
 
-          {onTheRise && onTheRise.tracks.length > 2 && showAI ? (
-            <Shelf kicker="DISCOVERY DESK" title="On The Rise">
-              {onTheRise.tracks.slice(0, 10).map((t) => {
-                const key = cleanArtistName(t.artist) || t.artist;
-                const railArt = popularArtists.find((a) => a.name === t.artist)?.image;
-                return (
-                  <ArtistCard
-                    key={t.id}
-                    name={t.artist}
-                    meta={`via ${t.viaArtist}`}
-                    artwork={railArt ?? riseArt[key]}
-                    seed={`rise-${t.id}`}
-                    onPress={() =>
-                      openTrackCollection('On the Rise', onTheRise.tracks as unknown as Track[])
-                    }
-                  />
-                );
-              })}
-            </Shelf>
-          ) : null}
-
-          {because.map(({ artist, seedTrack }) => (
-            <Shelf key={artist} kicker={`FROM THE ${artist.toUpperCase()} LEDGER`} title="Because You Listened">
-              <ArtistCard
-                name={artist}
-                meta="Artist radio"
-                artwork={popularArtists.find((a) => a.name === artist)?.image}
-                seed={`because-${artist}`}
-                onPress={() => openArtist(artist)}
-              />
-              {seedTrack ? (
-                <ShelfCard
-                  title={seedTrack.title}
-                  subtitle={seedTrack.artist}
-                  artwork={seedTrack.artwork}
-                  seed={`because-${seedTrack.id}`}
-                  size={150}
-                  onPress={() =>
-                    nav.navigate('Collection', {
-                      collection: {
-                        id: `artist-${artist}`,
-                        title: artist,
-                        subtitle: 'Artist radio',
-                        artwork: popularArtists.find((a) => a.name === artist)?.image ?? '',
-                        kind: 'artist',
-                        query: primaryArtistName(artist) || artist,
-                      },
-                    })
-                  }
-                  {...par}
-                />
-              ) : null}
-            </Shelf>
-          ))}
+          {/* V5.3.0 BAR 3 — AI shelf anchors 3 and 4 (On The Rise and
+            Because You Listened in the v5.2.1 layout; the ranked order's
+            lower shelves when the bandit is warm). */}
+          {aiSlot(2)}
+          {aiSlot(3)}
 
           {newAlbums.length > 0 ? (
             <Shelf kicker="FRESH INK" title="New Releases">

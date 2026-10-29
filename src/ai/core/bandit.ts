@@ -23,13 +23,17 @@
  * until hydration lands, then flush on a debounce.
  */
 
-import { BANDIT, GRADE_WEIGHTS } from './constants';
+import { BANDIT, GRADE_WEIGHTS, HALF_LIFE } from './constants';
 import type { ListenRecord } from './types';
 import { clamp } from './time';
 
 export interface Arm {
   alpha: number;
   beta: number;
+  /** V5.3.0 BAR 3 — last-update epoch ms (drives the exponential
+   *  decay toward the prior; absent on pre-v5.3.0 persisted arms,
+   * which stamp NOW on hydrate — decay never fabricates a past date). */
+  ts?: number;
 }
 
 export function freshArm(): Arm {
@@ -42,6 +46,33 @@ export function artistArmKey(artist: string): string {
 
 export function trackArmKey(trackId: string): string {
   return `t:${trackId}`;
+}
+
+/** V5.3.0 BAR 3 — the context shelf arm key: `s:<shelfId>:<block>`
+ *  (the homepage calibration bandit's treatment unit — one arm per
+ *  shelf per daypart block, BaRT-style). */
+export function shelfArmKey(shelfId: string, block: string): string {
+  return `s:${shelfId}:${block}`;
+}
+
+/** V5.3.0 BAR 3 — one arm's evidence decayed toward the uniform prior
+ *  by the elapsed time: α' = 1 + (α−1)·0.5^(Δt/τ), β' likewise (τ =
+ *  HALF_LIFE.banditArm days). The decayed arm carries ts = nowMs (the
+ *  moment its α was computed) — sequential decays then compound
+ *  EXACTLY like one decay over the summed elapsed time (the exponents
+ *  add), so hydrate→flush→boot chains never over- or under-decay.
+ *  Pure; Δt ≤ 0 or a missing ts ⇒ the arm unchanged. A pre-v5.3.0 arm
+ *  (no ts) decays only after its first v5.3.0 update stamps it. */
+export function decayArm(arm: Arm, nowMs: number, prior: number = BANDIT.priorStrength): Arm {
+  if (typeof arm.ts !== 'number' || !Number.isFinite(arm.ts)) return arm;
+  const dtDays = (nowMs - arm.ts) / 86_400_000;
+  if (dtDays <= 0) return arm;
+  const factor = Math.pow(0.5, dtDays / HALF_LIFE.banditArm);
+  return {
+    alpha: prior + (arm.alpha - prior) * factor,
+    beta: prior + (arm.beta - prior) * factor,
+    ts: nowMs,
+  };
 }
 
 /**
@@ -145,15 +176,20 @@ export class Bandit {
   async hydrate(): Promise<void> {
     if (this.hydrated) return;
     this.hydrated = true;
+    const now = Date.now();
     try {
       const stored = await this.kv.get<Record<string, Arm>>(KV_KEY);
       if (stored) {
         for (const [key, arm] of Object.entries(stored)) {
           if (arm && typeof arm.alpha === 'number' && typeof arm.beta === 'number') {
-            this.arms.set(key, { alpha: arm.alpha, beta: arm.beta });
+            // V5.3.0 BAR 3 — pre-v5.3.0 arms (no ts) stamp NOW: decay
+            // starts at v5.3.0, never fabricates a past date. Arms WITH
+            // a ts decay by the elapsed time since their last update.
+            this.arms.set(key, { alpha: arm.alpha, beta: arm.beta, ts: arm.ts ?? now });
           }
         }
       }
+      this.decayArms(now);
       // BAR 3.3 — onboarding seeds queued before hydration land now.
       for (const artist of this.seedQueue) this.seedArtistNow(artist);
       this.seedQueue = [];
@@ -164,6 +200,16 @@ export class Bandit {
     for (const record of this.pending) this.observeNow(record);
     this.pending = [];
     if (this.dirty) void this.scheduleFlush();
+  }
+
+  /** V5.3.0 BAR 3 — decay EVERY arm toward the prior by elapsed time
+   *  (the stale-evidence fix: a month-old listen must not outrank
+   *  yesterday's). Idempotent per timestamp; called on hydrate and
+   *  inside every flush. */
+  decayArms(nowMs: number = Date.now()): void {
+    for (const [key, arm] of this.arms) {
+      this.arms.set(key, decayArm(arm, nowMs));
+    }
   }
 
   /** BAR 3.3 — pre-seed an onboarding artist's arm: α=3, β=1. */
@@ -207,10 +253,21 @@ export class Bandit {
     this.dirty = true;
   }
 
+  /** V5.3.0 BAR 3 — direct arm bump for signals that are NOT listens
+   *  (the shelf calibration bandit's engagement rewards). Stamps ts so
+   *  the decay clock runs from real evidence. Public but facade-only
+   *  by convention (house law ④ — mindbeat is the sole importer). */
+  bumpExternal(key: string, dAlpha: number, dBeta: number): void {
+    if (!dAlpha && !dBeta) return;
+    this.bump(key, dAlpha, dBeta);
+    this.dirty = true;
+  }
+
   private bump(key: string, dAlpha: number, dBeta: number): void {
     const cur = this.arms.get(key) ?? freshArm();
     cur.alpha += dAlpha;
     cur.beta += dBeta;
+    cur.ts = Date.now();
     this.arms.set(key, cur);
   }
 
@@ -258,9 +315,12 @@ export class Bandit {
     if (!this.dirty) return;
     this.dirty = false;
     this.evictIfNeeded();
+    // V5.3.0 BAR 3 — persisted arms decay to the moment of the write
+    // (what lands in kv is what the next boot's reads would score).
+    this.decayArms();
     try {
       const out: Record<string, Arm> = {};
-      for (const [key, arm] of this.arms) out[key] = { alpha: Math.round(arm.alpha * 100) / 100, beta: Math.round(arm.beta * 100) / 100 };
+      for (const [key, arm] of this.arms) out[key] = { alpha: Math.round(arm.alpha * 100) / 100, beta: Math.round(arm.beta * 100) / 100, ts: arm.ts };
       await this.kv.set(KV_KEY, out);
     } catch {
       this.dirty = true; // retry on the next flush

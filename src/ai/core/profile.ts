@@ -28,6 +28,7 @@ import {
   ONBOARDING,
   RETENTION,
   SESSION,
+  SINGALONG_DWELL,
   SKIP_THRESHOLDS,
 } from './constants';
 import { ARTIST_PRIORS, GENRE_PRIORS } from './priors';
@@ -192,6 +193,11 @@ export function buildProfile(
       if (artist) bump(p.artists, artist, GRADE_WEIGHTS.HEART, e.ts, 'heart');
     } else if (e.type === 'TRACK_DOWNLOAD' && e.trackId) {
       if (artist) bump(p.artists, artist, GRADE_WEIGHTS.DOWNLOAD, e.ts, 'heart');
+    } else if (e.type === 'SINGALONG_DWELL' && e.trackId) {
+      // V5.3.0 BAR 7 — the synced-lyrics dwell: a WEAK POSITIVE artist
+      // signal (attention evidence, not a second listen — the weight sits
+      // between LATE_SKIP 0.5 and COMPLETED 2.0 in the tuning table).
+      if (artist) bump(p.artists, artist, SINGALONG_DWELL.weight, e.ts, 'heart');
     } else if (e.type === 'NOT_FOR_ME' && e.trackId) {
       // Track-level −4.0; artist −1.0 (only explicit signal that blocks).
       if (artist) bump(p.artists, artist, GRADE_WEIGHTS.NOT_FOR_ME_ARTIST, e.ts, 'correction');

@@ -542,6 +542,27 @@ export class EventLedger {
     await this.emit('TRACK_DOWNLOAD', { artist: track.artist }, track.id);
   }
 
+  /**
+   * V5.3.0 BAR 7 — the SingAlong dwell signal: the synced-lyrics view was
+   * open ≥ SINGALONG_DWELL.minOpenRatio of a COMPLETED track. A discrete
+   * implicit-positive event (same class as TRACK_LIKE — it is evidence of
+   * ATTENTION, never a second listen). The caller (mindbeat) owns the
+   * ratio math; the ledger records the honest number it measured.
+   */
+  async singalongDwell(
+    track: { id: string; artist: string },
+    openRatio: number,
+    surface?: SourceSurface,
+  ): Promise<void> {
+    await this.emit(
+      'SINGALONG_DWELL',
+      { artist: track.artist, openRatio },
+      track.id,
+      undefined,
+      surface,
+    );
+  }
+
   async queueAdded(track: { id: string; artist: string }, targetSurface: SourceSurface): Promise<void> {
     await this.emit('QUEUE_ADD_MANUAL', { targetSurface, artist: track.artist }, track.id);
   }

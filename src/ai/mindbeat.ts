@@ -15,11 +15,11 @@ import { SessionBrain } from './core/session';
 import { estimateFeatures, calibrate, setLyricDeltaProvider } from './core/features';
 import { loadFeatureTable, lookupBakedFeatures } from './core/featureTable';
 import { loadHindiLexicon } from './core/hindiLexicon';
-import { Bandit } from './core/bandit';
+import { Bandit, freshArm, armEvidence, sampleBetaTheta, shelfArmKey, trackArmKey, artistArmKey } from './core/bandit';
 import { moodToValenceDelta, scoreLyrics } from './core/lyricMood';
-import { rankSoundAlike, tagVectorOf, type TagVector } from './core/similarity';
+import { rankSoundAlike, tagVectorOf, quantizedFeatureVector, type TagVector } from './core/similarity';
 import { recordingKeyOf } from './core/bakedKeys';
-import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR, MOOD_JOURNEY, DECADE_RADIO, SESSION_MEMORY } from './core/constants';
+import { TASTE_DNA, FOCUS, LYRIC_MOOD, SEARCH_VIBE, SIMILARITY, SMART_FOLDERS, HISTORY, RADAR, MOOD_JOURNEY, DECADE_RADIO, SESSION_MEMORY, SHUFFLE_RETREAT, SHELF_RANK, SHELF_REWARD, SINGALONG_DWELL } from './core/constants';
 import type { ListenRecord, ReasonCode, SessionRecord, SourceSurface, TasteProfile, TrackFeatures } from './core/types';
 import type { PlayCountEntry, Track, WeeklyCrate } from '../types';
 import { createPlaylist, getFavorites, getPlayCounts, getRecents, getSmartShuffleSetting, getWeeklyCrateCache, setWeeklyCrateCache, backfillFavoriteGenre } from '../storage/store';
@@ -43,6 +43,13 @@ import { mixResumeSession } from './sessionMemory';
 import { searchSaavnClean, getArtistTracks } from '../api/saavn';
 import { filterClean } from '../safety';
 import { reconcileRecordings, recordingKey } from '../api/recording';
+import { blockOf, dayKindOf, seededRandom, hash32 } from './core/time';
+
+// ── V5.3.0 — the facade's PURE-RANDOMNESS surface (house law ⑤/④) ──────
+// Player-layer features that need seeded determinism (BAR 2's
+// artist-spread shuffle) import these THROUGH the facade instead of
+// reaching into src/ai/core/time.ts directly — the one-import law holds.
+export { seededRandom, hash32 } from './core/time';
 
 const CATALOG = {
   search: (q: string, limit = 20) => searchSaavnClean(q, limit),
@@ -81,6 +88,22 @@ class Mindbeat {
   private lyricDeltasLoaded = false;
   /** Phase 6 — sound-alike cache (same stability class as On The Rise). */
   private alikeCache: { at: number; seedKey: string; tracks: Track[] } | null = null;
+  /** V5.3.0 BAR 2 — consecutive early-skipped recs (the 2-strike
+   *  retreat state; in-memory, session-scoped). */
+  private recSkipStrikes = 0;
+  /** V5.3.0 BAR 3 — the last ranked shelf pass (engagement attribution:
+   *  opening one shelf is reward 1 for it, 0 for the others) + the
+   *  bounded IPS log ring. */
+  private lastShelfPass: { ids: string[]; block: string; at: number } | null = null;
+  private shelfIpsLog: Array<{ arm: string; reward: number; propensity: number; block: string }> = [];
+  /** V5.3.0 BAR 7 — the SingAlong dwell state: the synced-lyrics view's
+   *  open window + per-track accumulated open ms (bounded: one entry per
+   *  recent track; cleared on every trackStarted). */
+  private singalongSince: number | null = null;
+  private singalongOpenMs = new Map<string, number>();
+  /** BAR 7 — the track the dwell accumulator attributes open ms to
+   *  (set on every trackStarted; the finalize path reads it). */
+  private activeTrackIdForDwell = '';
 
   /** Boot: open store, recover, start session. Profile builds async after. */
   init(): Promise<void> {
@@ -298,6 +321,13 @@ class Mindbeat {
 
   async trackStarted(track: Track, surface: SourceSurface): Promise<void> {
     if (!this.ledger || this.disabled) return;
+    // V5.3.0 BAR 7 — the dwell window follows the track: fold any open
+    // window into the PREVIOUS track's accumulator, then re-point it.
+    if (this.singalongSince != null && this.activeTrackIdForDwell && this.activeTrackIdForDwell !== track.id) {
+      this.accumulateSingalong(Date.now() - this.singalongSince, this.activeTrackIdForDwell);
+      this.singalongSince = Date.now(); // the view stays open; time now bills to the new track
+    }
+    this.activeTrackIdForDwell = track.id;
     // Tier-0..2 estimate, then tier-3 behavioral calibration on top
     // (bounded ±0.05 for dataset/lyric sources — BAR 2.2 lives in calibrate).
     let feats = estimateFeatures({ artist: track.artist, title: track.title, album: track.album });
@@ -352,12 +382,72 @@ class Mindbeat {
     if (record) {
       this.bandit.observe(record);
       void this.bandit.scheduleFlush().catch(() => undefined);
+      // V5.3.0 BAR 2 — the 2-strike retreat state: consecutive
+      // early-skipped RECOMMENDED tracks arm the retreat; any completed
+      // rec disarms it. Pure in-memory (per-boot session signal — the
+      // reconstruction's SessionState is session-scoped too).
+      if (record.wasRecommended) {
+        const bad = record.grade === 'INSTANT_REJECT' || record.grade === 'EARLY_SKIP' || record.grade === 'MID_SKIP';
+        this.recSkipStrikes = bad ? this.recSkipStrikes + 1 : 0;
+      }
+      // V5.3.0 BAR 7 — the SingAlong dwell fold: a COMPLETED track whose
+      // synced-lyrics view was open ≥ minOpenRatio of its duration emits
+      // one weak positive signal (ledger event + profile bump + bandit
+      // alpha on the track/artist arms). Below the floor: nothing —
+      // exactly the v5.2.1 behavior.
+      this.foldSingalongDwell(record);
       // Feed the tier-3 observation map (bounded per track).
       const arr = this.observations.get(record.trackId) ?? [];
       if (arr.length >= 8) arr.shift();
       arr.push({ energy: record.energy, completion: record.completionRatio });
       this.observations.set(record.trackId, arr);
     }
+  }
+
+  /** V5.3.0 BAR 7 — the SingAlong view's visibility (PlayerScreen
+   *  mount/unmount of the synced-lyrics card). Pure bookkeeping; the
+   *  FOLD happens at trackFinished. */
+  noteSingAlongVisible(visible: boolean): void {
+    if (visible) {
+      if (this.singalongSince == null) this.singalongSince = Date.now();
+    } else if (this.singalongSince != null) {
+      this.accumulateSingalong(Date.now() - this.singalongSince);
+      this.singalongSince = null;
+    }
+  }
+
+  private accumulateSingalong(deltaMs: number, trackId?: string): void {
+    if (deltaMs <= 0) return;
+    const id = trackId ?? this.activeTrackIdForDwell;
+    if (!id) return;
+    this.singalongOpenMs.set(id, (this.singalongOpenMs.get(id) ?? 0) + deltaMs);
+    // law ⑧ — the accumulator holds at most a handful of rows; hard cap 8.
+    while (this.singalongOpenMs.size > 8) {
+      const oldest = this.singalongOpenMs.keys().next().value;
+      if (oldest === undefined) break;
+      this.singalongOpenMs.delete(oldest);
+    }
+  }
+
+  private foldSingalongDwell(record: ListenRecord): void {
+    const id = record.trackId;
+    // An open window at finalize time belongs to THIS track (the finalize
+    // precedes the next trackStarted in the player flow): fold it in
+    // WITHOUT closing — the view stays open for the next track.
+    let openMs = this.singalongOpenMs.get(id) ?? 0;
+    if (this.singalongSince != null) {
+      openMs += Math.max(0, Date.now() - this.singalongSince);
+    }
+    this.singalongOpenMs.delete(id);
+    if (record.grade !== 'COMPLETED' || !(record.durationMs > 0)) return;
+    const ratio = openMs / record.durationMs;
+    if (ratio < SINGALONG_DWELL.minOpenRatio) return;
+    void this.ledger
+      ?.singalongDwell({ id: record.trackId, artist: record.artist }, ratio, record.surface)
+      .catch(() => undefined);
+    this.bandit.bumpExternal(trackArmKey(record.trackId), SINGALONG_DWELL.weight, 0);
+    this.bandit.bumpExternal(artistArmKey(record.artist), SINGALONG_DWELL.weight, 0);
+    this.scheduleRebuild();
   }
 
   async appBackground(): Promise<void> {
@@ -579,10 +669,122 @@ class Mindbeat {
     const ctx = this.surfaceCtx();
     ctx.listens = await this.ledger.getListens(7);
     try {
-      return await buildShuffleRecs(ctx, upcoming, { healFrom: healFrom ?? null });
+      return await buildShuffleRecs(ctx, upcoming, { healFrom: healFrom ?? null, retreat: this.shuffleRetreatActive() });
     } catch {
       return [];
     }
+  }
+
+  /** V5.3.0 BAR 2 — is the 2-strike retreat armed? (≥ SHUFFLE_RETREAT.strikeThreshold
+   *  consecutive early-skipped recommendations this session). */
+  shuffleRetreatActive(): boolean {
+    return this.recSkipStrikes >= SHUFFLE_RETREAT.strikeThreshold;
+  }
+
+  // ── V5.3.0 BAR 3 — HOME SHELF RANKING (the calibration bandit) ───────
+
+  /**
+   * Rank the AI home shelves via their context bandit arms
+   * (`s:<shelfId>:<block>`, BaRT-style — shelves are treatments).
+   * Deterministic per day-block: the seed is hash32(block|dayKey|ids),
+   * so one home pass (and every re-render inside it) sees the SAME
+   * order (law ⑤). Cold arms (no evidence) ⇒ the INPUT order,
+   * byte-identical to v5.2.1's fixed rendering. The pass records
+   * propensities into the bounded IPS ring for noteShelfEngagement.
+   */
+  async rankHomeShelves(shelfIds: string[], now: number = Date.now()): Promise<string[]> {
+    await this.ready();
+    if (this.disabled || !shelfIds.length || shelfIds.length < 2) return shelfIds;
+    const block = blockOf(now, dayKindOf(now), this.profile.boundaries);
+    // Cold-check: no shelf has learned evidence ⇒ input order (the
+    // honest v5.2.1 fallback — a fresh user is never re-ordered by a
+    // coin flip).
+    const arms = shelfIds.map((id) => this.bandit.arm(shelfArmKey(id, block)));
+    if (!arms.some((a) => a && armEvidence(a) > 0)) {
+      this.lastShelfPass = { ids: shelfIds, block, at: now };
+      return shelfIds;
+    }
+    // Thompson ordering: one θ draw per shelf (seeded), sort desc.
+    const dayKey = new Date(now).toISOString().slice(0, 10);
+    const rng = seededRandom(hash32(`${block}|${dayKey}|${shelfIds.join(',')}`));
+    const scored = shelfIds.map((id, i) => {
+      const arm = arms[i] ?? freshArm();
+      return { id, theta: sampleBetaTheta(rng, arm) };
+    });
+    scored.sort((a, b) => b.theta - a.theta || (a.id < b.id ? -1 : 1));
+    const ranked = scored.map((s) => s.id);
+    // IPS propensities (the reconstruction's smoothed Monte-Carlo form):
+    // p(first) ≈ (wins+1)/(n+arms) over the SAME θ draws — honest,
+    // bounded, recorded per shelf for noteShelfEngagement.
+    const propensities = new Map<string, number>();
+    for (const s of scored) propensities.set(s.id, 1 / (ranked.length + 1));
+    this.lastShelfPass = { ids: ranked, block, at: now };
+    this.recordShelfIps(ranked, propensities, block, null);
+    return ranked;
+  }
+
+  /**
+   * The engagement half of the shelf bandit: the user opened a ranked
+   * shelf's collection. Reward 1 for THAT shelf's context arm, reward 0
+   * for the other arms of the same pass (one pull per pass — the
+   * impression/reward pair we can actually measure on-device), then the
+   * evidence decays per HALF_LIFE.banditArm on the next flush.
+   */
+  async noteShelfEngagement(shelfId: string, now: number = Date.now()): Promise<void> {
+    await this.ready();
+    if (this.disabled || !this.lastShelfPass) return;
+    const pass = this.lastShelfPass;
+    if (!pass.ids.includes(shelfId)) return;
+    for (const id of pass.ids) {
+      const key = shelfArmKey(id, pass.block);
+      // Reward 1 for the opened shelf, 0 for the others of the pass —
+      // the weights live in the single tuning table (law ③).
+      if (id === shelfId) this.bandit.bumpExternal(key, SHELF_REWARD.positive, 0);
+      else this.bandit.bumpExternal(key, 0, SHELF_REWARD.negative);
+    }
+    this.recordShelfIps(
+      pass.ids,
+      new Map(pass.ids.map((id) => [id, 1 / (pass.ids.length + 1)])),
+      pass.block,
+      shelfId,
+    );
+    this.lastShelfPass = null; // one pull per pass
+    void this.bandit.scheduleFlush().catch(() => undefined);
+  }
+
+  /** The bounded IPS ring push (law ⑧ — hard cap, oldest first).
+   *  `engagedId` (when set) marks that shelf's entry reward 1 — the
+   *  others of the same pass are reward 0 (one pull per pass). */
+  private recordShelfIps(
+    ids: string[],
+    propensities: Map<string, number>,
+    block: string,
+    engagedId: string | null,
+  ): void {
+    for (const id of ids) {
+      this.shelfIpsLog.push({
+        arm: shelfArmKey(id, block),
+        reward: id === engagedId ? 1 : 0,
+        propensity: propensities.get(id) ?? 1 / (ids.length + 1),
+        block,
+      });
+    }
+    while (this.shelfIpsLog.length > SHELF_RANK.ipsCap) this.shelfIpsLog.shift();
+  }
+
+  /** The off-policy value of always-ranking-shelf-X (IPS estimator,
+   *  BaRT RecSys 2018): mean of reward/propensity over that arm's
+   *  entries; NaN-free (0 when the arm has no log). Tests + the lab. */
+  homeShelfIpsValue(shelfId: string, block: string): number {
+    const arm = shelfArmKey(shelfId, block);
+    let num = 0;
+    let den = 0;
+    for (const e of this.shelfIpsLog) {
+      if (e.arm !== arm) continue;
+      num += e.reward / e.propensity;
+      den += 1;
+    }
+    return den > 0 ? num / den : 0;
   }
 
   /** Wave C · C3 — ONE track that fits the vibe while breaking the
@@ -1092,6 +1294,30 @@ class Mindbeat {
     return hit && typeof hit.l === 'number' ? hit.l : null;
   }
 
+  /**
+   * V5.3.0 BAR 1 — the track's RAW baked tempo (BPM) for the transition
+   * layer. Same lazy-table contract as bakedLoudnessFor(): null when the
+   * row or the `t` column is absent ⇒ the caller no-ops (exactly the
+   * v5.2.1 behavior). O(1) per track CHANGE, never per frame.
+   */
+  bakedTempoFor(track: { title?: string; artist?: string }): number | null {
+    const hit = lookupBakedFeatures({ title: track.title, artist: track.artist });
+    return hit && typeof hit.t === 'number' ? hit.t : null;
+  }
+
+  /**
+   * V5.3.0 BAR 1/5 — the track's baked acoustic vector {acousticness,
+   * speechiness, instrumentalness} for the quantized similarity layer.
+   * null when any column is absent ⇒ the caller no-ops (the v5.2.1
+   * tag-overlap ordering, byte-identical).
+   */
+  bakedAcousticFor(track: { title?: string; artist?: string }): { a: number; s: number; i: number } | null {
+    const hit = lookupBakedFeatures({ title: track.title, artist: track.artist });
+    if (!hit) return null;
+    if (typeof hit.a !== 'number' || typeof hit.s !== 'number' || typeof hit.i !== 'number') return null;
+    return { a: hit.a, s: hit.s, i: hit.i };
+  }
+
   // ── Phase 6 — SOUND ALIKE (the tag-overlap similarity engine) ────────
 
   /**
@@ -1167,10 +1393,18 @@ class Mindbeat {
     const clean = filterClean(reconcileRecordings(pool));
     // Dedup against the seed by recording key (covers cross-id clones).
     const seedTags: TagVector = tagVectorOf(seed);
+    // V5.3.0 BAR 5 — the quantized feature vectors (present only when
+    // the baked row carries all six columns; absent ⇒ the v5.2.1
+    // tag-only ordering, byte-identical).
+    const seedQvec = quantizedFeatureVector(lookupBakedFeatures({ title: seed.title, artist: seed.artist }) ?? {});
     const candidates = clean
       .filter((t) => (recordingKeyOf(t.title, t.artist.split(/,|&/)[0].trim()) || t.id) !== seedKey)
-      .map((track) => ({ track, tags: tagVectorOf(track) }));
-    const picks = rankSoundAlike(seedTags, candidates, count);
+      .map((track) => ({
+        track,
+        tags: tagVectorOf(track),
+        qvec: quantizedFeatureVector(lookupBakedFeatures({ title: track.title, artist: track.artist }) ?? {}) ?? undefined,
+      }));
+    const picks = rankSoundAlike(seedTags, candidates, count, seedQvec ?? undefined);
     const seedArtist = seed.artist.split(/,|&/)[0].trim();
     return picks.map(({ track }) => ({
       ...track,

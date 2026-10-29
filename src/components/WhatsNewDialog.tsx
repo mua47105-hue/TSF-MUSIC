@@ -15,19 +15,21 @@ import { colors, fonts } from '../theme';
 //   'tsf.whatsNew.v5_0_1' (THE VERIFICATION ROUND) ·
 //   'tsf.whatsNew.v5_0_2' (THE STABILITY PATCH) ·
 //   'tsf.whatsNew.v5_1_0' (THE MEMORY LAYER) ·
-//   'tsf.whatsNew.v5_2_1' (THE HARDENING PASS — current).
-const SEEN_KEY = 'tsf.whatsNew.v5_2_1';
+//   'tsf.whatsNew.v5_2_1' (THE HARDENING PASS) ·
+//   'tsf.whatsNew.v5_3_0' (SPOTIFY RE INTELLIGENCE & AUDIO LIFT — current).
+const SEEN_KEY = 'tsf.whatsNew.v5_3_0';
 /** Set on every close — Onboarding polls it before showing (see Onboarding.tsx). */
 const WHATSNEW_DISMISSED_KEY = 'tsf.whatsNewDismissed';
 
 const CHANGES = [
-  // ── v5.2.1 — THE HARDENING PASS (every forensic-audit finding) ──
-  'FAKE BUTTONS NOW DO REAL WORK — the collection heart adds every song you don\'t already love (and says exactly how many); the download button downloads the crate and reports the honest count; the crate pin REALLY pins — pinned crates list first in your library and survive restarts.',
-  'NOTHING HANGS FOREVER — every catalog request now carries a 10-second ceiling: a stalled connection becomes a fast, honest error instead of a frozen track start. Cancel requests actually cancel (the iTunes fallback was silently ignoring them).',
-  'SMART SHUFFLE, RADIO AND THE CRATES ARE BULLETPROOF — the recommendation fallback engine (what plays when intelligence is off) is now fully tested, every kill-switch surface degrades gracefully, and one bad YouTube verdict can no longer reset the source\'s health streak.',
-  'MEMORY THAT STAYS LEAN — the lyrics and artist-photo caches are bounded now, so a long session can\'t quietly eat your RAM.',
-  'SAFER UNDER THE HOOD — the YouTube decipher program verifies its integrity before it ever runs (tampered storage can\'t inject code), the sign-in WebView talks only to the three Google origins it needs, and ~160 KB of unused fonts are off the cold start.',
-  'As always: memories, bookmarks and taste live in the on-device database only — zero servers, zero accounts, zero telemetry.',
+  // ── v5.3.0 — SPOTIFY RE INTELLIGENCE & AUDIO LIFT ──
+  'ALBUMS PLAY LIKE ALBUMS — loudness normalization now has an ALBUM MODE: every track on one record gets the same gain from the album\'s average loudness, so the quiet ballad stays quieter than the loud closer exactly as the mastering engineer intended. Powered by a re-baked knowledge table that now carries loudness, tempo and acoustic fingerprints for 71,750 songs.',
+  'SHUFFLE THAT ACTUALLY SHUFFLES — the queue reorder is now an artist-SPREADING shuffle (the model Spotify itself moved to after users complained about artist clustering): same-artist back-to-back is engineered to zero while the order stays random-feeling, and it\'s seeded so it never repeats a fluke.',
+  'IT RETREATS WHEN YOU SAY NO — skip two Smart Shuffle recommendations in a row and the mixer backs off: fewer, safer picks that sit closer to your session\'s energy until one of them earns a full listen.',
+  'HOME LEARNS YOUR SHELVES — the AI shelves (The Weekly Crate, Daily Mixes, On The Rise, Because You Listened) are ordered by a tiny on-device bandit that learns which shelf YOU open at which time of day, and its older evidence fades with a 30-day half-life so last month\'s taste can\'t outvote this week\'s.',
+  'FASTER FIRST BEAT + SMOOTHER LAST BEAT — the next track\'s connection is pre-warmed with a 64 kB head request the moment it resolves (Spotify\'s own instant-start trick, on-device), and the crossfade now follows the equal-power DJ curve — no more volume cliff when the fade kicks in.',
+  'THE LYRICS ARE LISTENING BACK — finish a song with the Sing Along view open for half of it and that artist quietly earns a little more of your home feed. Attention, recorded honestly — nothing leaves the device.',
+  'As always: zero servers, zero accounts, zero telemetry — every bit of intelligence runs on your phone.',
 ];
 
 export function WhatsNewDialog() {
@@ -70,7 +72,7 @@ export function WhatsNewDialog() {
           </View>
           <Text style={styles.title}>What&apos;s new</Text>
           <MonoText size={10} bold color={colors.orangeDeep} style={{ letterSpacing: 1, marginBottom: 12 }}>
-            TSF MUSIC 5.2.1 — THE HARDENING PASS
+            TSF MUSIC 5.3.0 — SPOTIFY RE INTELLIGENCE & AUDIO LIFT
           </MonoText>
           {/* v4.3.1: ten features cannot fit a fixed sheet — the E2E lab
               caught the CTA pushed off-screen (whatsnew-continue never

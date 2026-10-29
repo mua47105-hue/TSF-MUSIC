@@ -43,6 +43,12 @@ export const HALF_LIFE = {
   skipProfile: 180,
   coplayEdge: 60,
   sourceTrust: 21,
+  /** V5.3.0 BAR 3 — bandit arm evidence half-life: α/β decay toward
+   *  the uniform prior at this rate, α' = 1 + (α−1)·0.5^(Δt/τ). 30d
+   *  matches the daypartCell cadence (a month-old listen is a weaker
+   *  predictor than yesterday's — the stale-evidence fix; Spotify's
+   *  session-RL reweighting is the production analog). */
+  banditArm: 30,
 } as const;
 
 // ── Decision-engine score weights (§8.3) ────────────────────────────────
@@ -350,7 +356,13 @@ export const REPLAY_GAIN = {
 /** FEATURE 2 — Crossfade / transition fade. RNTP v4.1.1 exposes NO
  *  crossfade API and its single ExoPlayer instance cannot overlap two
  *  streams, so this ships as a volume-automation fade with the honest
- *  limitation stated in the UI (never claims true gapless). */
+ *  limitation stated in the UI (never claims true gapless).
+ *  V5.3.0 BAR 6 — the curve is EQUAL-POWER COSINE by default: the
+ *  out-gain follows cos(p·π/2) (zero-slope at the ramp start — no
+ *  audible cliff when the fade engages; with a simultaneous sin(p·π/2)
+ *  in-gain the pair sums to constant POWER, the DJ-standard curve).
+ *  'linear' (the v5.2.1 ramp) remains selectable; 0 s stays a
+ *  byte-exact no-op. */
 export const CROSSFADE = {
   /** Hard clamp — the control can never request a longer ramp. */
   maxSeconds: 12,
@@ -362,6 +374,9 @@ export const CROSSFADE = {
   /** Playhead regression that counts as a NEW track (seek protection):
    *  a backward jump larger than this resets the fade ramp. */
   backJumpToleranceSec: 0.25,
+  /** V5.3.0 BAR 6 — the fade curve. 'cosine' = equal-power (default);
+   *  'linear' = the v5.2.1 ramp, byte-identical when selected. */
+  curve: 'cosine' as 'cosine' | 'linear',
 } as const;
 
 /** FEATURE 3 — Playback speed (lectures/lofi at 0.75×–2×). ExoPlayer
@@ -813,6 +828,18 @@ export const PREWARM = {
   /** The savings bar the feature must clear vs a fresh resolve (locked
    *  in tests/wave1_prewarm_locks.test.ts with a 600ms fake resolver). */
   minSavedMs: 500,
+  /** V5.3.0 BAR 4 — the Range pre-warm: after a URL resolves for a
+   *  primed row, a single GET with `Range: bytes=0-<rangeBytes-1>`
+   *  warms DNS+TLS+the CDN edge for the next tap (the head-file
+   *  pattern, RE report 03 §3 [T1+T2] — time-to-first-64kB is
+   *  Spotify's own SLO, `HeadFileDownload.http_64k_latency`). 64 kB
+   *  is that SLO's number, not ours. */
+  rangeBytes: 65_536,
+  /** One range warm per parked URL inside this window (LRU-bounded
+   *  set — never a per-render re-issue). */
+  rangeTtlMs: 30_000,
+  /** Hard cap on the warmed-URL set (law ⑧). */
+  rangeCap: 8,
 } as const;
 
 /** F2 — Search prefetch: at ≥3 characters the typeahead pipeline is
@@ -1057,6 +1084,68 @@ export const PARALLAX = {
   /** Viewability gate: % of a row that must be on-screen before its
    *  artwork runs parallax (only visible rows get a native transform). */
   itemVisiblePercentThreshold: 15,
+} as const;
+
+// ── V5.3.0 BAR 2 — THE 2-STRIKE RETREAT (smart shuffle) ───────────────
+
+/** Evidence: psychoacoustics report §3 [T1+T3] — after 2–3 rejected
+ *  exploratory picks the product retreats to safe content; the
+ *  reconstruction's SessionState.on_outcome ×0.55 exploration retreat.
+ *  When the listener early-skips this many CONSECUTIVE recommended
+ *  tracks, Smart Shuffle tightens its vibe lock and halves the
+ *  injection cadence until a recommendation completes. */
+export const SHUFFLE_RETREAT = {
+  /** Consecutive early-skipped recs that arm the retreat. */
+  strikeThreshold: 2,
+  /** Vibe-lock tolerance multiplier while retreating (ENERGY_TOLERANCE
+   *  × 0.5 — the rec must sit CLOSER to the session energy). */
+  toleranceFactor: 0.5,
+  /** Injection cadence divisor while retreating (recs per N tracks
+   *  halves — fewer, safer injections). */
+  cadenceDivisor: 2,
+} as const;
+
+// ── V5.3.0 BAR 3 — SHELF RANKING (the homepage calibration bandit) ────
+
+/** Evidence: BaRT (RecSys 2018) — shelves are bandit treatments with
+ *  logged propensities + IPS off-policy evaluation; the 2025 homepage
+ *  calibration bandit conditions the content mix on time-of-day
+ *  context. Our on-device version: one Beta arm per (shelf, daypart
+ *  block), Thompson-ordered once per home pass, engagement = the
+ *  reward we can actually measure (the shelf's collection opened). */
+export const SHELF_RANK = {
+  /** In-memory IPS log ring cap (law ⑧ — bounded; one entry per ranked
+   *  shelf per home pass). */
+  ipsCap: 200,
+  /** Thompson draws are seeded per day-block — the SAME home pass and
+   *  every re-render inside it see the same order (determinism law ⑤). */
+  seedGranularityMs: 30 * 60 * 1000,
+} as const;
+
+/** BAR 3 — the shelf bandit's reward weights: the OPENED shelf's arm
+ *  gets α +1 (engagement), the other ranked shelves' arms get β +1
+ *  (they lost the pass's one pull). Symmetric unit evidence — the
+ *  arm's θ posterior, not the raw weight, decides the order. */
+export const SHELF_REWARD = {
+  positive: 1.0,
+  negative: 1.0,
+} as const;
+
+// ── V5.3.0 BAR 7 — SINGALONG DWELL (the implicit-signal loop) ──────────
+
+/** Evidence: psychoacoustics report §2/§5 [T1+T2+T3] — visual coupling
+ *  (lyrics on screen) holds attention through vulnerable transitions;
+ *  the per-surface ms accumulation proves the product MEASURES it. Our
+ *  on-device version: when the SingAlong view was open at least this
+ *  fraction of a COMPLETED track's duration, one weak positive artist
+ *  signal fires (attention evidence, NOT a second listen). */
+export const SINGALONG_DWELL = {
+  /** Open-ratio floor — below this the dwell is not attention, it is a
+   *  forgotten open sheet. */
+  minOpenRatio: 0.5,
+  /** The artist weight (weak positive: between LATE_SKIP 0.5 and
+   *  COMPLETED 2.0 — evidence of attention, not an extra listen). */
+  weight: 1.0,
 } as const;
 
 // ── PROVIDER NETWORK DISCIPLINE — v5.2.1 FIX-A4 ─────────────────────────

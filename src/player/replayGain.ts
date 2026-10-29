@@ -37,6 +37,21 @@ export interface GainTrackInput {
   loudness?: number | null;
 }
 
+/** V5.3.0 BAR 1 — the album-mode queue predicate (pure): TRUE when the
+ *  queue is ONE album — every row carries a non-empty album name AND all
+ *  names agree (trim/lowercase) AND there are ≥2 rows. Any missing/mixed
+ *  album field ⇒ false ⇒ per-track gain (the exact v5.2.1 path). */
+export function isSingleAlbumQueue(
+  active: { album?: string } | null,
+  queue: Array<{ album?: string }>,
+): boolean {
+  if (!active || !queue || queue.length < 2) return false;
+  const norm = (s?: string) => (s ?? '').trim().toLowerCase();
+  const album = norm(active.album);
+  if (!album) return false;
+  return queue.every((t) => norm(t.album) === album);
+}
+
 /**
  * THE PURE CORE — track → gain in dB, clamped to
  * [-REPLAY_GAIN.maxCutDb, +REPLAY_GAIN.maxBoostDb].
@@ -55,6 +70,31 @@ export function gainToLinear(db: number): number {
   return Math.pow(10, db / 20);
 }
 
+/**
+ * V5.3.0 BAR 1 — ALBUM MODE (the Spotify default_album_normalization_params
+ * semantics, RE report 03 §6 [T1]): an album is normalized as ONE unit, so
+ * the intentional inter-track dynamics the mastering engineer baked in
+ * (quiet ballad → loud closer) SURVIVE. The album's loudness is the mean
+ * of its tracks' baked LUFS; every track in the album then gets the SAME
+ * gain = target − albumLufs, clamped ±6 dB. Tracks without loudness
+ * evidence contribute nothing to the mean (they are not secretly -14);
+ * an album with ZERO evidence rows ⇒ 0 dB exactly (the honest no-op).
+ *
+ * The literal bars (law ⑩): album mean −18 ⇒ +4 dB for EVERY track (the
+ * quiet album gets uniformly louder, dynamics intact); mean −10 ⇒ −4 dB;
+ * empty input ⇒ 0; a single track's gain EQUALS its per-track gain (the
+ * degenerate album of one).
+ */
+export function computeAlbumGain(loudnesses: Array<number | null | undefined>): number {
+  const present = loudnesses.filter(
+    (l): l is number => typeof l === 'number' && Number.isFinite(l),
+  );
+  if (!present.length) return 0;
+  const albumLufs = present.reduce((s, l) => s + l, 0) / present.length;
+  const raw = REPLAY_GAIN.targetLufs - albumLufs;
+  return Math.max(-REPLAY_GAIN.maxCutDb, Math.min(REPLAY_GAIN.maxBoostDb, raw));
+}
+
 /** Convenience: raw loudness (or a track) → the linear factor directly.
  *  Missing loudness ⇒ exactly 1.0. */
 export function replayGainFactor(
@@ -65,6 +105,21 @@ export function replayGainFactor(
       ? loudness
       : { loudness };
   return gainToLinear(computeGain(t));
+}
+
+/**
+ * V5.3.0 BAR 1 — the album-mode apply: same bus contract as
+ * applyReplayGainForTrack, but the pushed factor comes from the ALBUM's
+ * mean loudness (one gain for the whole record — intra-album dynamics
+ * preserved). Returns the applied factor; albumLufs null (no evidence at
+ * all) ⇒ factor exactly 1.0, byte-identical to the pre-BAR-1 app.
+ */
+export function applyAlbumGainForTracks(
+  loudnesses: Array<number | null | undefined>,
+): number {
+  const f = gainToLinear(computeAlbumGain(loudnesses));
+  setReplayGainFactor(f);
+  return f;
 }
 
 /**

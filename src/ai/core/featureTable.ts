@@ -36,12 +36,21 @@ import { recordingKeyOf, titleKeyOf, clusterTitleKeyOf } from './bakedKeys';
  *  WAVE B B1: l = baked loudness in LUFS (negative dB reference) —
  *  OPTIONAL: rows from bakes predating the column omit it, and
  *  ReplayGain treats a missing `l` as "no loudness evidence"
- *  (gain 0 dB ⇒ factor exactly 1.0 — the honest no-op). */
+ *  (gain 0 dB ⇒ factor exactly 1.0 — the honest no-op).
+ *  v5.3.0 BAR 1 (bake 1.1.0): t = tempo (BPM, int), a = acousticness,
+ *  s = speechiness, i = instrumentalness (0..1, 2dp — the acoustic
+ *  feature vector BAR 5 quantizes). All OPTIONAL with the same
+ *  missing-column contract: a row without them degrades to exactly
+ *  the v5.2.1 behavior at every caller. */
 export interface BakedFeatures {
   e: number;
   v: number;
   d: number;
   l?: number;
+  t?: number;
+  a?: number;
+  s?: number;
+  i?: number;
 }
 
 interface BakedTableJSON {

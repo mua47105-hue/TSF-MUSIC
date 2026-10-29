@@ -59,11 +59,13 @@ import { perfMark } from '../perf/perf';
 import { initDataSaver } from './audioQuality';
 import { initMetaOverrides } from '../storage/metaOverrides';
 import { applySmartVolumeForTrack, initSmartVolume } from './smartVolume';
-import { applyReplayGainForTrack } from './replayGain';
+import { applyReplayGainForTrack, applyAlbumGainForTracks, isSingleAlbumQueue } from './replayGain';
 import { providerOwnsTransition } from './trackOwnership';
 import { initCrossfade, resetCrossfadeRamp } from './crossfade';
 import { initPlaybackRate, reapplyPlaybackRate } from './playbackRate';
 import { primePrewarm, resetPrewarm, consumePrewarm } from './prewarm';
+import { spreadShuffle, shuffleSeedFor } from './spreadShuffle';
+import { seededRandom, hash32 } from '../ai/mindbeat';
 import { optimizeQueueByVibe as optimizeVibeWalk, stepWithinBound } from './queueOptimizer';
 import { QUEUE_VIBE, SESSION_MEMORY } from '../ai/core/constants';
 // WAVE A (A4) — the queue survives the kill: debounced persistence + boot restore.
@@ -126,15 +128,6 @@ async function ensureSetup(): Promise<void> {
   return setupPromise;
 }
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const out = [...arr];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 interface PlayerState {
   active: Track | null;
   /** Optimistic plant (Task 29): the tapped row shows in the mini bar
@@ -178,6 +171,14 @@ const PlayerContext = createContext<PlayerState | null>(null);
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const [queue, setQueue] = useState<Track[]>([]);
+  // V5.3.0 BAR 1 — the album-mode ReplayGain read path: the track-active
+  // effect needs the CURRENT queue without re-running on every queue
+  // mutation (the gain is keyed on the active track change), so the queue
+  // mirrors into this ref (same pattern as pinnedIdsRef).
+  const queueRef = useRef<Track[]>([]);
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
   // INSTANT TAP (Task 29): the row the user last asked to play, planted
   // BEFORE any network work so the mini bar answers the tap immediately.
   const [optimistic, setOptimistic] = useState<Track | null>(null);
@@ -351,7 +352,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // column/row ⇒ factor exactly 1.0 — the honest no-op until a bake
     // carries loudness). Runs BEFORE the foreground gate so background
     // transitions get the same normalization contract.
-    applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: active.title, artist: active.artist }));
+    // V5.3.0 BAR 1 — ALBUM MODE: when the whole queue is ONE album
+    // (every track shares the normalized album name, ≥2 rows), the gain
+    // comes from the album's MEAN baked LUFS and is the SAME for every
+    // track — the mastering engineer's inter-track dynamics survive
+    // normalization (Spotify's default_album_normalization_params
+    // semantics, RE report 03 §6). Mixed/missing album data ⇒ per-track
+    // gain, exactly the v5.2.1 path.
+    if (isSingleAlbumQueue(active, queueRef.current)) {
+      applyAlbumGainForTracks(
+        queueRef.current.map((t) => mindbeat.bakedLoudnessFor({ title: t.title, artist: t.artist })),
+      );
+    } else {
+      applyReplayGainForTrack(mindbeat.bakedLoudnessFor({ title: active.title, artist: active.artist }));
+    }
     perfMark('track-active', String(active.id));
     // SINGLE-OWNER RULE (mirror of the service gate) — v5.2.1 FIX-B1: the
     // decision is the pure law in trackOwnership.ts (dual-owner behavioral
@@ -747,7 +761,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   /**
    * Classic shuffle reorders only the UPCOMING tracks — never restarts
-   * the current song.
+   * the current song. V5.3.0 BAR 2: the reorder is the ARTIST-SPREAD
+   * shuffle (weighted interleave; same-artist adjacency suppressed vs
+   * the old Fisher–Yates) seeded through mulberry32 — Math.random is
+   * gone from the shuffle path entirely (house law ⑤).
    */
   async function setShuffle(on: boolean): Promise<void> {
     setShuffleState(on);
@@ -759,9 +776,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       const currentId = rntpQueue[currentIdx]?.id;
       const upcoming = rntpQueue.filter((_, i) => i !== currentIdx);
-      const reordered = on
-        ? shuffleArray(upcoming)
-        : originalQueue.current.filter((t) => t.id !== currentId);
+      let reordered: Track[];
+      if (on) {
+        // BAR 2 — seeded artist-spread shuffle of the upcoming window.
+        const seed = shuffleSeedFor(upcoming.map((t) => t.id), Date.now(), hash32);
+        reordered = spreadShuffle(upcoming, seededRandom(seed));
+      } else {
+        reordered = originalQueue.current.filter((t) => t.id !== currentId);
+      }
       // MAGNUM OPUS F1 — the order changed; parked positions are lies now.
       resetPrewarm();
 

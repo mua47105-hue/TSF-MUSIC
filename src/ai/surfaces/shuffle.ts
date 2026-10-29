@@ -15,7 +15,7 @@
  *     never below the SourceTrust floor
  */
 
-import { CADENCE, ENERGY_TOLERANCE } from '../core/constants';
+import { CADENCE, ENERGY_TOLERANCE, SHUFFLE_RETREAT } from '../core/constants';
 import { decide, reasonLine, buildServeRecency, sessionEnergyOf } from '../core/decision';
 import type { Candidate } from '../core/types';
 import type { Track } from '../../types';
@@ -50,10 +50,22 @@ export function planFor(queueLength: number): ShufflePlan {
 export async function buildShuffleRecs(
   ctx: SurfaceCtx,
   upcoming: Track[],
-  opts: { healFrom?: Track | null } = {},
+  opts: { healFrom?: Track | null; retreat?: boolean } = {},
 ): Promise<ShufflePick[]> {
   const { api, profile, session, now } = ctx;
   const plan = planFor(upcoming.length);
+
+  // V5.3.0 BAR 2 — THE 2-STRIKE RETREAT (psychoacoustics §3: after 2
+  // rejected exploratory picks the product retreats to safe content).
+  // While armed: the vibe lock TIGHTENS (tolerance × factor) and the
+  // injection cadence HALVES (fewer, safer recs) until a recommendation
+  // completes. Fresh state ⇒ exactly the v5.2.1 numbers.
+  const retreating = opts.retreat === true;
+  const tolerance = ENERGY_TOLERANCE + 0.05;
+  const tightTolerance = tolerance * SHUFFLE_RETREAT.toleranceFactor;
+  const recCount = retreating
+    ? Math.max(1, Math.floor(plan.recCount / SHUFFLE_RETREAT.cadenceDivisor))
+    : plan.recCount;
   const block = blockOf(now, dayKindOf(now), profile.boundaries);
 
   // Seeds: the user's own upcoming tracks (not other recs).
@@ -110,18 +122,21 @@ export async function buildShuffleRecs(
       dayKind: dayKindOf(now),
       seedTrackIds: seedTracks.slice(0, 3).map((t) => t.id),
       seedArtists,
-      requested: plan.recCount + 2,
+      requested: recCount + 2,
     },
     { profile, session, now, banditArms: ctx.banditArms },
     { excludeTrackIds: exclude, serveRecency },
   );
 
-  // Vibe-lock: in FLOW, rec energy must sit within ±0.2 of session energy.
+  // Vibe-lock: in FLOW, rec energy must sit within ±tolerance of session
+  // energy (× SHUFFLE_RETREAT.toleranceFactor while the 2-strike retreat
+  // is armed — the rec must sit CLOSER to the session energy).
   const sEnergy = sessionEnergyOf(session);
   const vibeLocked = session.vibe === 'FLOW' || session.vibe === 'PEAK';
+  const allowedDelta = retreating ? tightTolerance : tolerance;
   const picks: ShufflePick[] = [];
   for (const c of ranked) {
-    if (vibeLocked && Math.abs(c.features.energy - sEnergy) > ENERGY_TOLERANCE + 0.05) continue;
+    if (vibeLocked && Math.abs(c.features.energy - sEnergy) > allowedDelta) continue;
     const track = trackById.get(c.trackId);
     if (!track) continue;
     picks.push({
@@ -132,7 +147,7 @@ export async function buildShuffleRecs(
       exploration: c.explorationSlot,
     });
     ctx.onExposure?.(c.trackId, 'smart_shuffle', picks.length, c.explorationSlot);
-    if (picks.length >= plan.recCount) break;
+    if (picks.length >= recCount) break;
   }
   return picks;
 }

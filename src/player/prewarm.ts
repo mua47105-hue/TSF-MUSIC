@@ -38,6 +38,7 @@ import { dataSaverActive } from './audioQuality';
 import { resolveStreamUrl, getSongById } from '../api/saavn';
 import { ytStreamUrlForTrack } from '../api/youtube';
 import { resolveSaavnRow } from './saavnRescue';
+import { currentNetworkKind } from './imagePrewarm';
 
 export type NetworkKind = 'wifi' | 'cellular' | 'none' | 'unknown';
 
@@ -129,6 +130,75 @@ function evictIfNeeded(): void {
   }
 }
 
+// ── V5.3.0 BAR 4 — THE 64 kB RANGE PRE-WARM (the head-file pattern) ───
+// Spotify pre-fetches the first 128 kB of the next file from a dedicated
+// CDN template so playback starts before the body lands (RE report 03 §3
+// [T1+T2]; HeadFileDownload.http_64k_latency proves time-to-first-64 kB
+// is a first-class SLO). We cannot change the CDN, but we CAN warm
+// DNS+TLS+the CDN edge for the ALREADY-RESOLVED N+1 URL: one GET with
+// `Range: bytes=0-65535`, response body discarded. Gated exactly like
+// the audio-URL prime (wifi AND not data-saver; 'unknown' behaves as
+// NOT-wifi — the conservative law). A warm miss is worth zero, never
+// negative: every failure is swallowed.
+
+const rangeWarmed = new Map<string, number>(); // url → warmed-at epoch ms
+let injectedRangeFetcher: ((url: string, bytes: number) => Promise<void>) | null = null;
+
+/** The actual warm request — a fetch whose body is never read. */
+function defaultRangeFetcher(url: string, bytes: number): Promise<void> {
+  return fetch(url, {
+    method: 'GET',
+    headers: { Range: `bytes=0-${bytes - 1}` },
+    // The response is DISCARDED — the point is the connection + the
+    // first bytes hitting the CDN cache, not the data.
+  }).then((r) => {
+    // Drain nothing; cancel if possible so the socket is not held.
+    try {
+      r.body?.cancel?.();
+    } catch {
+      /* best effort */
+    }
+  });
+}
+
+/** Range-warm one resolved URL (fire-and-forget, single-flight per URL
+ *  per PREWARM.rangeTtlMs, hard-capped PREWARM.rangeCap, LRU-evicted).
+ *  Non-wifi / data-saver / already-warmed ⇒ a no-op, byte-identical to
+ *  the v5.2.1 prewarm. Pure test seam: inject a fake fetcher. */
+export function rangePrewarmUrl(
+  url: string | null | undefined,
+  opts: { dataSaver?: boolean; networkType?: NetworkKind; now?: number } = {},
+): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const dataSaver = opts.dataSaver ?? dataSaverActive();
+  const network = opts.networkType ?? currentNetworkKind();
+  const now = opts.now ?? Date.now();
+  // THE GATE (locked): offline never warms; data-saver never warms on
+  // non-wifi; 'unknown' is NOT wifi (the conservative law).
+  if (network === 'none') return false;
+  if (dataSaver) return false;
+  if (network !== 'wifi') return false;
+  const prev = rangeWarmed.get(url);
+  if (prev !== undefined && now - prev < PREWARM.rangeTtlMs) return false; // single flight per TTL
+  // LRU eviction (law ⑧)
+  while (rangeWarmed.size >= PREWARM.rangeCap) {
+    const oldest = rangeWarmed.keys().next().value;
+    if (oldest === undefined) break;
+    rangeWarmed.delete(oldest);
+  }
+  rangeWarmed.set(url, now);
+  const fetcher = injectedRangeFetcher ?? defaultRangeFetcher;
+  void fetcher(url, PREWARM.rangeBytes).catch(() => undefined);
+  return true;
+}
+
+/** Test seam for the range warm. */
+export function setRangeFetcherForTests(
+  fn: ((url: string, bytes: number) => Promise<void>) | null,
+): void {
+  injectedRangeFetcher = fn;
+}
+
 /**
  * Prime the upcoming tracks. Fire-and-forget safe: the sync part is
  * O(ahead); the resolution itself is async network work that never
@@ -146,7 +216,17 @@ export function primePrewarm(queue: Track[], activeIndex: number): void {
     const t = queue.find((q) => q.id === id);
     if (!t || !needsPrewarm(t)) continue;
     evictIfNeeded();
-    store.set(id, { at: Date.now(), p: resolver(t) });
+    const p = resolver(t);
+    // V5.3.0 BAR 4 — once the URL resolves, warm the CDN edge with a
+    // 64 kB Range request (wifi + no data-saver only; the pure gate is
+    // rangePrewarmUrl's own law). A failed resolve warms nothing.
+    store.set(id, {
+      at: Date.now(),
+      p: p.then((res) => {
+        if (res?.url) rangePrewarmUrl(res.url);
+        return res;
+      }),
+    });
   }
 }
 
@@ -186,4 +266,10 @@ export function setPrewarmResolverForTests(fn: PrewarmResolver | null): void {
 export function resetPrewarmForTests(): void {
   resetPrewarm();
   injectedResolver = null;
+  injectedRangeFetcher = null;
+  rangeWarmed.clear();
+}
+/** Test hook — the range-warm LRU size. */
+export function rangeWarmSize(): number {
+  return rangeWarmed.size;
 }

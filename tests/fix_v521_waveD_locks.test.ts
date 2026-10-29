@@ -91,10 +91,12 @@ describe('FIX-D1 — the QA row is one honest line, not interleaved fragments', 
   });
 
   test('the row carries the measured numerals (docs-truth law)', () => {
+    // v5.3.0: reconciled to THIS release's measured suite (1,230/5,756,
+    // 68 new Spotify-RE locks riding the improvement-arc count).
     const readme = readRepo('README.md');
-    expect(readme).toContain('1,163 tests');
-    expect(readme).toContain('5,246 assertions');
-    expect(readme).toContain('573 replay suite + 590 improvement-arc & hardening locks');
+    expect(readme).toContain('1,230 tests');
+    expect(readme).toContain('5,756 assertions');
+    expect(readme).toContain('573 replay suite + 657 improvement-arc, hardening & Spotify-RE locks');
   });
 });
 

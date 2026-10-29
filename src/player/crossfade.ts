@@ -51,16 +51,33 @@ export function clampCrossfadeSeconds(v: unknown): number {
 }
 
 /**
- * Pure fade curve: inside the final `fadeSeconds` the factor ramps
- * linearly to 0; outside it (and whenever fadeSeconds is 0 or the
- * duration is unknown) the factor is 1.0 — no fade.
+ * V5.3.0 BAR 6 — the fade CURVE. progress p ∈ [0,1] (0 = the ramp
+ * starts, 1 = silence). 'cosine' = the equal-power out-gain
+ * cos(p·π/2): zero slope at p=0 (no cliff when the ramp engages) and
+ * the DJ-standard constant-power pairing with sin(p·π/2).
+ * 'linear' = the v5.2.1 ramp (1 − p), byte-identical.
+ * THE LITERAL BARS: p=0 → 1; p=1 → 0; cosine p=0.5 → cos(π/4) =
+ * 0.7071067811865476 (≠ the linear 0.5); linear p=0.5 → 0.5.
+ */
+export function fadeCurveFactor(progress: number, curve: 'cosine' | 'linear' = CROSSFADE.curve): number {
+  const p = Math.max(0, Math.min(1, progress));
+  if (curve === 'linear') return 1 - p;
+  if (p >= 1) return 0; // cos(π/2) is 6.1e−17 in IEEE — clamp to exact 0
+  return Math.cos((p * Math.PI) / 2);
+}
+
+/**
+ * Pure fade factor: inside the final `fadeSeconds` the factor follows
+ * the CROSSFADE.curve down to 0; outside it (and whenever fadeSeconds
+ * is 0 or the duration is unknown) the factor is 1.0 — no fade.
  */
 export function fadeFactorFor(positionSec: number, durationSec: number, fadeSeconds: number): number {
   if (!(fadeSeconds > 0) || !(durationSec > 0)) return 1.0;
   const remaining = durationSec - positionSec;
   if (remaining >= fadeSeconds) return 1.0;
   if (remaining <= 0) return 0.0;
-  return Math.max(0, Math.min(1, remaining / fadeSeconds));
+  const progress = 1 - remaining / fadeSeconds; // 0 → ramp starts, 1 → end
+  return fadeCurveFactor(progress);
 }
 
 // ── engine state (module-level: survives sheet unmounts, works headless) ──

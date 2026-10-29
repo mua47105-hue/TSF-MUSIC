@@ -19,6 +19,11 @@ THE CONTRACT:
     unambiguity rule).
   * Features quantized to 2 decimals. Popularity-sorted, first (hottest)
     row wins per key.
+  * v5.3.0 BAR 1: the bake now also carries the audio-DSP columns —
+    l = loudness (LUFS, 1dp), t = tempo (BPM, int), a/s/i =
+    acousticness/speechiness/instrumentalness (2dp, the acoustic
+    feature vector BAR 5 quantizes). All optional at READ time (rows
+    from older bakes stay valid); all from the same source rows.
   * Size law: the gzipped asset must stay <= 2.5 MB (DATASET.maxGzipBytes).
     The script retries with a smaller popularity tail and FAILS LOUDLY
     if even the floor cannot fit.
@@ -37,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(HERE, "bake_data", "dataset.csv")
 OUT_PATH = os.path.join(HERE, "..", "assets", "baked_features.json")
 
-BAKE_VERSION = "1.0.0"
+BAKE_VERSION = "1.1.0"
 MAX_ROWS = 200_000
 MIN_ROWS_FLOOR = 30_000          # below this the table is not worth shipping
 MAX_GZIP_BYTES = 2_621_440       # 2.5 MB hard ceiling
@@ -97,6 +102,10 @@ def r2(x: float) -> float:
     return round(float(x) + 0.0, 2)
 
 
+def r1(x: float) -> float:
+    return round(float(x) + 0.0, 1)
+
+
 def bake_clean(limit: int) -> dict:
     """The real implementation (bake() above was the sketch; this is used)."""
     rows = []
@@ -117,7 +126,25 @@ def bake_clean(limit: int) -> dict:
             primary = artists_raw.split(",")[0].strip()
             if not primary:
                 continue
-            rows.append((pop, title, primary, r2(energy), r2(valence), r2(dance)))
+            # v5.3.0 BAR 1 — the audio-DSP columns. Missing/unparseable
+            # values fall to None and the key is simply OMITTED from the
+            # row (the runtime's optional-column contract).
+            def opt(f):
+                try:
+                    return float(row.get(f) or "")
+                except ValueError:
+                    return None
+            loud = opt("loudness")
+            tempo = opt("tempo")
+            acoustic = opt("acousticness")
+            speech = opt("speechiness")
+            instru = opt("instrumentalness")
+            rows.append((pop, title, primary, r2(energy), r2(valence), r2(dance),
+                         r1(loud) if loud is not None else None,
+                         int(round(tempo)) if tempo is not None else None,
+                         r2(acoustic) if acoustic is not None else None,
+                         r2(speech) if speech is not None else None,
+                         r2(instru) if instru is not None else None))
 
     rows.sort(key=lambda r: (-r[0], r[1], r[2]))
     rows = rows[: min(limit, MAX_ROWS)]
@@ -126,30 +153,69 @@ def bake_clean(limit: int) -> dict:
     title_feats = {}
     cluster_feats = {}
 
-    for pop, title, primary, e, v, d in rows:
+    def feats_tuple(r):
+        # Identity for the unambiguity rule: the FULL feature row (a
+        # collision on any column means two different recordings).
+        return r[3:8] + tuple(r[8:])
+
+    for r in rows:
+        pop, title, primary, e, v, d, loud, tempo, acoustic, speech, instru = r
         n_title = normalize_query(title)
         n_artist = normalize_query(primary)
         if not n_title or not n_artist:
             continue
         rec = f"{n_title}|{n_artist}"
         if rec not in table:
-            table[rec] = {"e": e, "v": v, "d": d}
-        title_feats.setdefault(n_title, set()).add((e, v, d))
+            row_out = {"e": e, "v": v, "d": d}
+            if loud is not None:
+                row_out["l"] = loud
+            if tempo is not None:
+                row_out["t"] = tempo
+            if acoustic is not None:
+                row_out["a"] = acoustic
+            if speech is not None:
+                row_out["s"] = speech
+            if instru is not None:
+                row_out["i"] = instru
+            table[rec] = row_out
+        title_feats.setdefault(n_title, set()).add(feats_tuple(r))
         ck = cluster_key(title)
         if ck:
-            cluster_feats.setdefault(ck, set()).add((e, v, d))
+            cluster_feats.setdefault(ck, set()).add(feats_tuple(r))
 
     # Bare titleKey only when EVERY row sharing that title agrees on the
     # features (unambiguous) — a collision means two different recordings
     # and a bare key would lie.
     for n_title, feats in title_feats.items():
         if len(feats) == 1 and n_title not in table:
-            e, v, d = next(iter(feats))
-            table[n_title] = {"e": e, "v": v, "d": d}
+            e, v, d, loud, tempo, acoustic, speech, instru = next(iter(feats))
+            row_out = {"e": e, "v": v, "d": d}
+            if loud is not None:
+                row_out["l"] = loud
+            if tempo is not None:
+                row_out["t"] = tempo
+            if acoustic is not None:
+                row_out["a"] = acoustic
+            if speech is not None:
+                row_out["s"] = speech
+            if instru is not None:
+                row_out["i"] = instru
+            table[n_title] = row_out
     for ck, feats in cluster_feats.items():
         if len(feats) == 1 and ck not in table:
-            e, v, d = next(iter(feats))
-            table[ck] = {"e": e, "v": v, "d": d}
+            e, v, d, loud, tempo, acoustic, speech, instru = next(iter(feats))
+            row_out = {"e": e, "v": v, "d": d}
+            if loud is not None:
+                row_out["l"] = loud
+            if tempo is not None:
+                row_out["t"] = tempo
+            if acoustic is not None:
+                row_out["a"] = acoustic
+            if speech is not None:
+                row_out["s"] = speech
+            if instru is not None:
+                row_out["i"] = instru
+            table[ck] = row_out
 
     return table
 

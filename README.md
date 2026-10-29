@@ -11,7 +11,7 @@ No server · No account · No tracking · Install and it works
 [![Latest release](https://img.shields.io/github/v/release/mua47105-hue/TSF-MUSIC?sort=semver&color=D9FF3D&label=release&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mua47105-hue/TSF-MUSIC/native-android.yml?branch=main&label=CI%20build&color=D9FF3D&labelColor=161513)](https://github.com/mua47105-hue/TSF-MUSIC/actions/workflows/native-android.yml)
 [![Tests](https://img.shields.io/badge/replay_tests-885_passing-D9FF3D?labelColor=161513)](#quality-assurance)
-[![Tests](https://img.shields.io/badge/total_tests-1072_passing-D9FF3D?labelColor=161513)](#quality-assurance)
+[![Tests](https://img.shields.io/badge/total_tests-1230_passing-D9FF3D?labelColor=161513)](#quality-assurance)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-FF4D00?labelColor=161513)](#build--run)
 [![Privacy](https://img.shields.io/badge/privacy-100%25_on--device-D9FF3D?labelColor=161513)](#privacy--content-safety)
 
@@ -180,11 +180,11 @@ Full design: [docs/MINDBEAT.md](docs/MINDBEAT.md) · decision engine p95: **~4 m
 
 | | |
 |---|---|
-| Latest release | **v5.2.1** (THE IMPROVEMENT ARC — Waves A–D: the covers breathe with the scroll (±20px native-driver parallax, gated by viewability/Reduce Motion/Data Saver), ✨ Surprise Me, full-text search over your own notes, a 3,000-word Hindi mood lexicon, genre-aware haptics, the offline queue that survives a killed app, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screen splitting — plus the v5.2.0 mock-hygiene fix. In-place upgrades, same keystore since v2.0) |
+| Latest release | **v5.3.0** (SPOTIFY RE INTELLIGENCE & AUDIO LIFT — ported from a client 1.2.95 reverse-engineering corpus, 100% on-device: album-mode ReplayGain from the re-baked LUFS/tempo/acoustic table (bake 1.1.0), the artist-spread shuffle with seeded mulberry32 (same-artist adjacency 0.00% vs 13.89% Fisher–Yates), the 2-strike Smart Shuffle retreat, bandit arm evidence decay + context-ranked home shelves with IPS logging, the 64 kB Range pre-warm, E4M3-quantized cosine similarity (the Voyager layer), the equal-power cosine crossfade, and the SingAlong dwell signal. In-place upgrades, same keystore since v2.0) |
 | Audio | Up to 320 kbps AAC, background service, lock-screen controls |
 | Catalogs | Multi-source aggregation on-device — primary catalog + supplemental sources + iTunes preview fallback |
 | Intelligence | 100% on-device, 6 layers, 9 surfaces, p95 ~4 ms decisions |
-| QA | 1,163 tests (573 replay suite + 590 improvement-arc & hardening locks) · 5,246 assertions · tsc strict · 93-checkpoint device lab · post-ship APK binary verification |
+| QA | 1,230 tests (573 replay suite + 657 improvement-arc, hardening & Spotify-RE locks) · 5,756 assertions · tsc strict · 93-checkpoint device lab · 16-mutation gauntlet RED-verified · post-ship APK binary verification |
 | Delivery | GitHub Actions → signed APK → GitHub Release (~15 min per tag) |
 | Size | ~83 MB APK, RN 0.76 + Expo 52, zero telemetry |
 
@@ -286,6 +286,8 @@ Methodology: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 | Version | Headline |
 |---|---|
+| **v5.3.0** | **SPOTIFY RE INTELLIGENCE & AUDIO LIFT** — 7 ports from the client 1.2.95 reverse-engineering corpus, all 100% on-device: album-mode ReplayGain over a re-baked LUFS/tempo/acoustic table (bake 1.1.0, 71,750 rows, 2.04 MB gzipped), the seeded artist-spread shuffle (adjacency 0.00% vs 13.89%), the 2-strike Smart Shuffle retreat, bandit evidence decay (30d half-life) + context-ranked home shelves with IPS logging, the 64 kB Range pre-warm, E4M3-quantized cosine sound-alike tie-breaks, the equal-power cosine crossfade, the SingAlong dwell signal; suite 1,230/0 · 16-mutation gauntlet all RED |
+| **v5.2.1** | **COMPREHENSIVE HARDENING** — every forensic-audit finding: the P0 theatre assertion dead, the fake toasts do real work (crates/downloads/pins), 10 s provider-fetch ceiling, the untested fallback engine tested, 8 house laws get literal-lock teeth, bounded caches, cipher-eval integrity gate, minimal WebView surface, honest docs; suite 1,163/0 · 55 mutations all RED |
 | **v5.2.0** | **THE IMPROVEMENT ARC** — Waves A–D: parallax artwork (native-driver, triple-gated), Surprise Me, FTS5 search over personal notes, the IITB Hindi mood lexicon, genre haptics, offline queue persistence, hot-path SQLite indexes, the YouTube cipher cache, React.lazy screens; plus the react-native mock-surface fix (the v5.0.2 class, closed for the RN mock itself) and the SURPRISE_* constants moved to the tuning table; suite 1,071/0 |
 | **v5.1.0** | **WAVE 1 · THE MEMORY LAYER** — Song Stories + Audio Bookmarks: notes under the lyrics, press-and-hold pins on the bar with tap-to-jump on the existing seek path, the new track-menu bookmarks list, honest empty states, recordingKey portability, both tables streamUrl-free (bar-locked), suite 899/0 (885 replay + 14 new locks) |
 | **v5.0.2** | **THE STABILITY PATCH** — the test-isolation ship-blocker closed (the B3 network-mock leak that held v5.0.1 in CI red), expo-network webmock parity (house rule 15), README test-count truth; zero app-behavior change, suite 885/0 |

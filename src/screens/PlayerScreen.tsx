@@ -597,6 +597,19 @@ export function PlayerScreen() {
   // non-null (≥4 lines) upgrades the card to the karaoke view.
   const [syncedLines, setSyncedLines] = useState<LrcLine[] | null>(null);
 
+  // V5.3.0 BAR 7 — THE SINGALONG DWELL SIGNAL: while the synced-lyrics
+  // view is up, mindbeat accumulates open time for the active track; a
+  // COMPLETED track with open ≥ SINGALONG_DWELL.minOpenRatio of its
+  // duration earns one weak positive artist signal (the closed
+  // visual-coupling → ranker loop, psychoacoustics report §5). No
+  // synced lines / view down ⇒ no signal, exactly v5.2.1.
+  const singalongOn = !!syncedLines && syncedLines.length > 0;
+  useEffect(() => {
+    if (!singalongOn) return;
+    mindbeat.noteSingAlongVisible(true);
+    return () => mindbeat.noteSingAlongVisible(false);
+  }, [singalongOn]);
+
   useEffect(() => {
     let cancelled = false;
     setLyricExcerpt(null);

@@ -1,5 +1,73 @@
 # Changelog
 
+## v5.3.0 — 2026-10-29 — SPOTIFY RE INTELLIGENCE & AUDIO LIFT
+
+Seven ports from a client-1.2.95 reverse-engineering corpus (reports
+00–06, the master blueprint, and three validated clean-room
+reconstructions), every one 100% on-device — no servers, no accounts,
+no telemetry, zero new dependencies. Every port cites its evidence tier;
+every behavior change carries a literal lock and a mutation that proved
+it RED.
+
+### BAR 1 — Album-mode ReplayGain + the baked DSP columns (P0)
+The feature bake (1.1.0) now carries loudness (LUFS, 1 dp), tempo (BPM),
+and the acoustic vector (acousticness/speechiness/instrumentalness).
+Honest trade: 153,415 → 71,750 keys (the popularity head) to fit the
+2.5 MB gzip law with five new columns — 2.04 MB shipped. Album mode
+normalizes the ALBUM as one unit (mean LUFS → one gain for every track,
+±6 dB clamp) so the mastering engineer's inter-track dynamics survive —
+the Spotify `default_album_normalization_params` semantics. Missing
+columns degrade byte-identically to v5.2.1.
+
+### BAR 2 — The artist-spread shuffle + the 2-strike retreat (P0)
+Classic shuffle is now the weighted-interleave spread model (group
+Fisher–Yates; per-pick weight = silence × remaining × jitter), seeded
+mulberry32 — Math.random is gone from the shuffle path. Locked:
+same-artist adjacency 0 over 300 seeded runs (the Fisher–Yates baseline
+is 13.89%), mean artist gap ≥ 75% of ideal. Smart Shuffle retreats after
+2 consecutive early-skipped recommendations: vibe lock ×0.5, injection
+cadence ÷2, until a recommendation completes.
+
+### BAR 3 — Bandit evidence decay + context-ranked home shelves (P1)
+Arm evidence now decays toward the prior (30-day half-life,
+α′ = 1+(α−1)·0.5^(Δt/τ)); the decayed arm carries its timestamp so
+sequential decays compound exactly. Home's AI shelves (crate, mixes, on
+the rise, because) are ordered by a context bandit (one Beta arm per
+shelf per daypart block, seeded Thompson draws — deterministic within a
+day-block), engagement = the shelf you open; a bounded IPS ring records
+propensities for off-policy evaluation. Cold arms ⇒ the exact v5.2.1
+fixed order.
+
+### BAR 4 — The 64 kB Range pre-warm (P1)
+The head-file pattern, on-device: once a next-track URL resolves, one
+GET with `Range: bytes=0-65535` warms DNS+TLS+the CDN edge (Spotify's
+own time-to-first-64 kB SLO). WiFi + no data-saver only; failures are
+swallowed (a warm miss is worth zero, never negative).
+
+### BAR 5 — E4M3-quantized cosine similarity (P2, the Voyager layer)
+The six baked audio features quantize to one float8-E4M3 byte each
+(full 256-code grid law locked); sound-alike ties break toward the
+seed's feature space by quantized cosine. No baked row ⇒ the exact
+v5.2.1 tag-only ordering.
+
+### BAR 6 — The equal-power cosine crossfade (P2)
+The fade ramp is cos(p·π/2) — zero slope where the ramp engages (the
+audible cliff is gone), constant power when paired with the in-gain.
+'linear' remains selectable and byte-identical; 0 s stays an exact
+no-op.
+
+### BAR 7 — The SingAlong dwell signal (P2)
+The closed visual-coupling loop: a COMPLETED track whose synced-lyrics
+view was open ≥ 50% of its duration emits one weak positive artist
+signal (ledger event + profile bump 1.0 + bandit α) — attention
+evidence, never a second listen.
+
+### Verification
+Suite 1,230 pass / 0 fail / 5,756 assertions / 90 files (three
+consecutive byte-identical runs); tsc strict clean; 16 source mutations
+all RED with SHA-256 byte-exact restores (two first-draft survivors
+redesigned, not shipped — the gauntlet law).
+
 ## v5.2.1 — 2026-10-15 — COMPREHENSIVE HARDENING (every forensic-audit finding)
 
 A hostile audit of v5.2.0 ran 16 adversarial mutations against the full

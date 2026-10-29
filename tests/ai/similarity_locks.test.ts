@@ -101,7 +101,9 @@ describe('BAR 1.4 — the facade source lock (Law ⑥ for data flow)', () => {
   test('mindbeat.buildSoundAlike runs reconcileRecordings BEFORE rankSoundAlike', async () => {
     const src = await Bun.file('src/ai/mindbeat.ts').text();
     const idxReconcile = src.indexOf('reconcileRecordings(pool)');
-    const idxRank = src.indexOf('rankSoundAlike(seedTags, candidates, count)');
+    // v5.3.0 BAR 5: the call grew the seedQvec tie-break argument —
+    // the ordering lock's intent (reconcile BEFORE rank) is unchanged.
+    const idxRank = src.indexOf('rankSoundAlike(seedTags, candidates, count,');
     expect(idxReconcile).toBeGreaterThan(-1);
     expect(idxRank).toBeGreaterThan(-1);
     expect(idxReconcile).toBeLessThan(idxRank);
