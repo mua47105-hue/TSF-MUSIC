@@ -228,7 +228,7 @@ def main():
         check("V530-G2 THE SPOTIFY RE bulletin headline",
               "TSF MUSIC 5.3.0 — SPOTIFY RE INTELLIGENCE & AUDIO LIFT" in sset)
         check("V530-G3 a sampled album-mode bullet",
-              "ALBUMS PLAY LIKE ALBUMS — loudness normalization now has an ALBUM MODE: every track on one record gets the same gain from the album's average loudness, so the quiet ballad stays quieter than the loud closer exactly as the mastering engineer intended." in sset)
+              "ALBUMS PLAY LIKE ALBUMS — loudness normalization now has an ALBUM MODE: every track on one record gets the same gain from the album's average loudness, so the quiet ballad stays quieter than the loud closer exactly as the mastering engineer intended. Powered by a re-baked knowledge table that now carries loudness, tempo and acoustic fingerprints for 71,750 songs." in sset)
         check("V530-G4 a sampled spread-shuffle bullet",
               "SHUFFLE THAT ACTUALLY SHUFFLES — the queue reorder is now an artist-SPREADING shuffle (the model Spotify itself moved to after users complained about artist clustering): same-artist back-to-back is engineered to zero while the order stays random-feeling, and it's seeded so it never repeats a fluke." in sset)
         check("V530-G5 the old bulletin key is retired", "tsf.whatsNew.v5_2_1" not in sset)
